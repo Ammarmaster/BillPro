@@ -1,0 +1,198 @@
+{
+  "app_name": "Lumina ERP",
+  "personality": "6 Glass / Luxe",
+  "personality_one_liner": "Cinematic, expensive, and restrained Apple-inspired luxury with deep depth and tactile glass surfaces.",
+  "color": {
+    "light": {
+      "surface": "#FDFDFD",
+      "onSurface": "#121212",
+      "surfaceSecondary": "#F2F2F2",
+      "onSurfaceSecondary": "#595959",
+      "surfaceTertiary": "#E6E6E6",
+      "onSurfaceTertiary": "#737373",
+      "surfaceInverse": "#121212",
+      "onSurfaceInverse": "#FDFDFD",
+      "brand": "#BFA13F",
+      "brandPrimary": "#BFA13F",
+      "onBrandPrimary": "#FFFFFF",
+      "brandSecondary": "#967D2F",
+      "onBrandSecondary": "#FFFFFF",
+      "brandTertiary": "#F7F2DE",
+      "onBrandTertiary": "#BFA13F",
+      "success": "#E0F2E9",
+      "onSuccess": "#1F4D36",
+      "warning": "#FDF0DD",
+      "onWarning": "#734B12",
+      "error": "#FCE8E8",
+      "onError": "#751A1A",
+      "border": "#E6E6E6",
+      "borderStrong": "#CCCCCC",
+      "divider": "#E6E6E6"
+    },
+    "dark": {
+      "surface": "#0D0D0D",
+      "onSurface": "#F7F7F7",
+      "surfaceSecondary": "#1A1A1A",
+      "onSurfaceSecondary": "#B3B3B3",
+      "surfaceTertiary": "#262626",
+      "onSurfaceTertiary": "#999999",
+      "surfaceInverse": "#F2F2F2",
+      "onSurfaceInverse": "#0D0D0D",
+      "brand": "#D4AF37",
+      "brandPrimary": "#D4AF37",
+      "onBrandPrimary": "#0D0D0D",
+      "brandSecondary": "#AA8B2B",
+      "onBrandSecondary": "#0D0D0D",
+      "brandTertiary": "#403512",
+      "onBrandTertiary": "#D4AF37",
+      "success": "#285C43",
+      "onSuccess": "#8CE8B5",
+      "warning": "#8A601E",
+      "onWarning": "#F7D195",
+      "error": "#822929",
+      "onError": "#F59F9F",
+      "border": "#262626",
+      "borderStrong": "#404040",
+      "divider": "#262626"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Cormorant Garamond",
+    "textFontFamily": "Satoshi",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 32,
+      "4xl": 48
+    }
+  },
+  "spacing": {
+    "rule": "Generous Apple-like margins (16-24pt). Content breathes. Use flex gaps and avoid tight bounding boxes.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 2,
+  "navigation": "drawer_with_bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do_s": [
+      "Use on sticky headers, bottom tab bar, bottom sheet headers",
+      "Use on featured/hero cards over brand-tinted or photo backdrops",
+      "Apply translucent tinted base beneath the blur (≥70% of surface) to guarantee text readability"
+    ],
+    "dont_s": [
+      "Do not apply glass to list rows, form inputs, or standard body content",
+      "Do not use blur without a tint underneath it"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth (Login & Registration)",
+      "purpose": "A cinematic entry point reflecting the luxury brand.",
+      "states": {
+        "loading": "Subtle activity indicator over a blurred background.",
+        "empty": "N/A",
+        "error": "Elegant toast with dark ruby/error background."
+      },
+      "layout": "Full-bleed background image with a top-down gradient scrim. The login container is a glassmorphic sheet anchored at the bottom 40% with Cormorant Garamond headings and elegant text inputs."
+    },
+    {
+      "name": "Super Admin & Owner Dashboard",
+      "purpose": "High-level overview of revenue, quick actions, and insights.",
+      "states": {
+        "loading": "Skeleton loaders matching the radius of metric cards.",
+        "empty": "No data available with a refined illustrative SVG.",
+        "error": "Error loading metrics with retry button."
+      },
+      "layout": "Header has large typography (Satoshi weight 500). Key metrics in a horizontal scroll of glass cards with subtle antique gold tint. Quick actions in a 2-column grid. Generous vertical spacing."
+    },
+    {
+      "name": "Waiter Split-Screen Ordering",
+      "purpose": "Fast, error-free order entry with simultaneous menu browsing.",
+      "states": {
+        "loading": "Spinner centered on the screen.",
+        "empty": "Order basket is empty (display 'No items added' with elegant icon).",
+        "error": "Toast for failed network request."
+      },
+      "layout": "Vertical split on portrait (tablet/mobile). Top 35% is the active order basket (solid surfaceSecondary with strict boundaries, swipe-to-delete rows). Bottom 65% is the menu: segmented control for categories (glass pinned at top of menu), 2-column grid for items. Items are text/icon focused with massive touch targets. Add a persistent sticky 'Send to Kitchen' primary CTA at the absolute bottom."
+    },
+    {
+      "name": "Kitchen Display System (KDS)",
+      "purpose": "High-visibility, action-oriented ticket management for kitchen staff.",
+      "states": {
+        "loading": "Connecting to WebSocket indicator.",
+        "empty": "Clean screen with 'All Caught Up' message and a large checkmark icon.",
+        "error": "Loud, unmissable offline banner across the top."
+      },
+      "layout": "Adaptive grid of ticket cards (single column on mobile, multi-column on tablet). The entire ticket acts as a touch target to 'Bump'. Use display-size typography. States shift ticket background heavily: fresh (surfaceSecondary) -> warning (warning tint) -> late (error tint) for peripheral readability. No glassmorphism here for maximum contrast."
+    },
+    {
+      "name": "Billing & Checkout",
+      "purpose": "Finalize payment with dynamic UPI QR and print options.",
+      "states": {
+        "loading": "Generating invoice...",
+        "empty": "No active bill selected.",
+        "error": "Failed to generate QR."
+      },
+      "layout": "Centered receipt view resembling thermal print structure but elevated. Large Dynamic UPI QR code prominently displayed in a surfaceSecondary card. Sticky bottom actions for 'Print Thermal', 'Share PDF', and 'Mark Paid'."
+    }
+  ],
+  "images": {
+    "auth_background": {
+      "url": "https://images.pexels.com/photos/10633476/pexels-photo-10633476.jpeg",
+      "dark": "https://images.pexels.com/photos/6634140/pexels-photo-6634140.jpeg",
+      "alt": "Luxury restaurant interior"
+    },
+    "menu_category_sushi": {
+      "url": "https://images.pexels.com/photos/7719911/pexels-photo-7719911.jpeg",
+      "alt": "Sushi platter"
+    },
+    "dashboard_hero_bg": {
+      "url": "https://images.pexels.com/photos/18325786/pexels-photo-18325786.jpeg",
+      "dark": "https://images.pexels.com/photos/18325786/pexels-photo-18325786.jpeg",
+      "alt": "Dark marble texture"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the Glass / Luxe aesthetic: deep darks, translucent surfaces over tinted bases, and single jewel-tone accent (Antique Gold).",
+    "For the Waiter Ordering screen: Follow the vertical split-screen layout strictly. Active order on top (35% height), scrollable menu grid on the bottom. Add swipe-to-delete gestures on the order items.",
+    "For KDS: Prioritize high-contrast, large typography, and massive touch targets. Forego glassmorphism entirely on this specific screen to ensure arm's length readability.",
+    "Ensure all text rendered over images uses a vertical top-to-bottom gradient scrim (transparent to ≥70% surfaceInverse) to guarantee contrast.",
+    "Implement dynamic light and dark themes using the provided color tokens. Ensure UI correctly responds to system theme changes.",
+    "Keep typography weights at 400 or 500 max. Rely on size for hierarchy (e.g., Cormorant Garamond for prominent display headings, Satoshi for body)."
+  ],
+  "haptics": {
+    "primary_button_press": "impactLight",
+    "tab_change": "selection",
+    "swipe_delete": "impactMedium",
+    "ticket_bump": "impactHeavy",
+    "add_to_order": "impactLight"
+  }
+}

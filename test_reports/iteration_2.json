@@ -1,0 +1,48 @@
+{
+  "summary": "Phase 2 end-to-end verified. Backend: 20/21 phase2 tests PASSED (test_lumina_backend.py phase1: 21/21 still green from prior). Tables CRUD, Waiters CRUD, /auth/staff-login (happy path + wrong phone → 401 'Restaurant phone not found' + wrong PIN → 401 'Invalid PIN'), /restaurant now accepts phone+gst_enabled, PATCH /menu-items partial update, /bills with gst_enabled=true correctly splits cgst=sgst=tax/2 and includes restaurant_snapshot{name,address,phone,gst,fssai,logo_base64}, items[], and table_number; gst_enabled=false override yields tax=0. Super Admin endpoints all green: /admin/summary returns total_restaurants/users/owners/waiters/active_subscriptions/mrr/arr, /admin/restaurants list+detail (owner_email joined, orders_total, revenue_total), /admin/users returns no password, /admin/users/{id} owner reset-password works, self-delete blocked (400), /admin/restaurants/{tid} cascade delete verified (untenanted user, sub-collections purged), plan CRUD + subscription assign/cancel + MRR math verified (adding a Monthly ₹499 bumps mrr by 499). Seeded plans Monthly ₹499/month + Yearly ₹4999/year present on /plans and /admin/plans. RBAC: non-super_admin owner → 403 on all /admin/* endpoints. FRONTEND (390×844): Landing shows all 3 CTAs (landing-login-btn, landing-staff-btn, landing-register-btn). Super admin login → Admin Console renders with metrics (Restaurants=9, Users=16, MRR=₹0). nav-admin-restaurants navigates to Restaurants list; cards use testID `admin-rest-{id}` (spec used `admin-rest-card-*` — NOT that name). nav-admin-users renders 16 users with role filter chips using testID `admin-users-chip-{role}` (spec called them `user-filter-*`). nav-admin-plans shows Monthly ₹499 + Yearly ₹4999 with delete + New Plan controls. Staff login as Ravi/9409198630/4321 → lands on dashboard → Waiter tab shows Table 5 chip (`waiter-table-*`), search input, animated `waiter-subtotal`, add per-item (`waiter-add-{id}`), Send to Kitchen navigates to /billing?orderId=... Billing shows `bill-gst-toggle` ON, generates bill with CGST ₹2.50 + SGST ₹2.50 = Total ₹105, `bill-qr-image` renders scannable QR, `bill-print-btn` clicks OK (uses window.print on web). Menu food image auto-fetched via loremflickr and rendered as background of item card in waiter list. No deprecated Expo packages found.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/admin/users/{uid}/reset-password", "issue": "ResetPasswordIn.new_password has Pydantic `min_length=6` at the model level, but the handler is documented (and expected by tests) to accept 4–6 digit PINs for role=waiter. Result: resetting a waiter's PIN via admin returns 422 (Pydantic validation error) BEFORE the handler runs, making the waiter-PIN reset flow impossible. Fix: relax min_length to 4 in the schema, then let the handler enforce the 4–6-digit rule for waiters and require ≥6 chars for non-waiters. Reference: /app/backend/server.py:571-572 and :655-660.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "billing.tsx Share PDF button", "issue": "Clicking `bill-share-btn` on web throws a runtime error 'Share failed: Cannot destructure property \\'uri\\' of ...' visible as a red inline banner on the bill screen. expo-sharing / Print.printToFileAsync PDF flow is not supported on web; the button should either be hidden on Platform.OS==='web' or fall back to window.print/download. Print button works correctly.", "testID": "bill-share-btn", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "billing (bill generated view)", "issues": [
+        "Error banner appears below the primary action buttons and pushes 'Mark as Paid' close to the tab bar on 390x844. Consider showing errors as a toast/snackbar instead of a persistent block."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_backend.py",
+    "/app/backend/tests/test_lumina_backend.py",
+    "/app/test_reports/pytest/phase2_results.xml"
+  ],
+  "action_items": [
+    "Backend HIGH: relax ResetPasswordIn.new_password to min_length=4 so admin PIN reset for waiters (4-digit) actually reaches the handler. Currently returns 422 and blocks the whole waiter-password-reset admin feature.",
+    "Frontend MED: hide or gracefully degrade the `bill-share-btn` (Share PDF) on Platform.OS==='web' — currently throws 'Cannot destructure property uri'. Print works fine.",
+    "Frontend LOW: align testID names with review spec — cards on admin-restaurants use `admin-rest-{id}` (spec asked for `admin-rest-card-*`); user filter chips use `admin-users-chip-{role}` (spec asked for `user-filter-*`). Either update the spec or rename the testIDs for consistency.",
+    "Frontend LOW: on the Billing screen show the Share-error as a toast/dialog instead of an inline banner that pushes 'Mark as Paid' under the tab bar."
+  ],
+  "critical_code_review_comments": [
+    "server.py:571 — `ResetPasswordIn(min_length=6)` contradicts the 4-6 digit PIN rule enforced inside the handler for waiters; move the validation entirely into the handler or lower the schema minimum.",
+    "server.py:412-420 — /auth/staff-login uses plaintext PIN comparison (`db.users.find_one({..., 'pin': payload.pin})`). Acceptable for tenant-scoped PINs but worth flagging: consider hashing or at least a rate-limit on this endpoint.",
+    "server.py:485-487 — UPI URL builds merchant_name via `.replace(' ', '%20')` only — other special characters aren't percent-encoded. Use urllib.parse.quote for safety.",
+    "server.py:582-593 — MRR sums float(price) with plain arithmetic; use `Decimal` if plans ever include non-INR / fractional pricing to avoid float rounding drift.",
+    "billing.tsx — Share error should be caught and either hidden on web or shown as a transient toast."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_backend.py (new — 21 tests for Phase 2)"
+  ],
+  "success_rate": {"backend": "95% (20/21 phase2 + 21/21 phase1)", "frontend": "~95% — all critical Phase 2 flows work; only Share PDF on web errors"},
+  "seed_data_creation": "Created TEST_p2owner_* + TEST_del_* users, TEST P2 Diner tenant with phone/gst/fssai, Ravi waiter (pin 4321), TEST P2 Cat + TEST Dosa, plus browser-flow ui_p2_1784356505@test.co / UI P2 Diner / Ravi / phone 9409198630 used for the end-to-end frontend run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Actual frontend testIDs shipped for Phase 2: staff-login → `staff-phone-input`, `staff-pin-input`; tables → `table-label-input`, `table-seats-input`, `table-add-btn`; staff (waiters) → `waiter-name-input`, `waiter-pin-input`, `waiter-add-btn`; more → `rest-name-input`, `rest-owner_name-input`, `rest-phone-input`, `rest-gst-toggle`, `rest-upi_id-input`, `rest-merchant_name-input`, `rest-save-btn`; waiter → `waiter-table-{id}`, `waiter-add-{itemId}`, `waiter-subtotal`, `waiter-search-input`, `wchip-all`, `wchip-{catId}`, `waiter-send-btn`; billing → `bill-gst-toggle`, `bill-tax-input`, `bill-discount-input`, `bill-generate-btn`, `bill-print-btn`, `bill-share-btn`, `bill-qr-image`, `bill-mark-paid-btn`; admin → `admin-console`, `admin-metric-restaurants`, `admin-metric-users`, `admin-metric-mrr`, `nav-admin-restaurants`, `nav-admin-users`, `nav-admin-plans`, `admin-rest-{id}`, `admin-assign-plan-{planId}`, `admin-rest-cancel-sub`, `admin-rest-delete`, `admin-users-chip-{role}`, `admin-user-{id}`, `admin-user-newpw-input`, `admin-user-reset-btn`, `admin-user-delete-btn`. The Waiter web session works via router.replace only after a same-page login (opening a fresh /waiter URL loses the SecureStore token). Prefer login → click 'Waiter' tab. Share PDF fails on web; test only Print.",
+  "rca_of_issue": "Waiter PIN reset failure — Pydantic model `ResetPasswordIn` declares `new_password: str = Field(min_length=6)` on server.py:571. The admin handler then intends to further validate for role=waiter that the value is 4-6 digits, but by the time the handler runs, Pydantic has already rejected any 4- or 5-digit PIN with HTTP 422. Reproduction: POST /api/admin/users/<waiter_id>/reset-password body {\"new_password\":\"1234\"} → 422 Unprocessable Entity, detail: 'string_too_short'. Mitigation: change min_length to 4 on the schema (or drop the constraint entirely) and rely on the handler's role-based branch (waiters: `4 <= len <= 6` and digits; others: len >= 6). Share PDF error RCA: expo-sharing on web calls `Print.printToFileAsync` which returns undefined uri on Platform.OS==='web'; destructuring throws. Gate the button behind Platform.OS !== 'web' or wrap in try/catch that falls back to window.print()."
+}
