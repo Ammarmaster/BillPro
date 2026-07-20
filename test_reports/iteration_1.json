@@ -1,0 +1,45 @@
+{
+  "summary": "Phase 1 backend + frontend end-to-end verified. Backend: 21/21 pytest tests PASSED covering auth (register/login/me/refresh, duplicate & wrong-password rejections), RBAC (super_admin hitting tenant endpoints returns 400 'Restaurant not set up'), restaurant onboarding (tenant_id assigned to owner), categories, menu-items, orders (placed→in_kitchen→ready→served), bills (5% tax math, UPI deep-link, mark-paid also flips order to served), dashboard summary metrics, and multi-tenant isolation (Tenant B cannot see Tenant A's cats/items/orders). Frontend: full happy-path executed on mobile viewport 390x844 — landing → sign-in as super admin shows 'Set up your restaurant' prompt correctly; register new owner → dashboard → More → save restaurant (Restaurant saved.) → Menu add Category & Item → Waiter set table, add items, subtotal ₹80 → Send to Kitchen navigates to /billing → Generate Bill shows total ₹84 with UPI QR code image visible → Mark Paid flips status to PAID → Dashboard metrics update (Revenue Today ₹84, Total Revenue ₹84, Menu Items 1). Kitchen screen renders empty-state cleanly; state transitions verified via API. No deprecated Expo packages (no expo-av / expo-barcode-scanner / expo-background-fetch). Only issue: a React Native web console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' emitted by an upstream RN dep.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "menu (New Category / New Menu Item modal)", "issues": [
+        "Bottom-sheet modal actions (Cancel/Save) sit right against the screen bottom edge on 390x844 without safe-area bottom inset — Playwright reports the button as 'outside of the viewport' occasionally during the modal slide-in. Add paddingBottom = useSafeAreaInsets().bottom + spacing.md to modalCard to guarantee tap area on notched devices."
+      ]}
+    ],
+    "react_native_issues": [
+      {"component": "pointerEvents prop (RN web)", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Likely coming from a react-native-web dependency (Modal/Pressable). Non-blocking but should be tracked. Reference: emitted from any screen using <Modal>."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_lumina_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add safe-area bottom padding to menu.tsx modalCard (and any other bottom-sheet modals) so Save/Cancel buttons are guaranteed tappable on notched devices.",
+    "Investigate the 'props.pointerEvents is deprecated' RN-web warning — search components for <View pointerEvents=...> and migrate to style.pointerEvents.",
+    "Optional: add testID on Tabs.Screen items (tab-dashboard/menu/waiter/kitchen/more) — currently tabs have to be navigated via URL, which the review-request originally implied were testID'd."
+  ],
+  "critical_code_review_comments": [
+    "server.py: PATCH /orders/{oid}/status permits any authenticated tenant user to change status; consider restricting to owner/manager/kitchen/waiter roles like other endpoints.",
+    "server.py: /restaurant POST used for both create AND update (upsert-style) — fine for Phase 1 but rename to PUT semantically or split for clarity.",
+    "server.py: /dashboard/summary uses string prefix match on paid_at for today — works only because timestamps are ISO UTC; document this or use a proper date range query.",
+    "server.py: JWT_SECRET default fallback via env is fine; ensure prod deploy overrides the placeholder in .env."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_lumina_backend.py (new)",
+    "/app/backend/tests/conftest.py (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% of happy-path flows exercised"},
+  "seed_data_creation": "Created several TEST_owner_* users, TEST Restaurant A/B, TEST Starters category, TEST Paneer Tikka item, and multiple orders/bills via pytest. Also created UI-flow users (ui_*, ui2_*, ui3_*, ui4_*, kit_*) with 'UI Diner' / 'K' restaurants. All test data is prefixed for easy cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend testIDs actually shipped: rest-{key}-input on More (rest-name-input, rest-owner_name-input, rest-upi_id-input, rest-merchant_name-input), cat-name-input / cat-save-btn / item-name-input / item-price-input / item-cat-chip-{id} / item-save-btn on Menu modals, waiter-subtotal, ticket-advance-{id} on Kitchen, bill-generate-btn / bill-mark-paid-btn / bill-qr-image / bill-status / bill-total on Billing. Tab bar has NO testIDs — navigate via router.push or page.goto('/dashboard' | '/menu' | '/waiter' | '/kitchen' | '/more'). Bottom-sheet modal buttons sometimes report as 'outside viewport' to Playwright during slide-in animation on 390x844 — use JS click (element.click() via page.evaluate) as a reliable workaround. QR image is rendered by expo-image which does not expose a standard <img src> attribute on web; assert on element presence instead of src.",
+  "rca_of_issue": "No functional bugs found. Modal button offscreen issue is a design/safe-area miss on the bottom sheet — buttons still render inside the sheet, but there is no bottom inset padding, so on devices with home-indicator area (or during Playwright's mid-animation hit-testing) the click target is flagged offscreen. Mitigation: paddingBottom: insets.bottom + spacing.md on modalCard in menu.tsx (and any similar modals)."
+}
