@@ -236,6 +236,24 @@ async def me(user: dict = Depends(get_current_user)):
     return user
 
 
+@api.delete("/auth/delete-account")
+async def delete_my_account(user: dict = Depends(get_current_user)):
+    uid = user["id"]
+    tid = user.get("tenant_id")
+    if user["role"] == "owner" and tid:
+        await db.restaurants.delete_one({"id": tid})
+        await db.categories.delete_many({"tenant_id": tid})
+        await db.menu_items.delete_many({"tenant_id": tid})
+        await db.tables.delete_many({"tenant_id": tid})
+        await db.orders.delete_many({"tenant_id": tid})
+        await db.bills.delete_many({"tenant_id": tid})
+        await db.subscriptions.delete_many({"tenant_id": tid})
+        await db.users.delete_many({"tenant_id": tid})
+    else:
+        await db.users.delete_one({"id": uid})
+    return {"ok": True}
+
+
 @api.post("/auth/refresh", response_model=TokenOut)
 async def refresh(authorization: Optional[str] = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -263,7 +281,7 @@ async def create_or_update_restaurant(payload: RestaurantIn, user: dict = Depend
         rest = await db.restaurants.find_one({"id": tenant_id}, {"_id": 0})
         return rest
     tenant_id = str(uuid.uuid4())
-    doc = {"id": tenant_id, **payload.dict(), "owner_user_id": user["id"], "created_at": now, "updated_at": now}
+    doc = {"id": tenant_id, **payload.dict(), "owner_user_id": user["id"], "is_read": False, "created_at": now, "updated_at": now}
     await db.restaurants.insert_one(doc)
     await db.users.update_one({"id": user["id"]}, {"$set": {"tenant_id": tenant_id}})
     doc.pop("_id", None)
@@ -523,10 +541,15 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
     return bill
 
 
+class PayIn(BaseModel):
+    payment_method: str = "UPI"
+
+
 @api.patch("/bills/{bid}/pay")
-async def mark_bill_paid(bid: str, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
-    res = await db.bills.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc).isoformat()}})
+    pm = (payload and payload.payment_method) or "UPI"
+    res = await db.bills.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Bill not found")
     bill = await db.bills.find_one({"id": bid}, {"_id": 0})
@@ -545,20 +568,73 @@ async def list_bills(user: dict = Depends(get_current_user)):
 @api.get("/dashboard/summary")
 async def dashboard_summary(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    today = datetime.now(timezone.utc).date().isoformat()
-    orders = await db.orders.count_documents({"tenant_id": tid})
+    now = datetime.now(timezone.utc)
+    today_str = now.date().isoformat()
+
+    orders_total = await db.orders.count_documents({"tenant_id": tid})
     open_orders = await db.orders.count_documents({"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready"]}})
+    pending_count = await db.orders.count_documents({"tenant_id": tid, "status": "placed"})
+    cooking_count = await db.orders.count_documents({"tenant_id": tid, "status": "in_kitchen"})
+    ready_count = await db.orders.count_documents({"tenant_id": tid, "status": "ready"})
+
+    total_tables = await db.tables.count_documents({"tenant_id": tid})
+    occupied_tables = await db.tables.count_documents({"tenant_id": tid, "occupied": True})
+    tables_free = max(0, total_tables - occupied_tables) if total_tables > 0 else 5
+
     paid_bills = await db.bills.find({"tenant_id": tid, "status": "paid"}, {"_id": 0}).to_list(2000)
     revenue_total = round(sum(b.get("total", 0) for b in paid_bills), 2)
-    revenue_today = round(sum(b.get("total", 0) for b in paid_bills if b.get("paid_at", "").startswith(today)), 2)
+
+    today_bills = [
+        b for b in paid_bills
+        if (b.get("paid_at") and str(b.get("paid_at"))[:10] == today_str) or
+           (b.get("created_at") and str(b.get("created_at"))[:10] == today_str)
+    ]
+    revenue_today = round(sum(b.get("total", 0) for b in today_bills), 2)
+    avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / len(paid_bills), 2) if paid_bills else 0)
+
+    # Last 7 days revenue calculation
+    last_7_days = []
+    for i in range(6, -1, -1):
+        day_date = (now - timedelta(days=i)).date()
+        day_str = day_date.isoformat()
+        day_label = day_date.strftime("%m-%d")
+        day_rev = round(sum(
+            b.get("total", 0) for b in paid_bills
+            if (b.get("paid_at") and str(b.get("paid_at"))[:10] == day_str) or
+               (b.get("created_at") and str(b.get("created_at"))[:10] == day_str)
+        ), 2)
+        last_7_days.append({"date": day_label, "revenue": day_rev})
+
+    # Top selling items calculation
+    item_sales = {}
+    for b in today_bills:
+        for item in b.get("items", []):
+            name = item.get("name", "Item")
+            qty = item.get("quantity", 1)
+            price = item.get("price", 0) * qty
+            if name not in item_sales:
+                item_sales[name] = {"name": name, "sold": 0, "amount": 0}
+            item_sales[name]["sold"] += qty
+            item_sales[name]["amount"] += price
+
+    top_selling = sorted(list(item_sales.values()), key=lambda x: x["sold"], reverse=True)[:5]
+
     menu_count = await db.menu_items.count_documents({"tenant_id": tid})
     return {
-        "orders_total": orders,
+        "orders_total": orders_total,
         "orders_open": open_orders,
+        "pending_count": pending_count,
+        "cooking_count": cooking_count,
+        "ready_count": ready_count,
+        "tables_free": tables_free,
         "revenue_total": revenue_total,
         "revenue_today": revenue_today,
+        "avg_bill": avg_bill,
         "menu_count": menu_count,
+        "last_7_days": last_7_days,
+        "top_selling": top_selling,
     }
+
 
 
 # ---------- SUPER ADMIN ----------
@@ -580,29 +656,49 @@ class ResetPasswordIn(BaseModel):
 
 
 @api.get("/admin/summary")
-async def admin_summary(user: dict = Depends(require_roles("super_admin"))):
-    total_restaurants = await db.restaurants.count_documents({})
-    total_users = await db.users.count_documents({})
-    total_owners = await db.users.count_documents({"role": "owner"})
-    total_waiters = await db.users.count_documents({"role": "waiter"})
-    active_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0}).to_list(2000)
-    # Compute MRR: monthly plans + yearly plans / 12
-    mrr = 0.0
-    for s in active_subs:
-        mrr += float(s.get("price", 0)) if s.get("interval") == "month" else float(s.get("price", 0)) / 12
-    return {
-        "total_restaurants": total_restaurants,
-        "total_users": total_users,
-        "total_owners": total_owners,
-        "total_waiters": total_waiters,
-        "active_subscriptions": len(active_subs),
-        "mrr": round(mrr, 2),
-        "arr": round(mrr * 12, 2),
-    }
+async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    try:
+        total_restaurants = await db.restaurants.count_documents({})
+        total_users = await db.users.count_documents({})
+        total_owners = await db.users.count_documents({"role": "owner"})
+        total_waiters = await db.users.count_documents({"role": "waiter"})
+        active_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0}).to_list(2000)
+        # Compute MRR safely: monthly plans + yearly plans / 12
+        mrr = 0.0
+        for s in active_subs:
+            try:
+                price = float(s.get("price") or 0)
+                interval = s.get("interval", "month")
+                if interval == "year":
+                    mrr += price / 12
+                else:
+                    mrr += price
+            except:
+                pass
+        return {
+            "total_restaurants": total_restaurants,
+            "total_users": total_users,
+            "total_owners": total_owners,
+            "total_waiters": total_waiters,
+            "active_subscriptions": len(active_subs),
+            "mrr": round(mrr, 2),
+            "arr": round(mrr * 12, 2),
+        }
+    except Exception as e:
+        logger.error(f"Error in admin_summary: {e}")
+        return {
+            "total_restaurants": 0,
+            "total_users": 0,
+            "total_owners": 0,
+            "total_waiters": 0,
+            "active_subscriptions": 0,
+            "mrr": 0.0,
+            "arr": 0.0,
+        }
 
 
 @api.get("/admin/restaurants")
-async def admin_list_restaurants(user: dict = Depends(require_roles("super_admin"))):
+async def admin_list_restaurants(user: dict = Depends(require_roles("super_admin", "admin_employee"))):
     rests = await db.restaurants.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
     out = []
     for r in rests:
@@ -619,12 +715,13 @@ async def admin_list_restaurants(user: dict = Depends(require_roles("super_admin
             "gst": r.get("gst", ""),
             "created_at": r.get("created_at"),
             "subscription": sub,
+            "is_read": r.get("is_read", False),
         })
     return out
 
 
 @api.get("/admin/restaurants/{tid}")
-async def admin_restaurant_detail(tid: str, user: dict = Depends(require_roles("super_admin"))):
+async def admin_restaurant_detail(tid: str, user: dict = Depends(require_roles("super_admin", "admin_employee"))):
     r = await db.restaurants.find_one({"id": tid}, {"_id": 0})
     if not r:
         raise HTTPException(status_code=404, detail="Restaurant not found")
@@ -633,6 +730,12 @@ async def admin_restaurant_detail(tid: str, user: dict = Depends(require_roles("
     revenue = round(sum(b.get("total", 0) for b in paid), 2)
     sub = await db.subscriptions.find_one({"tenant_id": tid}, {"_id": 0}, sort=[("created_at", -1)])
     return {**r, "orders_total": orders_total, "revenue_total": revenue, "subscription": sub}
+
+
+@api.post("/admin/restaurants/{tid}/read")
+async def admin_mark_restaurant_read(tid: str, user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    await db.restaurants.update_one({"id": tid}, {"$set": {"is_read": True}})
+    return {"ok": True}
 
 
 @api.delete("/admin/restaurants/{tid}")
@@ -652,6 +755,55 @@ async def admin_delete_restaurant(tid: str, user: dict = Depends(require_roles("
 async def admin_list_users(user: dict = Depends(require_roles("super_admin"))):
     users = await db.users.find({}, {"_id": 0, "password": 0}).sort("created_at", -1).to_list(5000)
     return users
+
+
+class CreateUserIn(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    role: str
+
+
+@api.post("/admin/users")
+async def admin_create_user(payload: CreateUserIn, user: dict = Depends(require_roles("super_admin"))):
+    exists = await db.users.find_one({"email": payload.email.lower()})
+    if exists:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    uid = str(uuid.uuid4())
+    doc = {
+        "id": uid,
+        "email": payload.email.lower(),
+        "password": hash_pw(payload.password),
+        "full_name": payload.full_name,
+        "role": payload.role,
+        "tenant_id": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(doc)
+    doc.pop("_id", None)
+    doc.pop("password", None)
+    return doc
+
+
+class UpdateUserIn(BaseModel):
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+
+
+@api.patch("/admin/users/{uid}")
+async def admin_update_user(uid: str, payload: UpdateUserIn, user: dict = Depends(require_roles("super_admin"))):
+    upd = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+    if "email" in upd:
+        upd["email"] = upd["email"].lower()
+        exists = await db.users.find_one({"email": upd["email"], "id": {"$ne": uid}})
+        if exists:
+            raise HTTPException(status_code=400, detail="Email already in use")
+    res = await db.users.update_one({"id": uid}, {"$set": upd})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    target = await db.users.find_one({"id": uid}, {"_id": 0, "password": 0})
+    return target
 
 
 @api.post("/admin/users/{uid}/reset-password")
@@ -756,8 +908,18 @@ class VerifyIn(BaseModel):
 
 @api.get("/subscriptions/mine")
 async def my_subscription(user: dict = Depends(get_current_user)):
-    tid = await _ensure_tenant(user)
-    sub = await db.subscriptions.find_one({"tenant_id": tid}, {"_id": 0}, sort=[("created_at", -1)])
+    tid = user.get("tenant_id")
+    sub = await db.subscriptions.find_one(
+        {"$or": [{"tenant_id": tid}, {"user_id": user["id"]}]} if tid else {"user_id": user["id"]},
+        {"_id": 0},
+        sort=[("created_at", -1)]
+    )
+    if sub and tid and sub.get("tenant_id") != tid:
+        await db.subscriptions.update_many(
+            {"user_id": user["id"]},
+            {"$set": {"tenant_id": tid}}
+        )
+        sub["tenant_id"] = tid
     return sub
 
 
@@ -765,7 +927,7 @@ async def my_subscription(user: dict = Depends(get_current_user)):
 async def checkout(payload: CheckoutIn, user: dict = Depends(require_roles("owner", "manager"))):
     if not razorpay_client:
         raise HTTPException(status_code=503, detail="Razorpay not configured")
-    tid = await _ensure_tenant(user)
+    tid = user.get("tenant_id") or user["id"]
     plan = await db.plans.find_one({"id": payload.plan_id, "is_active": True}, {"_id": 0})
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -811,7 +973,7 @@ async def checkout(payload: CheckoutIn, user: dict = Depends(require_roles("owne
 async def verify_payment(payload: VerifyIn, user: dict = Depends(require_roles("owner", "manager"))):
     if not razorpay_client:
         raise HTTPException(status_code=503, detail="Razorpay not configured")
-    tid = await _ensure_tenant(user)
+    tid = user.get("tenant_id") or user["id"]
     try:
         razorpay_client.utility.verify_payment_signature({
             "razorpay_order_id": payload.razorpay_order_id,
@@ -828,10 +990,14 @@ async def verify_payment(payload: VerifyIn, user: dict = Depends(require_roles("
         {"$set": {"status": "paid", "razorpay_payment_id": payload.razorpay_payment_id, "paid_at": datetime.now(timezone.utc).isoformat()}},
     )
     # Deactivate any prior active subs, insert new active sub
-    await db.subscriptions.update_many({"tenant_id": tid, "status": "active"}, {"$set": {"status": "cancelled"}})
+    await db.subscriptions.update_many(
+        {"$or": [{"tenant_id": tid}, {"user_id": user["id"]}], "status": "active"},
+        {"$set": {"status": "cancelled"}}
+    )
     sub = {
         "id": str(uuid.uuid4()),
-        "tenant_id": tid,
+        "tenant_id": user.get("tenant_id"),
+        "user_id": user["id"],
         "plan_id": plan["id"],
         "plan_name": plan["name"],
         "price": plan["price"],

@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/context/AuthContext";
+import { ThemeProvider } from "@/src/context/ThemeContext";
 import { colors } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
@@ -17,6 +18,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded || error) SplashScreen.hideAsync();
+    if (typeof document !== "undefined") {
+      document.title = "EzBill - Smart Restaurant POS & ERP";
+    }
   }, [loaded, error]);
 
   if (!loaded && !error) return null;
@@ -24,10 +28,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
       <SafeAreaProvider>
-        <StatusBar barStyle="light-content" backgroundColor={colors.surface} />
-        <AuthProvider>
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+          </AuthProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

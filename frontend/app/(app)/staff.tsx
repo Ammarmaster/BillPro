@@ -48,7 +48,7 @@ export default function StaffScreen() {
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="staff-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} testID="staff-back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.push("/(app)/more")} testID="staff-back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Waiters</Text>
@@ -58,7 +58,7 @@ export default function StaffScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.hint}>Waiters sign in with restaurant phone + their PIN.</Text>
+      <Text style={styles.hint}>Employees sign in with business phone + their PIN.</Text>
 
       {newlyCreated && (
         <View style={styles.newCard} testID="staff-new-banner">
@@ -139,26 +139,26 @@ export default function StaffScreen() {
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
-  title: { color: colors.onSurface, fontSize: 24, fontFamily: "serif" },
+  title: { color: colors.onSurface, fontSize: 24, fontWeight: "700" },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.brand },
   addBtnText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
-  hint: { color: colors.onSurfaceTertiary, paddingHorizontal: spacing.xl, marginBottom: spacing.md },
+  hint: { color: colors.onSurfaceTertiary, paddingHorizontal: spacing.xl, marginBottom: spacing.md, fontSize: 13 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
   card: { flexDirection: "row", alignItems: "center", padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, gap: spacing.md },
-  wName: { color: colors.onSurface, fontSize: 16 },
-  wPin: { color: colors.brand, fontSize: 13, marginTop: 4, letterSpacing: 2 },
+  wName: { color: colors.onSurface, fontSize: 16, fontWeight: "600" },
+  wPin: { color: colors.brand, fontSize: 13, marginTop: 4, letterSpacing: 2, fontWeight: "700" },
   newCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: spacing.md, backgroundColor: colors.success, borderRadius: radius.lg },
-  newTitle: { color: colors.onSuccess, fontSize: 13 },
+  newTitle: { color: colors.onSuccess, fontSize: 13, fontWeight: "600" },
   newPin: { color: colors.onSuccess, fontSize: 18, letterSpacing: 3, marginTop: 2, fontWeight: "700" },
   err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end" },
   modalCard: { backgroundColor: colors.surfaceSecondary, padding: spacing.xl, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, gap: spacing.md },
-  modalTitle: { color: colors.onSurface, fontSize: 20, fontFamily: "serif", marginBottom: spacing.sm },
+  modalTitle: { color: colors.onSurface, fontSize: 20, fontWeight: "700", marginBottom: spacing.sm },
   modalHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
   input: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, padding: spacing.md, color: colors.onSurface, borderWidth: 1, borderColor: colors.border },
   modalActions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
   ghostBtn: { flex: 1, paddingVertical: 14, borderRadius: radius.md, alignItems: "center", borderWidth: 1, borderColor: colors.borderStrong },
-  ghostBtnText: { color: colors.onSurface },
+  ghostBtnText: { color: colors.onSurface, fontWeight: "600" },
   primaryBtn: { flex: 1, paddingVertical: 14, borderRadius: radius.md, alignItems: "center", backgroundColor: colors.brand },
-  primaryText: { color: colors.onBrand, fontWeight: "600" },
+  primaryText: { color: colors.onBrand, fontWeight: "700" },
 });

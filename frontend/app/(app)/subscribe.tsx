@@ -7,6 +7,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
+import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius } from "@/src/theme";
 
 type Plan = { id: string; name: string; price: number; interval: string; features: string[] };
@@ -14,6 +15,7 @@ type Plan = { id: string; name: string; price: number; interval: string; feature
 export default function Subscribe() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [sub, setSub] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -58,7 +60,14 @@ export default function Subscribe() {
           plan_id: currentPlanRef.current.id,
         });
         setSub(verified);
-        setMsg("Subscription activated!");
+        setMsg(`Subscription activated! Unlocking ${verified.plan_name || 'plan'}...`);
+        setTimeout(() => {
+          if (!user?.tenant_id) {
+            router.replace("/onboarding");
+          } else {
+            router.replace("/(app)/dashboard");
+          }
+        }, 2000);
       } else if (data.type === "cancel") {
         setCheckoutHtml(null);
         setErr("Checkout cancelled.");
@@ -75,7 +84,7 @@ export default function Subscribe() {
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="subscribe-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} testID="subscribe-back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.push("/(app)/more")} testID="subscribe-back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Subscription</Text>
@@ -84,12 +93,27 @@ export default function Subscribe() {
 
       <ScrollView contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.md }}>
         {activePlan && (
-          <View style={styles.activeCard} testID="subscription-active-banner">
-            <Ionicons name="checkmark-circle" size={24} color={colors.onSuccess} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.activeTitle}>{activePlan.plan_name} · Active</Text>
-              <Text style={styles.activeSub}>₹{activePlan.price}/{activePlan.interval}</Text>
+          <View style={{ gap: spacing.sm }}>
+            <View style={styles.activeCard} testID="subscription-active-banner">
+              <Ionicons name="checkmark-circle" size={24} color={colors.onSuccess} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.activeTitle}>{activePlan.plan_name} · Active</Text>
+                <Text style={styles.activeSub}>₹{activePlan.price}/{activePlan.interval}</Text>
+              </View>
             </View>
+            <Pressable
+              style={[styles.subBtn, { backgroundColor: colors.success, marginTop: 0 }]}
+              onPress={() => {
+                if (!user?.tenant_id) {
+                  router.replace("/onboarding");
+                } else {
+                  router.replace("/(app)/dashboard");
+                }
+              }}
+              testID="go-to-dashboard-btn"
+            >
+              <Text style={styles.subBtnText}>Go to Dashboard →</Text>
+            </Pressable>
           </View>
         )}
 
@@ -159,7 +183,7 @@ function buildCheckoutHtml(co: any): string {
     amount: co.amount,
     currency: co.currency,
     order_id: co.order_id,
-    name: "Lumina ERP",
+    name: "EzBill",
     description: `${co.plan_name} · ₹${(co.amount / 100).toFixed(0)}/${co.interval}`,
     prefill: co.prefill,
     notes: co.notes,
@@ -191,22 +215,22 @@ function buildCheckoutHtml(co: any): string {
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
-  title: { color: colors.onSurface, fontSize: 22, fontFamily: "serif" },
-  section: { color: colors.onSurfaceSecondary, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", marginTop: spacing.md },
+  title: { color: colors.onSurface, fontSize: 22, fontWeight: "700" },
+  section: { color: colors.onSurfaceSecondary, fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", marginTop: spacing.md },
   activeCard: { flexDirection: "row", gap: spacing.md, padding: spacing.lg, backgroundColor: colors.success, borderRadius: radius.lg, alignItems: "center" },
-  activeTitle: { color: colors.onSuccess, fontSize: 16, fontWeight: "600" },
+  activeTitle: { color: colors.onSuccess, fontSize: 16, fontWeight: "700" },
   activeSub: { color: colors.onSuccess, fontSize: 13, marginTop: 2 },
   planCard: { padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.brandTertiary, gap: spacing.sm },
   planHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: spacing.sm },
-  planName: { color: colors.onSurface, fontSize: 20, fontFamily: "serif" },
-  planPrice: { color: colors.brand, fontSize: 26, fontFamily: "serif" },
+  planName: { color: colors.onSurface, fontSize: 18, fontWeight: "700" },
+  planPrice: { color: colors.brand, fontSize: 24, fontWeight: "700" },
   perUnit: { color: colors.onSurfaceSecondary, fontSize: 13 },
   featureRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
   featureText: { color: colors.onSurfaceSecondary, fontSize: 13, flex: 1 },
   subBtn: { backgroundColor: colors.brand, paddingVertical: 14, borderRadius: radius.md, alignItems: "center", marginTop: spacing.md },
-  subBtnText: { color: colors.onBrand, fontWeight: "600", fontSize: 14, letterSpacing: 0.5 },
+  subBtnText: { color: colors.onBrand, fontWeight: "700", fontSize: 14, letterSpacing: 0.3 },
   err: { color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.sm },
   msg: { color: colors.onSuccess, backgroundColor: colors.success, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.sm },
-  webviewHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.xl, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: "#eee", backgroundColor: "#fff" },
-  webviewTitle: { fontSize: 16, fontWeight: "600", color: "#111" },
+  webviewHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.xl, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
+  webviewTitle: { fontSize: 16, fontWeight: "700", color: colors.onSurface },
 });

@@ -32,10 +32,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const t = await getAccess();
       if (!t) { setUser(null); return; }
       const me = await api.me();
-      setUser(me);
-    } catch {
-      setUser(null);
-      await clearTokens();
+      if (me) setUser(me);
+    } catch (e: any) {
+      // Only clear tokens on explicit 401 Unauthorized, never on network drop
+      if (e?.status === 401) {
+        setUser(null);
+        await clearTokens();
+      }
     }
   }, []);
 

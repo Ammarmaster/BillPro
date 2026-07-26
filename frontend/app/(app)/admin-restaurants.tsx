@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, ScrollView,
+  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, ScrollView, Linking,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -69,14 +69,14 @@ export default function AdminRestaurants() {
         <Pressable onPress={() => router.back()} testID="admin-rest-back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Restaurants ({items.length})</Text>
+        <Text style={styles.title}>Businesses ({items.length})</Text>
         <View style={{ width: 26 }} />
       </View>
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
       ) : items.length === 0 ? (
-        <View style={styles.center}><Text style={{ color: colors.onSurfaceTertiary }}>No restaurants yet.</Text></View>
+        <View style={styles.center}><Text style={{ color: colors.onSurfaceTertiary }}>No businesses yet.</Text></View>
       ) : (
         <FlatList
           data={items}
@@ -89,10 +89,24 @@ export default function AdminRestaurants() {
                 <Text style={styles.cardMeta}>{item.owner_name}{item.phone ? ` · ${item.phone}` : ""}</Text>
                 {!!item.address && <Text style={styles.cardAddr} numberOfLines={1}>{item.address}</Text>}
               </View>
-              <View style={styles.subBadge}>
-                <Text style={styles.subBadgeText}>
-                  {item.subscription?.status === "active" ? item.subscription.plan_name : "Free"}
-                </Text>
+              <View style={{ gap: spacing.xs, alignItems: "flex-end" }}>
+                {!!item.phone && (
+                  <Pressable
+                    style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#16A34A", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      Linking.openURL(`tel:${item.phone}`).catch(() => {});
+                    }}
+                  >
+                    <Ionicons name="call" size={11} color="#FFFFFF" />
+                    <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "700", marginLeft: 3 }}>Call</Text>
+                  </Pressable>
+                )}
+                <View style={styles.subBadge}>
+                  <Text style={styles.subBadgeText}>
+                    {item.subscription?.status === "active" ? item.subscription.plan_name : "Free"}
+                  </Text>
+                </View>
               </View>
             </Pressable>
           )}
@@ -108,7 +122,18 @@ export default function AdminRestaurants() {
               <ScrollView>
                 <Text style={styles.modalTitle}>{detail.name}</Text>
                 <Text style={styles.detailRow}>Owner: <Text style={styles.detailVal}>{detail.owner_name}</Text></Text>
-                {!!detail.phone && <Text style={styles.detailRow}>Phone: <Text style={styles.detailVal}>{detail.phone}</Text></Text>}
+                {!!detail.phone && (
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 3 }}>
+                    <Text style={styles.detailRow}>Phone: <Text style={styles.detailVal}>{detail.phone}</Text></Text>
+                    <Pressable
+                      style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#16A34A", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}
+                      onPress={() => Linking.openURL(`tel:${detail.phone}`).catch(() => {})}
+                    >
+                      <Ionicons name="call" size={13} color="#FFFFFF" />
+                      <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700", marginLeft: 4 }}>Call Owner</Text>
+                    </Pressable>
+                  </View>
+                )}
                 {!!detail.address && <Text style={styles.detailRow}>Address: <Text style={styles.detailVal}>{detail.address}</Text></Text>}
                 {!!detail.gst && <Text style={styles.detailRow}>GSTIN: <Text style={styles.detailVal}>{detail.gst}</Text></Text>}
                 {!!detail.upi_id && <Text style={styles.detailRow}>UPI: <Text style={styles.detailVal}>{detail.upi_id}</Text></Text>}
@@ -137,7 +162,7 @@ export default function AdminRestaurants() {
 
                 <Pressable style={styles.dangerBtn} onPress={removeRest} disabled={busy} testID="admin-rest-delete">
                   <Ionicons name="trash" size={16} color={colors.onError} />
-                  <Text style={styles.dangerText}>Delete Restaurant</Text>
+                  <Text style={styles.dangerText}>Delete Business</Text>
                 </Pressable>
                 <Pressable style={styles.ghostBtn} onPress={() => setDetail(null)} testID="admin-rest-close">
                   <Text style={styles.ghostText}>Close</Text>

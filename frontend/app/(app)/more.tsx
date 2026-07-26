@@ -1,220 +1,264 @@
-import { useCallback, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Switch,
+  View, Text, StyleSheet, ScrollView, Pressable, Switch, SafeAreaView, StatusBar,
 } from "react-native";
-import { Image } from "expo-image";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "@/src/lib/api";
-import { pickImageBase64 } from "@/src/lib/imagePicker";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
+import { radius, spacing } from "@/src/theme";
 
 export default function More() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
+  const { isDark, toggleTheme, theme } = useTheme();
   const router = useRouter();
-  const [form, setForm] = useState({
-    name: "", owner_name: "", bio: "", address: "", phone: "",
-    gst: "", gst_enabled: false, fssai: "", upi_id: "", merchant_name: "",
-    logo_base64: "",
-  });
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const isStaff = user?.role === "waiter" || user?.role === "kitchen";
-  const isAdmin = user?.role === "super_admin";
-
-  const load = useCallback(async () => {
-    setLoading(true); setErr(null);
-    try {
-      const r = await api.getRestaurant();
-      if (r) {
-        setForm({
-          name: r.name || "", owner_name: r.owner_name || "", bio: r.bio || "",
-          address: r.address || "", phone: r.phone || "",
-          gst: r.gst || "", gst_enabled: !!r.gst_enabled, fssai: r.fssai || "",
-          upi_id: r.upi_id || "", merchant_name: r.merchant_name || "",
-          logo_base64: r.logo_base64 || "",
-        });
-      }
-    } catch (e: any) { setErr(e.message); }
-    finally { setLoading(false); }
-  }, []);
-
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const pickLogo = async () => {
-    try {
-      const b64 = await pickImageBase64(0.6);
-      if (b64) setForm(f => ({ ...f, logo_base64: b64 }));
-    } catch (e: any) { setErr(e.message); }
-  };
-
-  const save = async () => {
-    setErr(null); setMsg(null);
-    if (!form.name.trim() || !form.owner_name.trim() || !form.upi_id.trim() || !form.merchant_name.trim()) {
-      setErr("Name, owner, UPI ID and merchant name are required."); return;
-    }
-    setBusy(true);
-    try { await api.saveRestaurant(form); setMsg("Restaurant saved."); }
-    catch (e: any) { setErr(e.message); }
-    finally { setBusy(false); }
-  };
-
-  const field = (key: keyof typeof form, label: string, placeholder: string, opts: any = {}) => (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        value={String(form[key] ?? "")}
-        onChangeText={t => setForm({ ...form, [key]: t })}
-        placeholder={placeholder} placeholderTextColor={colors.onSurfaceTertiary}
-        style={styles.input} testID={`rest-${key}-input`} {...opts}
-      />
-    </View>
-  );
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <ScrollView
-        style={[styles.wrap, { paddingTop: insets.top }]}
-        contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing.xxxl }}
-        testID="more-screen"
-      >
-        <Text style={styles.title}>Settings</Text>
-
-        <View style={styles.userCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.userName}>{user?.full_name}</Text>
-            <Text style={styles.userMeta}>{user?.email} · {user?.role}</Text>
-          </View>
-          <Pressable onPress={logout} style={styles.logoutBtn} testID="more-logout-btn">
-            <Ionicons name="log-out-outline" size={18} color={colors.onError} />
-            <Text style={{ color: colors.onError, fontSize: 13 }}>Sign Out</Text>
-          </Pressable>
-        </View>
-
-        {isStaff ? (
-          <View style={styles.notice}>
-            <Ionicons name="lock-closed" size={18} color={colors.brand} />
-            <Text style={styles.noticeText}>Restaurant settings are managed by the owner.</Text>
-          </View>
-        ) : isAdmin ? (
-          <View style={styles.notice}>
-            <Ionicons name="shield-checkmark" size={18} color={colors.brand} />
-            <Text style={styles.noticeText}>Signed in as Super Admin. Manage everything from the Admin tab.</Text>
-          </View>
-        ) : (
-          <>
-            <Text style={styles.section}>Restaurant Logo</Text>
-            <Pressable style={styles.logoRow} onPress={pickLogo} testID="rest-logo-picker">
-              {form.logo_base64 ? (
-                <Image source={{ uri: `data:image/jpeg;base64,${form.logo_base64}` }} style={styles.logoImg} contentFit="cover" />
-              ) : (
-                <View style={styles.logoFallback}>
-                  <Text style={styles.logoFallbackText}>{(form.name || "L").charAt(0).toUpperCase()}</Text>
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.logoTitle}>{form.logo_base64 ? "Change Logo" : "Upload Logo"}</Text>
-                <Text style={styles.logoSub}>Square image, up to ~500 KB.</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
+      <View style={[styles.wrap, { backgroundColor: theme.surface }]} testID="more-screen">
+        <ScrollView
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
+          showsVerticalScrollIndicator={false}
+        >
+          
+          {/* User Profile Header Card */}
+          <View style={[styles.userCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <View style={styles.avatarCircle}>
+              <Ionicons name="person" size={24} color="#635BFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.userName, { color: theme.onSurface }]}>{user?.full_name || "System Owner"}</Text>
+              <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]}>{user?.email || "owner@prodevopz.com"}</Text>
+              <View style={styles.rolePill}>
+                <Text style={styles.rolePillText}>{(user?.role || "OWNER").toUpperCase()}</Text>
               </View>
-              <Ionicons name="camera" size={22} color={colors.brand} />
+            </View>
+          </View>
+
+          {/* Section 1: APPEARANCE matching Image */}
+          <Text style={[styles.sectionTitle, { color: theme.onSurfaceSecondary }]}>APPEARANCE</Text>
+          <View style={[styles.groupCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <View style={styles.rowItem}>
+              <View style={styles.iconBox}>
+                <Ionicons name="moon" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Dark Mode</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Reduce eye strain in low light</Text>
+              </View>
+              <Switch
+                value={isDark}
+                onValueChange={toggleTheme}
+                trackColor={{ false: "#CBD5E1", true: "#635BFF" }}
+                thumbColor="#FFFFFF"
+                testID="dark-mode-toggle"
+              />
+            </View>
+          </View>
+
+          {/* Section 2: MANAGEMENT matching Image */}
+          <Text style={[styles.sectionTitle, { color: theme.onSurfaceSecondary }]}>MANAGEMENT</Text>
+          <View style={[styles.groupCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            
+            {/* Staff & Roles */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/staff")} testID="manage-staff-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="people" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Staff & Roles</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Add or remove waiters / managers</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Menu Management */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/menu")} testID="manage-menu-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="restaurant" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Menu Management</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Categories, items, prices</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Table Management */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/tables")} testID="manage-tables-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="hardware-chip-outline" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Table Management</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Add, edit, delete tables</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Settings (Opens Separate Page!) */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/settings-details")} testID="manage-settings-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="settings" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Settings</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>GST, UPI, printer, restaurant info</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Subscription */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/subscribe")} testID="manage-subscribe-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="subtitles" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Subscription</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Plan, billing, auto-pay</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            {/* Legal & Support */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/legal")} testID="manage-legal-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="document-text" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Legal & Support</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Privacy Policy, Terms & Data deletion</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Bills History */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/bills-history")} testID="manage-bills-history-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="receipt" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Bills History</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>All past bills</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Sales Analytics */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/analytics")} testID="manage-analytics-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="bar-chart" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Sales Analytics</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>7-day, monthly & yearly sales</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
             </Pressable>
 
-            <Text style={styles.section}>Restaurant Details</Text>
-            {loading ? (
-              <ActivityIndicator color={colors.brand} />
-            ) : (
-              <>
-                {field("name", "Hotel Name *", "e.g. Nawaab Kitchen")}
-                {field("owner_name", "Owner *", "Owner name")}
-                {field("phone", "Phone *", "Used by staff to sign in", { keyboardType: "phone-pad" })}
-                {field("bio", "Bio", "Short tagline", { multiline: true })}
-                {field("address", "Address", "Full address", { multiline: true })}
+          </View>
 
-                <View style={styles.field}>
-                  <View style={styles.toggleRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>GST on Bills</Text>
-                      <Text style={styles.hint}>Split into CGST + SGST when enabled.</Text>
-                    </View>
-                    <Switch
-                      value={form.gst_enabled}
-                      onValueChange={v => setForm(f => ({ ...f, gst_enabled: v }))}
-                      trackColor={{ false: colors.surfaceTertiary, true: colors.brandSecondary }}
-                      thumbColor={form.gst_enabled ? colors.brand : "#fff"}
-                      testID="rest-gst-toggle"
-                    />
-                  </View>
-                </View>
+          {/* Sign Out Card Button matching Image */}
+          <Pressable style={styles.signOutCard} onPress={logout} testID="more-logout-btn">
+            <Ionicons name="exit-outline" size={22} color="#EF4444" />
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </Pressable>
 
-                {field("gst", "GSTIN", "22AAAAA0000A1Z5")}
-                {field("fssai", "FSSAI", "License number")}
-                {field("upi_id", "UPI ID *", "yourname@upi", { autoCapitalize: "none" })}
-                {field("merchant_name", "Merchant Name *", "As shown in UPI")}
+          {/* Footer App Version */}
+          <Text style={[styles.footerText, { color: theme.onSurfaceSecondary }]}>EzBill Restaurant ERP · v2.1</Text>
 
-                {err && <Text style={styles.err} testID="more-error">{err}</Text>}
-                {msg && <Text style={styles.msg} testID="more-msg">{msg}</Text>}
-
-                <Pressable style={styles.saveBtn} onPress={save} disabled={busy} testID="more-save-btn">
-                  {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.saveText}>Save Restaurant</Text>}
-                </Pressable>
-
-                <Text style={styles.section}>Manage</Text>
-                <Pressable style={styles.manageRow} onPress={() => router.push("/(app)/subscribe")} testID="manage-subscribe-btn">
-                  <Ionicons name="pricetags" size={22} color={colors.brand} />
-                  <Text style={styles.manageText}>Subscription</Text>
-                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceSecondary} />
-                </Pressable>
-                <Pressable style={styles.manageRow} onPress={() => router.push("/(app)/tables")} testID="manage-tables-btn">
-                  <Ionicons name="grid" size={22} color={colors.brand} />
-                  <Text style={styles.manageText}>Tables</Text>
-                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceSecondary} />
-                </Pressable>
-                <Pressable style={styles.manageRow} onPress={() => router.push("/(app)/staff")} testID="manage-staff-btn">
-                  <Ionicons name="people" size={22} color={colors.brand} />
-                  <Text style={styles.manageText}>Waiters</Text>
-                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceSecondary} />
-                </Pressable>
-              </>
-            )}
-          </>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.surface },
-  title: { color: colors.onSurface, fontSize: 28, fontFamily: "serif", marginBottom: spacing.lg },
-  userCard: { flexDirection: "row", alignItems: "center", padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, marginBottom: spacing.xl, gap: spacing.md, borderWidth: 1, borderColor: colors.border },
-  userName: { color: colors.onSurface, fontSize: 16 },
-  userMeta: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
-  logoutBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.error },
-  section: { color: colors.onSurfaceSecondary, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", marginTop: spacing.xl, marginBottom: spacing.md },
-  logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  logoImg: { width: 64, height: 64, borderRadius: radius.md },
-  logoFallback: { width: 64, height: 64, borderRadius: radius.md, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
-  logoFallbackText: { color: colors.onBrand, fontSize: 32, fontFamily: "serif" },
-  logoTitle: { color: colors.onSurface, fontSize: 15 },
-  logoSub: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
-  field: { marginBottom: spacing.md },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, letterSpacing: 0.5 },
-  hint: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
-  input: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 12, color: colors.onSurface, borderWidth: 1, borderColor: colors.border },
-  toggleRow: { flexDirection: "row", alignItems: "center", padding: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
-  err: { color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.sm },
-  msg: { color: colors.onSuccess, backgroundColor: colors.success, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.sm },
-  saveBtn: { backgroundColor: colors.brand, paddingVertical: 16, borderRadius: radius.lg, alignItems: "center", marginTop: spacing.xl },
-  saveText: { color: colors.onBrand, fontWeight: "600", fontSize: 15, letterSpacing: 0.5 },
-  manageRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm },
-  manageText: { color: colors.onSurface, fontSize: 15, flex: 1 },
-  notice: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary, borderColor: colors.brandTertiary, borderWidth: 1 },
-  noticeText: { color: colors.onSurfaceSecondary, flex: 1 },
+  safe: { flex: 1 },
+  wrap: { flex: 1 },
+  userCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.xl,
+    borderRadius: 28,
+    marginBottom: spacing.xl,
+    gap: spacing.lg,
+    borderWidth: 1,
+  },
+  avatarCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#26294D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  userName: { fontSize: 20, fontWeight: "900" },
+  userMeta: { fontSize: 13, marginTop: 2, fontWeight: "500" },
+  rolePill: {
+    alignSelf: "flex-start",
+    backgroundColor: "#26294D",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginTop: 6,
+  },
+  rolePillText: { color: "#635BFF", fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
+
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+    paddingLeft: spacing.xs,
+  },
+  groupCard: {
+    borderRadius: 28,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    overflow: "hidden",
+  },
+  rowItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.lg,
+    gap: spacing.md,
+  },
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: "#26294D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowTitle: { fontSize: 16, fontWeight: "800" },
+  rowSub: { fontSize: 12, marginTop: 2, fontWeight: "500" },
+  divider: { height: 1, width: "100%" },
+
+  signOutCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: "#1C141E",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.3)",
+    paddingVertical: 18,
+    borderRadius: 28,
+    marginTop: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  signOutText: { color: "#EF4444", fontSize: 16, fontWeight: "900" },
+  footerText: { textAlign: "center", fontSize: 12, fontWeight: "600", marginBottom: spacing.xl },
 });
