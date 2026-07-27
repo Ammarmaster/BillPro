@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar,
+  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Switch,
 } from "react-native";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/context/ThemeContext";
 import { spacing } from "@/src/theme";
+import { selectDefaultPrinter, getDefaultPrinter, clearDefaultPrinter } from "@/src/lib/print";
 
 export default function SettingsDetails() {
   const insets = useSafeAreaInsets();
@@ -26,11 +27,16 @@ export default function SettingsDetails() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [printerUrl, setPrinterUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const r = await api.getRestaurant();
+      const [r, url] = await Promise.all([
+        api.getRestaurant(),
+        getDefaultPrinter()
+      ]);
+      setPrinterUrl(url);
       if (r) {
         setForm({
           name: r.name || "", owner_name: r.owner_name || "", bio: r.bio || "",
@@ -132,6 +138,54 @@ export default function SettingsDetails() {
                 {field("gst", "GSTIN", "22AAAAA0000A1Z5")}
                 {field("fssai", "FSSAI License", "License #")}
 
+                {/* GST Toggle Switch */}
+                <View style={[styles.switchRow, { borderColor: theme.border }]}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={[styles.switchLabel, { color: theme.onSurface }]}>Enable GST on Bills</Text>
+                    <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>Automatically calculate and add GST (CGST/SGST) to generated bills</Text>
+                  </View>
+                  <Switch
+                    value={form.gst_enabled}
+                    onValueChange={val => setForm(f => ({ ...f, gst_enabled: val }))}
+                    trackColor={{ false: isDark ? "#374151" : "#E2E8F0", true: "#635BFF" }}
+                    thumbColor={form.gst_enabled ? "#FFFFFF" : "#F4F3F4"}
+                  />
+                </View>
+
+                {/* Thermal Printer Selection Row */}
+                <View style={[styles.switchRow, { borderColor: theme.border }]}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                      {Platform.OS === "ios" ? "Thermal Printer (iOS AirPrint)" : "Thermal Printer Setup"}
+                    </Text>
+                    <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>
+                      {Platform.OS === "ios"
+                        ? (printerUrl ? `Connected: ${printerUrl}` : "Select a connected thermal printer for direct prints")
+                        : "Android uses the system print service. Tap Info to see connection steps."}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={{ backgroundColor: "#635BFF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                    onPress={async () => {
+                      if (Platform.OS !== "ios") {
+                        await selectDefaultPrinter();
+                      } else {
+                        if (printerUrl) {
+                          await clearDefaultPrinter();
+                          setPrinterUrl(null);
+                        } else {
+                          const url = await selectDefaultPrinter();
+                          if (url) setPrinterUrl(url);
+                        }
+                      }
+                    }}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700" }}>
+                      {Platform.OS === "ios" ? (printerUrl ? "Disconnect" : "Select") : "Info"}
+                    </Text>
+                  </Pressable>
+                </View>
+
                 {err && <Text style={styles.err}>{err}</Text>}
                 {msg && <Text style={styles.msg}>{msg}</Text>}
 
@@ -169,4 +223,7 @@ const styles = StyleSheet.create({
   msg: { color: "#10B981", backgroundColor: "#ECFDF5", padding: spacing.md, borderRadius: 16, marginTop: spacing.sm },
   saveBtn: { backgroundColor: "#635BFF", paddingVertical: 16, borderRadius: 20, alignItems: "center", marginTop: spacing.md },
   saveText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15 },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" },
+  switchLabel: { fontSize: 15, fontWeight: "700" },
+  switchDesc: { fontSize: 12, marginTop: 2 },
 });

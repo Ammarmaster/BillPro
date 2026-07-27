@@ -179,6 +179,11 @@ class OrderStatusIn(BaseModel):
     status: str  # placed, in_kitchen, ready, served, cancelled
 
 
+class OrderUpdateIn(BaseModel):
+    items: List[OrderItemIn]
+    notes: Optional[str] = ""
+
+
 class BillIn(BaseModel):
     order_id: str
     tax_percent: float = 5.0
@@ -483,13 +488,61 @@ async def list_orders(status_filter: Optional[str] = None, user: dict = Depends(
 
 @api.patch("/orders/{oid}/status")
 async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Depends(get_current_user)):
-    tid = await _ensure_tenant(user)
     valid = {"placed", "in_kitchen", "ready", "served", "cancelled"}
     if payload.status not in valid:
         raise HTTPException(status_code=400, detail="Invalid status")
-    res = await db.orders.update_one({"id": oid, "tenant_id": tid}, {"$set": {"status": payload.status}})
+    res = await db.orders.update_one({"id": oid}, {"$set": {"status": payload.status}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
+    return await db.orders.find_one({"id": oid}, {"_id": 0})
+
+
+@api.patch("/orders/{oid}")
+async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+    order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    tid = order["tenant_id"]
+    subtotal = sum(i.price * i.quantity for i in payload.items)
+    await db.orders.update_one(
+        {"id": oid},
+        {"$set": {
+            "items": [i.dict() for i in payload.items],
+            "notes": payload.notes,
+            "subtotal": subtotal,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Recalculate pending bill if it exists
+    bill = await db.bills.find_one({"order_id": oid})
+    if bill and bill.get("status") == "pending":
+        restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
+        gst_enabled = bill.get("gst_enabled", bool(restaurant.get("gst_enabled")))
+        tax_percent = bill.get("tax_percent", 5.0)
+        discount = bill.get("discount", 0.0)
+        
+        tax = round(subtotal * (tax_percent / 100), 2) if gst_enabled else 0.0
+        cgst = round(tax / 2, 2) if gst_enabled else 0.0
+        sgst = round(tax - cgst, 2) if gst_enabled else 0.0
+        total = round(subtotal + tax - discount, 2)
+        
+        upi_id = restaurant.get("upi_id", "")
+        merchant = restaurant.get("merchant_name", restaurant.get("name", "Merchant"))
+        upi_url = f"upi://pay?pa={upi_id}&pn={merchant.replace(' ', '%20')}&am={total}&cu=INR&tn=Order-{oid[:8]}"
+        
+        await db.bills.update_one(
+            {"id": bill["id"]},
+            {"$set": {
+                "items": [i.dict() for i in payload.items],
+                "subtotal": subtotal,
+                "tax": tax,
+                "cgst": cgst,
+                "sgst": sgst,
+                "total": total,
+                "upi_url": upi_url
+            }}
+        )
     return await db.orders.find_one({"id": oid}, {"_id": 0})
 
 

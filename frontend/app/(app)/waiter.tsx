@@ -112,6 +112,7 @@ export default function WaiterScreen() {
   );
 
   const onSelectTable = (tbl: Table) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setSelectedTableObj(tbl);
     setTable(tbl.label);
     const { status, order } = getTableStatusInfo(tbl.label);
@@ -168,11 +169,27 @@ export default function WaiterScreen() {
     if (lines.length === 0) { setErr("Add at least one item."); return; }
     setBusy(true); setErr(null);
     try {
-      const order = await api.createOrder({ table_number: table.trim(), items: lines, notes: "" });
+      let orderObj: any;
+      if (activeOrder) {
+        // Edit existing order
+        orderObj = await api.updateOrder(activeOrder.id, { items: lines, notes: "" });
+      } else {
+        // Create new order
+        orderObj = await api.createOrder({ table_number: table.trim(), items: lines, notes: "" });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setLines([]);
+      
+      // Reload lists
       await load();
-      setViewMode("tables");
+      
+      // Open the table details view for the table that was just ordered
+      const tblLabel = table.trim();
+      const tblObj = tables.find(t => String(t.label).toLowerCase() === String(tblLabel).toLowerCase());
+      if (tblObj) setSelectedTableObj(tblObj);
+      setTable(tblLabel);
+      setActiveOrder(orderObj);
+      setViewMode("order_details");
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
@@ -243,10 +260,25 @@ export default function WaiterScreen() {
           <View style={[styles.bottomActionBar, { paddingBottom: insets.bottom + spacing.md }]}>
             <Pressable
               style={styles.addOrderBtn}
-              onPress={() => setViewMode("menu_order")}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                if (activeOrder) {
+                  const mapped: Line[] = (activeOrder.items || []).map((it: any) => ({
+                    menu_item_id: it.menu_item_id,
+                    name: it.name,
+                    price: it.price,
+                    quantity: it.quantity,
+                    notes: it.notes || "",
+                  }));
+                  setLines(mapped);
+                } else {
+                  setLines([]);
+                }
+                setViewMode("menu_order");
+              }}
             >
-              <Ionicons name="add" size={20} color="#635BFF" />
-              <Text style={styles.addOrderBtnText}>Add Order</Text>
+              <Ionicons name="create-outline" size={20} color="#635BFF" />
+              <Text style={styles.addOrderBtnText}>Edit Order</Text>
             </Pressable>
 
             <Pressable

@@ -1,6 +1,6 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { Platform } from "react-native";
+import { Platform, Alert } from "react-native";
 import { storage } from "@/src/utils/storage";
 
 const PRINTER_KEY = "lumina_printer_url";
@@ -70,7 +70,14 @@ function escape(s: string) {
 }
 
 export async function selectDefaultPrinter(): Promise<string | null> {
-  if (Platform.OS !== "ios") return null;
+  if (Platform.OS !== "ios") {
+    Alert.alert(
+      "Android Thermal Printing",
+      "On Android, please add your Bluetooth or Network thermal printer in your phone's Settings -> Connection Preferences -> Printing. Once added, print jobs will connect and output automatically.",
+      [{ text: "OK" }]
+    );
+    return null;
+  }
   try {
     const res = await Print.selectPrinterAsync();
     if (res?.url) {

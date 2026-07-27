@@ -87,7 +87,7 @@ export default function TakeawayScreen() {
       // 1. Create order
       const order = await api.createOrder({ table_number: "Takeaway", items: cart, notes: "Takeaway" });
       // 2. Create bill
-      await api.createBill({ order_id: order.id, tax_percent: 5, discount: 0, gst_enabled: true });
+      await api.createBill({ order_id: order.id, tax_percent: 5, discount: 0 });
       // 3. Clear cart and navigate to bill detail
       setCart([]);
       router.push({ pathname: "/(app)/billing", params: { orderId: order.id } });

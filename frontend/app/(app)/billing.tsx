@@ -38,13 +38,19 @@ export default function Billing() {
       let b = bills.find((x: any) => x.order_id === orderId);
       if (!b && o) {
         // Auto create bill if not generated yet
-        b = await api.createBill({ order_id: o.id, tax_percent: 5, discount: 0, gst_enabled: true });
+        b = await api.createBill({ order_id: o.id, tax_percent: 5, discount: 0 });
       }
       setBill(b || null);
     } catch (e: any) { setErr(e.message); }
   }, [orderId]);
 
-  useEffect(() => { if (orderId) load(); }, [orderId, load]);
+  useEffect(() => {
+    if (orderId) {
+      setOrder(null);
+      setBill(null);
+      load();
+    }
+  }, [orderId, load]);
 
   const handleMarkPaidWithMethod = async (method: string) => {
     if (!bill) return;
