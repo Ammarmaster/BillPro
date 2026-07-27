@@ -53,7 +53,10 @@ export default function WaiterScreen() {
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const load = useCallback(async () => {
-    setLoading(true); setErr(null);
+    if (cats.length === 0 || tables.length === 0) {
+      setLoading(true);
+    }
+    setErr(null);
     try {
       const [c, m, t, o, b] = await Promise.all([
         api.listCategories(),
@@ -69,9 +72,12 @@ export default function WaiterScreen() {
       setBills(b || []);
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
-  }, []);
+  }, [cats.length, tables.length]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    setViewMode("tables");
+  }, [load]));
 
   // Auto-handle table route param if passed
   useEffect(() => {
@@ -167,31 +173,57 @@ export default function WaiterScreen() {
   const submitOrder = async () => {
     if (!table.trim()) { setErr("Choose a table."); return; }
     if (lines.length === 0) { setErr("Add at least one item."); return; }
-    setBusy(true); setErr(null);
+    setErr(null);
     try {
-      let orderObj: any;
-      if (activeOrder) {
-        // Edit existing order
-        orderObj = await api.updateOrder(activeOrder.id, { items: lines, notes: "" });
+      const orderSubtotal = lines.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+      const isEdit = !!activeOrder;
+      const tempId = activeOrder?.id || "temp-" + Date.now();
+      
+      const localOrder = {
+        id: tempId,
+        order_number: activeOrder?.order_number || String(Math.floor(100 + Math.random() * 900)),
+        table_number: table.trim(),
+        items: lines,
+        subtotal: orderSubtotal,
+        status: activeOrder?.status || "placed",
+        created_at: activeOrder?.created_at || new Date().toISOString(),
+      };
+      
+      // Optimistic State Updates (0ms UI latency)
+      if (isEdit) {
+        setOrders(prev => prev.map(o => o.id === tempId ? localOrder : o));
       } else {
-        // Create new order
-        orderObj = await api.createOrder({ table_number: table.trim(), items: lines, notes: "" });
+        setOrders(prev => [localOrder, ...prev]);
       }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setTables(prev => prev.map(t => String(t.label).toLowerCase() === String(table.trim()).toLowerCase() ? { ...t, status: "occupied" } : t));
+      
       setLines([]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
-      // Reload lists
-      await load();
-      
-      // Open the table details view for the table that was just ordered
       const tblLabel = table.trim();
-      const tblObj = tables.find(t => String(t.label).toLowerCase() === String(tblLabel).toLowerCase());
-      if (tblObj) setSelectedTableObj(tblObj);
+      const tblObj = tables.find(t => String(t.label).toLowerCase() === String(tblLabel).toLowerCase()) || { id: "temp-tbl", label: tblLabel, status: "occupied" };
+      setSelectedTableObj(tblObj);
       setTable(tblLabel);
-      setActiveOrder(orderObj);
+      setActiveOrder(localOrder);
       setViewMode("order_details");
+
+      // Dispatch backend sync in background without blocking UI
+      if (isEdit) {
+        api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "" }).then(realOrder => {
+          setActiveOrder(realOrder);
+          setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
+        }).catch(e => {
+          setErr(e.message);
+        });
+      } else {
+        api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "" }).then(realOrder => {
+          setActiveOrder(realOrder);
+          setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
+        }).catch(e => {
+          setErr(e.message);
+        });
+      }
     } catch (e: any) { setErr(e.message); }
-    finally { setBusy(false); }
   };
 
   // -------------------------------------------------------------

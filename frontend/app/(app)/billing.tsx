@@ -11,6 +11,7 @@ import { api } from "@/src/lib/api";
 import { printBill, sharePdf } from "@/src/lib/print";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
+import QRCode from "qrcode";
 
 export default function Billing() {
   const insets = useSafeAreaInsets();
@@ -23,6 +24,7 @@ export default function Billing() {
   const [bill, setBill] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [qrUri, setQrUri] = useState<string | null>(null);
   
   // Payment Modal state
   const [payModal, setPayModal] = useState(false);
@@ -37,10 +39,42 @@ export default function Billing() {
       
       let b = bills.find((x: any) => x.order_id === orderId);
       if (!b && o) {
-        // Auto create bill if not generated yet
-        b = await api.createBill({ order_id: o.id, tax_percent: 5, discount: 0 });
+        // Auto-create local bill object instantly (0ms UI wait)
+        const subtotal = Number(o.subtotal || 0);
+        const gst = r?.gst_enabled;
+        const tax = gst ? Math.round(subtotal * 0.05 * 100) / 100 : 0;
+        const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
+        const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
+        const total = Math.round((subtotal + tax) * 100) / 100;
+        
+        const localBill = {
+          id: "temp-" + Date.now(),
+          order_id: o.id,
+          table_number: o.table_number,
+          items: o.items,
+          subtotal: subtotal,
+          tax_percent: gst ? 5 : 0,
+          tax: tax,
+          cgst: cgst,
+          sgst: sgst,
+          gst_enabled: !!gst,
+          discount: 0,
+          total: total,
+          status: "pending",
+          restaurant_snapshot: r,
+          created_at: new Date().toISOString(),
+        };
+        setBill(localBill);
+        
+        // Sync with backend database in the background
+        api.createBill({ order_id: o.id, tax_percent: 5, discount: 0 }).then(realBill => {
+          setBill(realBill);
+        }).catch(err => {
+          setErr(err.message);
+        });
+      } else {
+        setBill(b || null);
       }
-      setBill(b || null);
     } catch (e: any) { setErr(e.message); }
   }, [orderId]);
 
@@ -70,15 +104,6 @@ export default function Billing() {
     catch (e: any) { setErr(`Print failed: ${e.message}`); }
   };
 
-  if (!order && !bill) {
-    return (
-      <View style={[styles.wrap, { paddingTop: insets.top, justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color={colors.brand} />
-        <Text style={{ color: colors.onSurfaceSecondary, marginTop: spacing.md }}>Loading bill details…</Text>
-      </View>
-    );
-  }
-
   const billNo = bill?.bill_number || order?.order_number || "40";
   const tableName = order?.table_number ? (order.table_number === "Takeaway" ? "Takeaway" : `Table ${order.table_number}`) : "Takeaway";
   const dateStr = bill?.created_at ? new Date(bill.created_at).toLocaleString() : new Date().toLocaleString();
@@ -88,9 +113,24 @@ export default function Billing() {
   const totalAmt = bill?.total || order?.subtotal || 760;
   const itemsList = bill?.items || order?.items || [];
 
-  const qrUri = bill?.upi_url
-    ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(bill.upi_url)}&size=320x320&bgcolor=ffffff&color=000000&margin=8`
-    : `https://api.qrserver.com/v1/create-qr-code/?data=upi://pay?pa=${upiId}&pn=${encodeURIComponent(restaurantName)}&am=${totalAmt}&cu=INR&size=320x320&bgcolor=ffffff&color=000000&margin=8`;
+  // Local QR Code Generator (runs instantly in < 5ms offline)
+  useEffect(() => {
+    const upi = bill?.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(restaurantName)}&am=${totalAmt}&cu=INR`;
+    if (upi) {
+      QRCode.toDataURL(upi, { margin: 1, width: 320 })
+        .then(setQrUri)
+        .catch(() => {});
+    }
+  }, [bill?.upi_url, upiId, restaurantName, totalAmt]);
+
+  if (!order && !bill) {
+    return (
+      <View style={[styles.wrap, { paddingTop: insets.top, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.brand} />
+        <Text style={{ color: colors.onSurfaceSecondary, marginTop: spacing.md }}>Loading bill details…</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -145,7 +185,13 @@ export default function Billing() {
             {!isPaid && (
               <View style={[styles.upiBox, { backgroundColor: "#FFFFFF", borderRadius: radius.xl, padding: spacing.xl, alignItems: "center", marginTop: spacing.xl }]}>
                 <Text style={{ color: "#635BFF", fontSize: 16, fontWeight: "800" }}>Scan & Pay (UPI)</Text>
-                <Image source={{ uri: qrUri }} style={styles.qrCodeImg} contentFit="contain" testID="bill-qr-image" />
+                {qrUri ? (
+                  <Image source={{ uri: qrUri }} style={styles.qrCodeImg} contentFit="contain" testID="bill-qr-image" />
+                ) : (
+                  <View style={[styles.qrCodeImg, { justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" }]}>
+                    <ActivityIndicator color="#635BFF" />
+                  </View>
+                )}
                 <Text style={{ color: "#0F172A", fontSize: 14, fontWeight: "800" }}>{upiId}</Text>
                 <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "600" }}>Auto-fills ₹{totalAmt}</Text>
               </View>
