@@ -116,6 +116,7 @@ class RestaurantIn(BaseModel):
     phone: str = ""
     gst: Optional[str] = ""
     gst_enabled: bool = False
+    gst_rate: float = 5.0
     fssai: Optional[str] = ""
     upi_id: str
     merchant_name: str
@@ -519,7 +520,7 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
     if bill and bill.get("status") == "pending":
         restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
         gst_enabled = bill.get("gst_enabled", bool(restaurant.get("gst_enabled")))
-        tax_percent = bill.get("tax_percent", 5.0)
+        tax_percent = bill.get("tax_percent", float(restaurant.get("gst_rate", 5.0)))
         discount = bill.get("discount", 0.0)
         
         tax = round(subtotal * (tax_percent / 100), 2) if gst_enabled else 0.0
@@ -556,7 +557,12 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
     restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
     subtotal = float(order.get("subtotal", 0))
     gst_enabled = payload.gst_enabled if payload.gst_enabled is not None else bool(restaurant.get("gst_enabled"))
-    tax = round(subtotal * (payload.tax_percent / 100), 2) if gst_enabled else 0.0
+    
+    tax_percent = payload.tax_percent
+    if tax_percent == 5.0 and "gst_rate" in restaurant:
+      tax_percent = float(restaurant["gst_rate"])
+      
+    tax = round(subtotal * (tax_percent / 100), 2) if gst_enabled else 0.0
     cgst = round(tax / 2, 2) if gst_enabled else 0.0
     sgst = round(tax - cgst, 2) if gst_enabled else 0.0
     total = round(subtotal + tax - payload.discount, 2)
@@ -570,7 +576,7 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
         "table_number": order.get("table_number", ""),
         "items": order.get("items", []),
         "subtotal": subtotal,
-        "tax_percent": payload.tax_percent if gst_enabled else 0.0,
+        "tax_percent": tax_percent if gst_enabled else 0.0,
         "tax": tax,
         "cgst": cgst,
         "sgst": sgst,

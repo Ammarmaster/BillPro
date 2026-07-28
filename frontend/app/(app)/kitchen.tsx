@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, SafeAreaView, StatusBar,
+  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, SafeAreaView, StatusBar, Platform,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as SecureStore from "expo-secure-store";
+import { Audio } from "expo-av";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 
@@ -67,6 +69,64 @@ const CARD_BORDER: Record<string, string> = {
 
 import { useTheme } from "@/src/context/ThemeContext";
 
+class KitchenSoundPlayer {
+  private nativeSound: any = null;
+  private webAudio: any = null;
+
+  async loadAndPlay(url: string) {
+    if (Platform.OS === "web") {
+      try {
+        if (!this.webAudio) {
+          this.webAudio = new window.Audio(url);
+          this.webAudio.loop = true;
+          this.webAudio.volume = 1.0;
+        }
+        await this.webAudio.play();
+      } catch (e) {
+        console.warn("Web audio play failed:", e);
+      }
+    } else {
+      try {
+        if (!this.nativeSound) {
+          await Audio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldRouteThroughReceiverIOS: false,
+          });
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: url },
+            { shouldPlay: true, isLooping: true, volume: 1.0 }
+          );
+          this.nativeSound = sound;
+        } else {
+          await this.nativeSound.playAsync();
+        }
+      } catch (e) {
+        console.warn("Native audio play failed:", e);
+      }
+    }
+  }
+
+  async stop() {
+    if (Platform.OS === "web") {
+      if (this.webAudio) {
+        try {
+          this.webAudio.pause();
+          this.webAudio.currentTime = 0;
+        } catch {}
+      }
+    } else {
+      if (this.nativeSound) {
+        try {
+          await this.nativeSound.stopAsync();
+          await this.nativeSound.unloadAsync();
+        } catch {}
+        this.nativeSound = null;
+      }
+    }
+  }
+}
+
 export default function Kitchen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
@@ -75,6 +135,67 @@ export default function Kitchen() {
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  
+  // Kitchen Alert Audio Engine (configured for 0ms start/stop)
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const playerRef = useRef(new KitchenSoundPlayer());
+
+  // Load sound preference on mount
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      try {
+        const val = window.localStorage.getItem("kitchen_sound_pref");
+        if (val !== null) setSoundEnabled(val === "true");
+      } catch {}
+      return;
+    }
+    SecureStore.getItemAsync("kitchen_sound_pref").then(val => {
+      if (val !== null) {
+        setSoundEnabled(val === "true");
+      }
+    }).catch(() => {});
+  }, []);
+
+  const toggleSound = async () => {
+    const nextVal = !soundEnabled;
+    setSoundEnabled(nextVal);
+    
+    if (Platform.OS === "web") {
+      try { window.localStorage.setItem("kitchen_sound_pref", String(nextVal)); } catch {}
+    } else {
+      await SecureStore.setItemAsync("kitchen_sound_pref", String(nextVal));
+    }
+    
+    if (!nextVal) {
+      await playerRef.current.stop();
+    }
+  };
+
+  const playAlertSound = async () => {
+    if (!soundEnabled) return;
+    await playerRef.current.loadAndPlay("https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav");
+  };
+
+  const stopAlertSound = async () => {
+    await playerRef.current.stop();
+  };
+
+  // Sync audio status based on active placed orders list changes
+  useEffect(() => {
+    const hasPlaced = orders.some(o => o.status === "placed");
+    if (hasPlaced && soundEnabled) {
+      playAlertSound();
+    } else {
+      stopAlertSound();
+    }
+  }, [orders, soundEnabled]);
+
+  // Clean up sound object on unmount
+  useEffect(() => {
+    return () => {
+      playerRef.current.stop().catch(() => {});
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -106,7 +227,7 @@ export default function Kitchen() {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
-    // 1. INSTANT 0ms local state update
+    // 1. INSTANT 0ms local state update (automatically stops sound if no pending orders remain)
     if (next === "served") {
       setOrders(prev => prev.filter(o => o.id !== id));
     } else {
@@ -138,9 +259,19 @@ export default function Kitchen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="kitchen-screen">
         
-        {/* Header matching Image 1, 2, 3 */}
+        {/* Header with Sound Toggle and LIVE status */}
         <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.onSurface }]}>Kitchen Display</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+            <Text style={[styles.title, { color: theme.onSurface }]}>Kitchen Display</Text>
+            <Pressable onPress={toggleSound} style={styles.soundBtn} hitSlop={12}>
+              <Ionicons
+                name={soundEnabled ? "volume-high-outline" : "volume-mute-outline"}
+                size={22}
+                color={soundEnabled ? "#FF5E2B" : "#64748B"}
+              />
+            </Pressable>
+          </View>
+          
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
@@ -158,7 +289,7 @@ export default function Kitchen() {
         ) : (
           <FlatList
             data={orders}
-            keyExtractor={o => o.id}
+            keyExtractor={(o, idx) => `${o.id}-${idx}`}
             contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg }}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl tintColor="#635BFF" refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
@@ -230,6 +361,13 @@ const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
   title: { color: colors.onSurface, fontSize: 26, fontWeight: "900" },
+  soundBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "transparent",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#FEE2E2", paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill },
   liveDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#EF4444" },
   liveText: { color: "#EF4444", fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },

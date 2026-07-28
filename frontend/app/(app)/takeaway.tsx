@@ -108,7 +108,8 @@ export default function TakeawayScreen() {
       // 2. Construct local optimistic bill model
       const r = api.getCachedRestaurant();
       const gst = r?.gst_enabled;
-      const tax = gst ? Math.round(orderSubtotal * 0.05 * 100) / 100 : 0;
+      const gstRate = Number(r?.gst_rate ?? 5);
+      const tax = gst ? Math.round(orderSubtotal * (gstRate / 100) * 100) / 100 : 0;
       const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
       const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
       const total = Math.round((orderSubtotal + tax) * 100) / 100;
@@ -119,7 +120,7 @@ export default function TakeawayScreen() {
         table_number: "Takeaway",
         items: cart,
         subtotal: orderSubtotal,
-        tax_percent: gst ? 5 : 0,
+        tax_percent: gst ? gstRate : 0,
         tax: tax,
         cgst: cgst,
         sgst: sgst,
@@ -147,7 +148,7 @@ export default function TakeawayScreen() {
         api.updateCachedOrder(tempOrderId, realOrder);
         
         // Auto-create bill for the real order on the backend
-        api.createBill({ order_id: realOrder.id, tax_percent: 5, discount: 0 }).then(realBill => {
+        api.createBill({ order_id: realOrder.id, tax_percent: gstRate, discount: 0 }).then(realBill => {
           api.setTempIdMapping(tempBillId, realBill.id);
           api.updateCachedBill(tempBillId, realBill);
         }).catch(() => {});

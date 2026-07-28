@@ -160,18 +160,20 @@ export const api = {
     return res;
   },
   updateOrder: async (id: string, payload: any) => {
-    const res = await req(`/orders/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    const resolvedId = tempIdMap[id] || id;
+    const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
     const list = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = list.map((o: any) => o.id === id ? res : o);
+    memoryCache["/orders"] = list.map((o: any) => o.id === resolvedId ? res : o);
     clearCachePrefix("/tables");
     clearCachePrefix("/dashboard/summary");
     return res;
   },
   listOrders: (status?: string) => req(`/orders${status ? `?status_filter=${status}` : ""}`),
   updateOrderStatus: (id: string, status: string) => {
+    const resolvedId = tempIdMap[id] || id;
     clearCachePrefix("/orders");
     clearCachePrefix("/dashboard/summary");
-    return req(`/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+    return req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
   },
   
   createBill: async (payload: any) => {
@@ -182,9 +184,19 @@ export const api = {
     return res;
   },
   markBillPaid: async (id: string, paymentMethod = "UPI") => {
-    const res = await req(`/bills/${id}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
+    let resolvedId = tempIdMap[id];
+    if (!resolvedId && id.startsWith("temp-")) {
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        resolvedId = tempIdMap[id];
+        if (resolvedId) break;
+      }
+    }
+    if (!resolvedId) resolvedId = id;
+
+    const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
     const bList = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = bList.map((b: any) => b.id === id ? res : b);
+    memoryCache["/bills"] = bList.map((b: any) => b.id === resolvedId ? res : b);
     
     // Also mark the corresponding order status as served in the cached orders!
     const oList = memoryCache["/orders"] || [];

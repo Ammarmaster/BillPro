@@ -71,7 +71,8 @@ export default function Billing() {
     if (o) {
       const subtotal = Number(o.subtotal || 0);
       const gst = r?.gst_enabled;
-      const tax = gst ? Math.round(subtotal * 0.05 * 100) / 100 : 0;
+      const gstRate = Number(r?.gst_rate ?? 5);
+      const tax = gst ? Math.round(subtotal * (gstRate / 100) * 100) / 100 : 0;
       const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
       const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
       const total = Math.round((subtotal + tax) * 100) / 100;
@@ -81,7 +82,7 @@ export default function Billing() {
         table_number: o.table_number,
         items: o.items,
         subtotal: subtotal,
-        tax_percent: gst ? 5 : 0,
+        tax_percent: gst ? gstRate : 0,
         tax: tax,
         cgst: cgst,
         sgst: sgst,
@@ -99,6 +100,7 @@ export default function Billing() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [qrUri, setQrUri] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   
   // Payment Modal state
   const [payModal, setPayModal] = useState(false);
@@ -118,7 +120,8 @@ export default function Billing() {
         // Auto-create local bill object instantly (0ms UI wait)
         const subtotal = Number(o.subtotal || 0);
         const gst = r?.gst_enabled;
-        const tax = gst ? Math.round(subtotal * 0.05 * 100) / 100 : 0;
+        const gstRate = Number(r?.gst_rate ?? 5);
+        const tax = gst ? Math.round(subtotal * (gstRate / 100) * 100) / 100 : 0;
         const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
         const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
         const total = Math.round((subtotal + tax) * 100) / 100;
@@ -129,7 +132,7 @@ export default function Billing() {
           table_number: o.table_number,
           items: o.items,
           subtotal: subtotal,
-          tax_percent: gst ? 5 : 0,
+          tax_percent: gst ? gstRate : 0,
           tax: tax,
           cgst: cgst,
           sgst: sgst,
@@ -141,15 +144,19 @@ export default function Billing() {
           created_at: new Date().toISOString(),
         };
         setBill(localBill);
+        setSyncing(true);
         
         // Sync with backend database in the background
-        api.createBill({ order_id: o.id, tax_percent: 5, discount: 0 }).then(realBill => {
+        api.createBill({ order_id: o.id, tax_percent: gstRate, discount: 0 }).then(realBill => {
           setBill(realBill);
+          setSyncing(false);
         }).catch(err => {
           setErr(err.message);
+          setSyncing(false);
         });
       } else {
         setBill(b || null);
+        setSyncing(false);
       }
     } catch (e: any) { setErr(e.message); }
   }, [orderId]);
@@ -169,20 +176,24 @@ export default function Billing() {
       const existing = bList?.find((x: any) => x.order_id === targetOrderId);
       if (existing) {
         setBill(existing);
+        setSyncing(false);
       } else if (o) {
         const subtotal = Number(o.subtotal || 0);
         const gst = r?.gst_enabled;
-        const tax = gst ? Math.round(subtotal * 0.05 * 100) / 100 : 0;
+        const gstRate = Number(r?.gst_rate ?? 5);
+        const tax = gst ? Math.round(subtotal * (gstRate / 100) * 100) / 100 : 0;
         const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
         const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
         const total = Math.round((subtotal + tax) * 100) / 100;
-        setBill({
-          id: "temp-" + Date.now(),
+        const localBillId = "temp-" + Date.now();
+        
+        const localBill = {
+          id: localBillId,
           order_id: o.id,
           table_number: o.table_number,
           items: o.items,
           subtotal: subtotal,
-          tax_percent: gst ? 5 : 0,
+          tax_percent: gst ? gstRate : 0,
           tax: tax,
           cgst: cgst,
           sgst: sgst,
@@ -192,25 +203,72 @@ export default function Billing() {
           status: "pending",
           restaurant_snapshot: r,
           created_at: new Date().toISOString(),
-        });
+        };
+        setBill(localBill);
+        
+        // If it is a temporary client order, sync it to the backend now!
+        if (orderId.startsWith("temp-")) {
+          setSyncing(true);
+          api.createOrder({ table_number: "Takeaway", items: o.items, notes: "Takeaway" })
+            .then(realOrder => {
+              api.setTempIdMapping(orderId, realOrder.id);
+              api.updateCachedOrder(orderId, realOrder);
+              setOrder(realOrder);
+              
+              api.createBill({ order_id: realOrder.id, tax_percent: gstRate, discount: 0 })
+                .then(realBill => {
+                  api.setTempIdMapping(localBillId, realBill.id);
+                  api.updateCachedBill(localBillId, realBill);
+                  setBill(realBill);
+                  setSyncing(false);
+                })
+                .catch(err => {
+                  setErr(err.message);
+                  setSyncing(false);
+                });
+            })
+            .catch(err => {
+              setErr(err.message);
+              setSyncing(false);
+            });
+        } else {
+          setSyncing(false);
+        }
       } else {
         setBill(null);
+        setSyncing(false);
       }
       
-      load();
+      // Also fetch latest revalidation from server in the background (skip for temporary ones since we triggered manually)
+      if (!orderId.startsWith("temp-")) {
+        load();
+      }
     }
   }, [orderId, load]);
 
   const handleMarkPaidWithMethod = async (method: string) => {
     if (!bill) return;
-    setBusy(true); setErr(null);
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      const updatedBill = await api.markBillPaid(bill.id, method);
-      setBill(updatedBill);
-      setPayModal(false);
-    } catch (e: any) { setErr(e.message); }
-    finally { setBusy(false); }
+    
+    // Play haptic success immediately (0ms user feedback)
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    
+    // Optimistic UI updates
+    const updatedLocalBill = { ...bill, status: "paid", payment_method: method };
+    setBill(updatedLocalBill);
+    setPayModal(false);
+    
+    // Update local cache so that navigating back to waiter/tables is updated instantly
+    api.updateCachedBill(bill.id, updatedLocalBill);
+    const oList = api.getCachedOrders();
+    const updatedOrder = oList?.find((o: any) => o.id === bill.order_id);
+    if (updatedOrder) {
+      api.updateCachedOrder(bill.order_id, { ...updatedOrder, status: "served" });
+    }
+    
+    // Perform background sync silently
+    api.markBillPaid(bill.id, method).catch((e: any) => {
+      console.warn("Background markBillPaid sync failed:", e.message);
+    });
   };
 
   const doPrint = async () => {
@@ -349,7 +407,6 @@ export default function Billing() {
                 <Pressable
                   style={styles.methodCard}
                   onPress={() => handleMarkPaidWithMethod("CASH")}
-                  disabled={busy}
                 >
                   <Ionicons name="cash-outline" size={28} color="#635BFF" />
                   <Text style={styles.methodText}>CASH</Text>
@@ -358,7 +415,6 @@ export default function Billing() {
                 <Pressable
                   style={styles.methodCard}
                   onPress={() => handleMarkPaidWithMethod("CARD")}
-                  disabled={busy}
                 >
                   <Ionicons name="card-outline" size={28} color="#635BFF" />
                   <Text style={styles.methodText}>CARD</Text>
@@ -367,14 +423,11 @@ export default function Billing() {
                 <Pressable
                   style={styles.methodCard}
                   onPress={() => handleMarkPaidWithMethod("UPI")}
-                  disabled={busy}
                 >
                   <Ionicons name="qr-code-outline" size={28} color="#635BFF" />
                   <Text style={styles.methodText}>UPI</Text>
                 </Pressable>
               </View>
-
-              {busy && <ActivityIndicator color="#635BFF" style={{ marginTop: spacing.md }} />}
             </Pressable>
           </Pressable>
         </Modal>

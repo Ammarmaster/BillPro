@@ -20,7 +20,7 @@ export default function SettingsDetails() {
 
   const [form, setForm] = useState({
     name: "", owner_name: "", bio: "", address: "", phone: "",
-    gst: "", gst_enabled: false, fssai: "", upi_id: "", merchant_name: "",
+    gst: "", gst_enabled: false, gst_rate: "5", fssai: "", upi_id: "", merchant_name: "",
     logo_base64: "",
   });
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,7 @@ export default function SettingsDetails() {
         setForm({
           name: r.name || "", owner_name: r.owner_name || "", bio: r.bio || "",
           address: r.address || "", phone: r.phone || "",
-          gst: r.gst || "", gst_enabled: !!r.gst_enabled, fssai: r.fssai || "",
+          gst: r.gst || "", gst_enabled: !!r.gst_enabled, gst_rate: String(r.gst_rate ?? "5"), fssai: r.fssai || "",
           upi_id: r.upi_id || "", merchant_name: r.merchant_name || "",
           logo_base64: r.logo_base64 || "",
         });
@@ -71,7 +71,11 @@ export default function SettingsDetails() {
     }
     setBusy(true);
     try {
-      await api.saveRestaurant({ ...form, merchant_name: form.merchant_name || form.name });
+      await api.saveRestaurant({
+        ...form,
+        gst_rate: parseFloat(form.gst_rate) || 0.0,
+        merchant_name: form.merchant_name || form.name
+      });
       setMsg("Settings saved successfully.");
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -151,6 +155,8 @@ export default function SettingsDetails() {
                     thumbColor={form.gst_enabled ? "#FFFFFF" : "#F4F3F4"}
                   />
                 </View>
+
+                {form.gst_enabled && field("gst_rate", "GST Percentage (%) *", "5", { keyboardType: "numeric" })}
 
                 {/* Thermal Printer Selection Row */}
                 <View style={[styles.switchRow, { borderColor: theme.border }]}>
