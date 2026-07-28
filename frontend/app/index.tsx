@@ -1,151 +1,106 @@
 import { useEffect } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, SafeAreaView, StatusBar, ScrollView } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius } from "@/src/theme";
+import { spacing, radius } from "@/src/theme";
 
 export default function Index() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user) router.replace("/(app)/dashboard");
+    if (!loading && user) {
+      if (user.role === "waiter" || user.role === "kitchen") {
+        router.replace("/(app)/waiter");
+      } else {
+        router.replace("/(app)/dashboard");
+      }
+    }
   }, [user, loading, router]);
 
   if (loading) {
     return (
       <View style={styles.center} testID="landing-loading">
-        <ActivityIndicator size="large" color={colors.brand} />
+        <ActivityIndicator size="large" color="#FF5E2B" />
       </View>
     );
   }
 
   return (
     <SafeAreaView style={styles.safe} testID="landing-screen">
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FD" />
-      <View style={styles.bg}>
+      <StatusBar barStyle="light-content" backgroundColor="#111111" />
+      <ScrollView contentContainerStyle={styles.scrollContent} bounces={false} showsVerticalScrollIndicator={false}>
         
-        {/* Modern Double Glow Mesh Overlay */}
-        <View style={styles.glowContainer}>
-          <LinearGradient
-            colors={["rgba(99,91,255,0.15)", "rgba(79,70,229,0.05)", "transparent"]}
-            style={styles.glowGradientLeft}
-          />
-          <LinearGradient
-            colors={["rgba(59,130,246,0.12)", "rgba(59,130,246,0.02)", "transparent"]}
-            style={styles.glowGradientRight}
-          />
+        {/* Brand Hero Section */}
+        <View style={styles.heroSection}>
+          <View style={styles.logoBox}>
+            <Ionicons name="restaurant" size={44} color="#FFFFFF" />
+          </View>
+          <Text style={styles.brandTitle}>ProDevOpz ERP</Text>
+          <Text style={styles.tagline}>Restaurant Management Platform</Text>
+
+          <View style={styles.pillBadge}>
+            <View style={styles.pillDot} />
+            <Text style={styles.pillText}>ENTERPRISE POS & KOT SYSTEM</Text>
+          </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Brand & Hero Section */}
-          <View style={styles.heroSection}>
-            <View style={styles.logoBadgeOuter}>
-              <LinearGradient
-                colors={["#818CF8", "#635BFF", "#4F46E5"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoBadge}
-              >
-                <Ionicons name="receipt" size={36} color="#FFFFFF" />
-              </LinearGradient>
+        {/* Portal Access Action Buttons */}
+        <View style={styles.actionsCard}>
+          <Text style={styles.cardHeaderTitle}>Portal Access</Text>
+          
+          <Pressable
+            style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
+            testID="landing-login-btn"
+            onPress={() => router.push("/login")}
+          >
+            <View style={styles.btnRow}>
+              <Ionicons name="business-outline" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
+              <Text style={styles.primaryBtnText}>Business Owner Login</Text>
+              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={styles.btnIconRight} />
             </View>
+          </Pressable>
 
-            <Text style={styles.brandTitle}>EzBill</Text>
-            <Text style={styles.tagline}>Smart Billing. Simplified.</Text>
-
-            <View style={styles.pillBadge}>
-              <View style={styles.pillDot} />
-              <Text style={styles.pillText}>ENTERPRISE POS SYSTEM</Text>
+          <Pressable
+            style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+            testID="landing-staff-btn"
+            onPress={() => router.push("/staff-login")}
+          >
+            <View style={styles.btnRow}>
+              <Ionicons name="keypad-outline" size={18} color="#FF5E2B" style={styles.btnIconLeft} />
+              <Text style={styles.secondaryBtnText}>Staff PIN Login</Text>
             </View>
+          </Pressable>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
           </View>
 
-          {/* Action Buttons Glass Container */}
-          <View style={styles.actionsCard}>
-            <Text style={styles.cardHeaderTitle}>Portal Access</Text>
-            
-            <Pressable
-              style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
-              testID="landing-login-btn"
-              onPress={() => router.push("/login")}
-            >
-              <LinearGradient
-                colors={["#635BFF", "#4F46E5"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.gradientBtnBg}
-              >
-                <View style={styles.btnRow}>
-                  <Ionicons name="business" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
-                  <Text style={styles.primaryBtnText}>Business Owner Login</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={styles.btnIconRight} />
-                </View>
-              </LinearGradient>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
-              testID="landing-staff-btn"
-              onPress={() => router.push("/staff-login")}
-            >
-              <View style={styles.btnRow}>
-                <Ionicons name="keypad" size={18} color={colors.brand} style={styles.btnIconLeft} />
-                <Text style={styles.secondaryBtnText}>Staff PIN Login</Text>
-              </View>
-            </Pressable>
-
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
+          <Pressable
+            style={({ pressed }) => [styles.ghostBtn, pressed && styles.btnPressed]}
+            testID="landing-register-btn"
+            onPress={() => router.push("/register")}
+          >
+            <View style={styles.btnRow}>
+              <Ionicons name="person-add-outline" size={16} color="#FF5E2B" style={styles.btnIconLeft} />
+              <Text style={styles.ghostText}>Create Business Account</Text>
             </View>
+          </Pressable>
+        </View>
 
-            <Pressable
-              style={({ pressed }) => [styles.ghostBtn, pressed && styles.btnPressed]}
-              testID="landing-register-btn"
-              onPress={() => router.push("/register")}
-            >
-              <View style={styles.btnRow}>
-                <Ionicons name="person-add" size={16} color={colors.brand} style={styles.btnIconLeft} />
-                <Text style={styles.ghostText}>Create Business Account</Text>
-              </View>
-            </Pressable>
-          </View>
-
-          {/* Footer Note */}
-          <Text style={styles.footerNote}>Trusted by leading retail & restaurant businesses</Text>
-        </ScrollView>
-      </View>
+        {/* Footer Note */}
+        <Text style={styles.footerNote}>Trusted by leading retail & restaurant businesses</Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F8F9FD" },
-  bg: { flex: 1, backgroundColor: "#F8F9FD" },
-  center: { flex: 1, backgroundColor: "#F8F9FD", justifyContent: "center", alignItems: "center" },
-  glowContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 380,
-    flexDirection: "row",
-    overflow: "hidden"
-  },
-  glowGradientLeft: {
-    width: "70%",
-    height: "100%",
-    borderBottomRightRadius: 150,
-  },
-  glowGradientRight: {
-    width: "70%",
-    height: "100%",
-    borderBottomLeftRadius: 150,
-    marginLeft: "-40%",
-  },
+  safe: { flex: 1, backgroundColor: "#111111" },
+  center: { flex: 1, backgroundColor: "#111111", justifyContent: "center", alignItems: "center" },
   scrollContent: {
     flexGrow: 1,
     justifyContent: "space-between",
@@ -155,83 +110,79 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: "center",
-    marginTop: spacing.xl,
-    marginBottom: spacing.xxl,
+    marginTop: spacing.xxl,
   },
-  logoBadgeOuter: {
-    padding: 6,
-    borderRadius: radius.xl,
-    backgroundColor: "rgba(99, 91, 255, 0.1)",
-    shadowColor: colors.brand,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 4,
-    marginBottom: spacing.lg,
-  },
-  logoBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl - 6,
+  logoBox: {
+    width: 90,
+    height: 90,
+    borderRadius: 24,
+    backgroundColor: "#FF5E2B",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: spacing.lg,
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 6,
   },
   brandTitle: {
-    fontSize: 40,
+    fontSize: 34,
     fontWeight: "900",
-    color: colors.onSurface,
+    color: "#FFFFFF",
     letterSpacing: -0.5,
   },
   tagline: {
-    color: colors.brand,
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: 0.2,
+    color: "#64748B",
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: "600",
   },
   pillBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(99, 91, 255, 0.06)",
-    borderColor: "rgba(99, 91, 255, 0.15)",
+    backgroundColor: "rgba(255, 94, 43, 0.1)",
+    borderColor: "rgba(255, 94, 43, 0.2)",
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: radius.pill,
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
   pillDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.brand,
+    backgroundColor: "#FF5E2B",
   },
   pillText: {
-    color: colors.brand,
+    color: "#FF5E2B",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1,
   },
+
   actionsCard: {
     gap: spacing.md,
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#16161C",
     padding: spacing.xl,
-    borderRadius: radius.xl,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.1)",
-    shadowColor: "rgba(99, 91, 255, 0.06)",
+    borderColor: "#2E2E38",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.15,
     shadowRadius: 24,
-    elevation: 3,
+    elevation: 4,
+    marginTop: spacing.xl,
   },
   cardHeaderTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
-    color: colors.onSurfaceSecondary,
-    letterSpacing: 1,
+    color: "#64748B",
+    letterSpacing: 1.5,
     textTransform: "uppercase",
     marginBottom: spacing.xs,
     textAlign: "center",
@@ -246,32 +197,30 @@ const styles = StyleSheet.create({
   btnIconLeft: { marginRight: spacing.sm },
   btnIconRight: { marginLeft: spacing.sm },
   btnPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
+  
   primaryBtn: {
     height: 54,
-    borderRadius: radius.lg,
-    overflow: "hidden",
-    shadowColor: colors.brand,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 4,
+    borderRadius: 14,
+    backgroundColor: "#FF5E2B",
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  gradientBtnBg: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  primaryBtnText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15, letterSpacing: 0.3 },
+  primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
+  
   secondaryBtn: {
     height: 54,
-    borderColor: "rgba(99, 91, 255, 0.2)",
+    borderColor: "#2E2E38",
     borderWidth: 1,
-    borderRadius: radius.lg,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(99, 91, 255, 0.02)",
+    backgroundColor: "#1C1C21",
   },
-  secondaryBtnText: { color: colors.brand, fontSize: 15, fontWeight: "700" },
+  secondaryBtnText: { color: "#FF5E2B", fontSize: 15, fontWeight: "700" },
+  
   dividerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -282,26 +231,25 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "rgba(99, 91, 255, 0.1)",
+    backgroundColor: "#2E2E38",
   },
   dividerText: {
-    color: colors.onSurfaceTertiary,
+    color: "#475569",
     fontSize: 12,
     fontWeight: "600",
-    textTransform: "lowercase",
   },
+  
   ghostBtn: {
     height: 54,
-    borderRadius: radius.lg,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(99, 91, 255, 0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.12)",
+    backgroundColor: "transparent",
   },
-  ghostText: { color: colors.brand, fontSize: 14, fontWeight: "700" },
+  ghostText: { color: "#FF5E2B", fontSize: 14, fontWeight: "700" },
+  
   footerNote: {
-    color: colors.onSurfaceTertiary,
+    color: "#475569",
     fontSize: 12,
     fontWeight: "600",
     textAlign: "center",

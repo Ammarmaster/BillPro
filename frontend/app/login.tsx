@@ -3,12 +3,11 @@ import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
   Platform, ActivityIndicator, ScrollView, SafeAreaView, StatusBar,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, radius } from "@/src/theme";
+import { spacing } from "@/src/theme";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -35,291 +34,233 @@ export default function Login() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FD" />
-      <View style={styles.bg}>
-        
-        {/* Glow Mesh Overlay */}
-        <View style={styles.glowContainer}>
-          <LinearGradient
-            colors={["rgba(99,91,255,0.12)", "rgba(99,91,255,0.01)", "transparent"]}
-            style={styles.glowGradient}
-          />
-        </View>
+      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.wrap}>
+        <ScrollView contentContainerStyle={styles.scrollContainer} bounces={false} showsVerticalScrollIndicator={false}>
+          
+          {/* Solid Orange Header Section */}
+          <View style={[styles.headerSection, { paddingTop: insets.top + 32 }]}>
+            {/* Cutlery Plate Logo box */}
+            <View style={styles.logoBox}>
+              <Ionicons name="restaurant" size={34} color="#FFFFFF" />
+            </View>
+            <Text style={styles.appTitle}>ProDevOpz ERP</Text>
+            <Text style={styles.appSubtitle}>Restaurant Management Platform</Text>
+          </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.wrap}>
-          <ScrollView
-            contentContainerStyle={[styles.container, { paddingTop: insets.top + spacing.sm }]}
-            showsVerticalScrollIndicator={false}
-          >
-            
-            {/* Top Navigation Bar */}
-            <View style={styles.topBar}>
-              <Pressable onPress={() => router.back()} testID="login-back-btn" style={styles.backBtn} hitSlop={12}>
-                <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-              </Pressable>
-              <View style={styles.topBrand}>
-                <Ionicons name="receipt" size={14} color={colors.brand} />
-                <Text style={styles.topBrandText}>EzBill</Text>
+          {/* Dark Bottom Card Section */}
+          <View style={styles.cardSection}>
+            <Text style={styles.welcomeText}>Welcome back</Text>
+            <Text style={styles.subtext}>Sign in to manage your restaurant</Text>
+
+            {/* Email Field */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  style={styles.input}
+                  placeholder="owner@yourplace.com"
+                  placeholderTextColor="#475569"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  testID="login-email-input"
+                />
               </View>
             </View>
 
-            {/* Login Card Container */}
-            <View style={styles.card}>
-              <View style={styles.logoBadgeOuter}>
-                <LinearGradient
-                  colors={["#818CF8", "#635BFF", "#4F46E5"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.logoBadge}
+            {/* Password Field */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  style={[styles.input, { paddingRight: 44 }]}
+                  placeholder="••••••••"
+                  placeholderTextColor="#475569"
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  testID="login-password-input"
+                />
+                <Pressable
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                  hitSlop={10}
                 >
-                  <Ionicons name="briefcase" size={22} color="#FFFFFF" />
-                </LinearGradient>
-              </View>
-
-              <Text style={styles.title}>Business Login</Text>
-              <Text style={styles.subtitle}>Sign in to manage your POS and billing platform.</Text>
-
-              {/* Email Input Field */}
-              <View style={styles.field}>
-                <Text style={styles.label}>EMAIL ADDRESS</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={18} color={colors.onSurfaceSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    value={email}
-                    onChangeText={setEmail}
-                    style={styles.input}
-                    placeholder="you@business.com"
-                    placeholderTextColor={colors.onSurfaceTertiary}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    testID="login-email-input"
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#64748B"
                   />
-                </View>
+                </Pressable>
               </View>
+            </View>
 
-              {/* Password Input Field */}
-              <View style={styles.field}>
-                <Text style={styles.label}>PASSWORD</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="lock-closed-outline" size={18} color={colors.onSurfaceSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    style={[styles.input, { paddingRight: 44 }]}
-                    placeholder="••••••••"
-                    placeholderTextColor={colors.onSurfaceTertiary}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    testID="login-password-input"
-                  />
-                  <Pressable
-                    onPress={() => setShowPassword(!showPassword)}
-                    style={styles.eyeBtn}
-                    hitSlop={10}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off" : "eye"}
-                      size={18}
-                      color={colors.onSurfaceSecondary}
-                    />
-                  </Pressable>
-                </View>
+            {/* Error Message */}
+            {err && (
+              <View style={styles.errBox}>
+                <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
+                <Text style={styles.errText} testID="login-error">{err}</Text>
               </View>
+            )}
 
-              {/* Error Message */}
-              {err && (
-                <View style={styles.errBox}>
-                  <Ionicons name="alert-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
-                  <Text style={styles.errText} testID="login-error">{err}</Text>
-                </View>
+            {/* Submit Button */}
+            <Pressable
+              style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
+              onPress={submit}
+              disabled={busy}
+              testID="login-submit-btn"
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitBtnText}>Sign In</Text>
               )}
+            </Pressable>
 
-              {/* Submit Button */}
-              <Pressable
-                style={({ pressed }) => [styles.primaryBtnContainer, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
-                onPress={submit}
-                disabled={busy}
-                testID="login-submit-btn"
-              >
-                <LinearGradient
-                  colors={["#635BFF", "#4F46E5"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.primaryBtn}
-                >
-                  {busy ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <View style={styles.btnRow}>
-                      <Text style={styles.primaryText}>Sign In</Text>
-                      <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                    </View>
-                  )}
-                </LinearGradient>
-              </Pressable>
+            {/* Navigation Footers */}
+            <Pressable onPress={() => router.push("/register")} testID="login-goto-register" style={styles.footerBtn}>
+              <Text style={styles.footerText}>
+                New restaurant? <Text style={styles.footerAccent}>Create account</Text>
+              </Text>
+            </Pressable>
 
-              {/* Register Footer */}
-              <Pressable onPress={() => router.replace("/register")} testID="login-goto-register" style={styles.footerBtn}>
-                <Text style={styles.footerText}>
-                  New here? <Text style={styles.footerAccent}>Create Business Account</Text>
-                </Text>
-              </Pressable>
-            </View>
+            <Pressable onPress={() => router.push("/staff-login")} style={styles.staffBtn}>
+              <Text style={styles.staffText}>
+                Are you an employee? <Text style={styles.staffAccent}>Staff PIN Login</Text>
+              </Text>
+            </Pressable>
+          </View>
 
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F8F9FD" },
-  bg: { flex: 1, backgroundColor: "#F8F9FD" },
-  wrap: { flex: 1 },
-  glowContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 300,
-  },
-  glowGradient: {
-    width: "100%",
-    height: "100%",
-  },
-  container: { flexGrow: 1, paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxl },
-  topBar: {
-    flexDirection: "row",
+  safe: { flex: 1, backgroundColor: "#FF5E2B" },
+  wrap: { flex: 1, backgroundColor: "#0D0D0D" },
+  scrollContainer: { flexGrow: 1, backgroundColor: "#0D0D0D" },
+  
+  headerSection: {
+    backgroundColor: "#FF5E2B",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.lg,
+    justifyContent: "center",
+    paddingBottom: 48,
+    paddingHorizontal: spacing.xl,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.pill,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.15)",
+  logoBox: {
+    width: 76,
+    height: 76,
+    borderRadius: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "rgba(0,0,0,0.03)",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
-    elevation: 1,
+    marginBottom: spacing.md,
   },
-  topBrand: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    backgroundColor: "rgba(99, 91, 255, 0.06)",
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.15)",
+  appTitle: {
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "bold",
+    letterSpacing: -0.5,
   },
-  topBrandText: {
-    color: colors.brand,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.5,
+  appSubtitle: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 4,
   },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.08)",
-    shadowColor: "rgba(99, 91, 255, 0.06)",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 1,
-    shadowRadius: 24,
-    elevation: 3,
+
+  cardSection: {
+    flex: 1,
+    backgroundColor: "#0D0D0D",
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    marginTop: -28,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: spacing.xxxl,
   },
-  logoBadgeOuter: {
-    alignSelf: "flex-start",
-    padding: 4,
-    borderRadius: radius.md,
-    backgroundColor: "rgba(99, 91, 255, 0.1)",
-    marginBottom: spacing.lg,
+  welcomeText: {
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "bold",
+    letterSpacing: -0.5,
   },
-  logoBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md - 4,
-    justifyContent: "center",
-    alignItems: "center",
+  subtext: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: 6,
+    marginBottom: 28,
   },
-  title: { fontSize: 24, fontWeight: "900", color: colors.onSurface, marginBottom: spacing.xs },
-  subtitle: { color: colors.onSurfaceSecondary, marginBottom: spacing.xl, fontSize: 13, lineHeight: 18 },
+  
   field: { marginBottom: spacing.lg },
   label: {
-    color: colors.onSurfaceSecondary,
-    marginBottom: 6,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1,
+    color: "#94A3B8",
+    fontSize: 13,
+    fontWeight: "500",
+    marginBottom: 8,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surfaceTertiary,
-    borderRadius: radius.md,
+    backgroundColor: "#16161A",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "#2E2E38",
     position: "relative",
+    height: 54,
   },
-  inputIcon: { marginLeft: spacing.md },
+  inputIcon: { marginLeft: 16 },
   input: {
     flex: 1,
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    color: colors.onSurface,
-    fontSize: 14,
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "500",
+    height: "100%",
   },
   eyeBtn: {
     position: "absolute",
-    right: 12,
+    right: 14,
     padding: 4,
-    justifyContent: "center",
-    alignItems: "center"
   },
+
   errBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEF2F2",
-    borderColor: "rgba(220, 38, 38, 0.2)",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderColor: "rgba(239, 68, 68, 0.2)",
     borderWidth: 1,
     padding: spacing.md,
-    borderRadius: radius.md,
+    borderRadius: 8,
     marginBottom: spacing.lg,
   },
-  errText: { color: "#DC2626", fontSize: 13, flex: 1, fontWeight: "600" },
-  btnPressed: { opacity: 0.95, transform: [{ scale: 0.99 }] },
-  primaryBtnContainer: {
-    height: 52,
-    borderRadius: radius.lg,
-    overflow: "hidden",
-    marginTop: spacing.sm,
-    shadowColor: colors.brand,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  primaryBtn: {
-    flex: 1,
+  errText: { color: "#EF4444", fontSize: 13, flex: 1, fontWeight: "600" },
+  
+  submitBtn: {
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: "#FF5E2B",
     justifyContent: "center",
     alignItems: "center",
+    marginTop: 24,
   },
-  btnRow: { flexDirection: "row", alignItems: "center" },
-  primaryText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15, letterSpacing: 0.3 },
-  footerBtn: { marginTop: spacing.xl, alignItems: "center" },
-  footerText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: "500" },
-  footerAccent: { color: colors.brand, fontWeight: "700" }
+  btnPressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },
+  submitBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
+
+  footerBtn: { marginTop: 28, alignItems: "center" },
+  footerText: { color: "#64748B", fontSize: 14, fontWeight: "500" },
+  footerAccent: { color: "#FF5E2B", fontWeight: "700" },
+
+  staffBtn: { marginTop: spacing.lg, alignItems: "center" },
+  staffText: { color: "#64748B", fontSize: 13, fontWeight: "500" },
+  staffAccent: { color: "#FF5E2B", fontWeight: "700" },
 });
