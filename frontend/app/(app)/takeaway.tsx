@@ -21,16 +21,22 @@ export default function TakeawayScreen() {
   const router = useRouter();
   const { theme, isDark } = useTheme();
 
-  const [cats, setCats] = useState<Cat[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
+  const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
   const [selCat, setSelCat] = useState<string | "all">("all");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<Line[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const m = api.getCachedMenu();
+    return !m || m.length === 0;
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (cats.length === 0 || items.length === 0) {
+      setLoading(true);
+    }
     setErr(null);
     try {
       const [c, m] = await Promise.all([api.listCategories(), api.listMenu()]);
@@ -38,7 +44,7 @@ export default function TakeawayScreen() {
       setItems(m || []);
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
-  }, []);
+  }, [cats.length, items.length]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -78,21 +84,77 @@ export default function TakeawayScreen() {
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
   const totalQty = useMemo(() => cart.reduce((s, l) => s + l.quantity, 0), [cart]);
 
-  // Generate Bill Workflow (Navigates to Bill Detail & Payment Method Selection)
+  // Generate Bill Workflow (Navigates to Bill Detail & Payment Method Selection Instantly in 0ms)
   const handleGenerateBill = async () => {
     if (cart.length === 0) { setErr("Add items to generate bill."); return; }
-    setBusy(true); setErr(null);
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      // 1. Create order
-      const order = await api.createOrder({ table_number: "Takeaway", items: cart, notes: "Takeaway" });
-      // 2. Create bill
-      await api.createBill({ order_id: order.id, tax_percent: 5, discount: 0 });
-      // 3. Clear cart and navigate to bill detail
+      
+      const tempOrderId = "temp-" + Date.now();
+      const tempBillId = "temp-bill-" + Date.now();
+      
+      // 1. Construct local optimistic order model
+      const orderSubtotal = subtotal;
+      const localOrder = {
+        id: tempOrderId,
+        order_number: String(Math.floor(100 + Math.random() * 900)),
+        table_number: "Takeaway",
+        items: cart,
+        subtotal: orderSubtotal,
+        status: "placed",
+        created_at: new Date().toISOString(),
+      };
+      
+      // 2. Construct local optimistic bill model
+      const r = api.getCachedRestaurant();
+      const gst = r?.gst_enabled;
+      const tax = gst ? Math.round(orderSubtotal * 0.05 * 100) / 100 : 0;
+      const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
+      const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
+      const total = Math.round((orderSubtotal + tax) * 100) / 100;
+      
+      const localBill = {
+        id: tempBillId,
+        order_id: tempOrderId,
+        table_number: "Takeaway",
+        items: cart,
+        subtotal: orderSubtotal,
+        tax_percent: gst ? 5 : 0,
+        tax: tax,
+        cgst: cgst,
+        sgst: sgst,
+        gst_enabled: !!gst,
+        discount: 0,
+        total: total,
+        status: "pending",
+        restaurant_snapshot: r,
+        created_at: new Date().toISOString(),
+      };
+      
+      // 3. Inject optimistic models into in-memory cache directly!
+      api.injectCachedOrder(localOrder);
+      api.injectCachedBill(localBill);
+      
+      // 4. Reset cart and redirect instantly (0ms transition lag!)
+      const cartItems = [...cart];
       setCart([]);
-      router.push({ pathname: "/(app)/billing", params: { orderId: order.id } });
+      router.push({ pathname: "/(app)/billing", params: { orderId: tempOrderId } });
+      
+      // 5. Sync with server silently in the background
+      api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" }).then(realOrder => {
+        // Set ID mapping and update cached values
+        api.setTempIdMapping(tempOrderId, realOrder.id);
+        api.updateCachedOrder(tempOrderId, realOrder);
+        
+        // Auto-create bill for the real order on the backend
+        api.createBill({ order_id: realOrder.id, tax_percent: 5, discount: 0 }).then(realBill => {
+          api.setTempIdMapping(tempBillId, realBill.id);
+          api.updateCachedBill(tempBillId, realBill);
+        }).catch(() => {});
+      }).catch(err => {
+        setErr(err.message);
+      });
     } catch (e: any) { setErr(e.message); }
-    finally { setBusy(false); }
   };
 
   return (

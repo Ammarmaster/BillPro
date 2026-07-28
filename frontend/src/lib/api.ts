@@ -8,6 +8,9 @@ const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
 // In-memory cache for ultra-fast instant UI rendering
 const memoryCache: Record<string, any> = {};
 
+// Temporary client-side ID mapping for instant optimistic transitions
+const tempIdMap: Record<string, string> = {};
+
 function clearCachePrefix(prefix: string) {
   for (const k in memoryCache) {
     if (k.startsWith(prefix)) {
@@ -147,17 +150,22 @@ export const api = {
     clearCachePrefix("/staff/waiters");
     return req(`/staff/waiters/${id}`, { method: "DELETE" });
   },
-  createOrder: (payload: any) => {
-    clearCachePrefix("/orders");
+  
+  createOrder: async (payload: any) => {
+    const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
+    const list = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id)];
     clearCachePrefix("/tables");
     clearCachePrefix("/dashboard/summary");
-    return req("/orders", { method: "POST", body: JSON.stringify(payload) });
+    return res;
   },
-  updateOrder: (id: string, payload: any) => {
-    clearCachePrefix("/orders");
+  updateOrder: async (id: string, payload: any) => {
+    const res = await req(`/orders/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    const list = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = list.map((o: any) => o.id === id ? res : o);
     clearCachePrefix("/tables");
     clearCachePrefix("/dashboard/summary");
-    return req(`/orders/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    return res;
   },
   listOrders: (status?: string) => req(`/orders${status ? `?status_filter=${status}` : ""}`),
   updateOrderStatus: (id: string, status: string) => {
@@ -165,17 +173,26 @@ export const api = {
     clearCachePrefix("/dashboard/summary");
     return req(`/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
   },
-  createBill: (payload: any) => {
-    clearCachePrefix("/bills");
+  
+  createBill: async (payload: any) => {
+    const res = await req("/bills", { method: "POST", body: JSON.stringify(payload) });
+    const list = memoryCache["/bills"] || [];
+    memoryCache["/bills"] = [res, ...list.filter((b: any) => b.id !== res.id)];
     clearCachePrefix("/dashboard/summary");
-    return req("/bills", { method: "POST", body: JSON.stringify(payload) });
+    return res;
   },
-  markBillPaid: (id: string, paymentMethod = "UPI") => {
-    clearCachePrefix("/bills");
+  markBillPaid: async (id: string, paymentMethod = "UPI") => {
+    const res = await req(`/bills/${id}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
+    const bList = memoryCache["/bills"] || [];
+    memoryCache["/bills"] = bList.map((b: any) => b.id === id ? res : b);
+    
+    // Also mark the corresponding order status as served in the cached orders!
+    const oList = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = oList.map((o: any) => o.id === res.order_id ? { ...o, status: "served" } : o);
+    
     clearCachePrefix("/tables");
-    clearCachePrefix("/orders");
     clearCachePrefix("/dashboard/summary");
-    return req(`/bills/${id}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
+    return res;
   },
   listBills: () => req("/bills"),
   dashboardSummary: () => req("/dashboard/summary"),
@@ -206,4 +223,33 @@ export const api = {
     return req("/subscriptions/verify", { method: "POST", body: JSON.stringify(payload) });
   },
   deleteAccount: () => req("/auth/delete-account", { method: "DELETE" }),
+  
+  // Cache utilities
+  getCachedOrders: () => memoryCache['/orders'] || null,
+  getCachedBills: () => memoryCache['/bills'] || null,
+  getCachedRestaurant: () => memoryCache['/restaurant'] || null,
+  getCachedCategories: () => memoryCache['/categories'] || null,
+  getCachedMenu: () => memoryCache['/menu-items'] || null,
+  
+  // Client-side temp ID resolution
+  resolveTempId: (id: string) => tempIdMap[id] || id,
+  setTempIdMapping: (tempId: string, realId: string) => {
+    tempIdMap[tempId] = realId;
+  },
+  injectCachedOrder: (order: any) => {
+    const list = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = [order, ...list.filter((o: any) => o.id !== order.id)];
+  },
+  injectCachedBill: (bill: any) => {
+    const list = memoryCache["/bills"] || [];
+    memoryCache["/bills"] = [bill, ...list.filter((b: any) => b.id !== bill.id)];
+  },
+  updateCachedOrder: (id: string, realOrder: any) => {
+    const list = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = list.map((o: any) => o.id === id ? realOrder : o);
+  },
+  updateCachedBill: (id: string, realBill: any) => {
+    const list = memoryCache["/bills"] || [];
+    memoryCache["/bills"] = list.map((b: any) => b.id === id ? realBill : b);
+  },
 };
