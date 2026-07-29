@@ -5,6 +5,22 @@ import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 
+let Notifications: any = null;
+if (Platform.OS !== "web") {
+  try {
+    Notifications = require("expo-notifications");
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  } catch (e) {
+    console.warn("Failed to load expo-notifications:", e);
+  }
+}
+
 let createAudioPlayer: any = null;
 try {
   createAudioPlayer = require("expo-audio").createAudioPlayer;
@@ -84,7 +100,25 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     loadPreferences();
+    registerForPushNotificationsAsync();
   }, []);
+
+  const registerForPushNotificationsAsync = async () => {
+    if (Platform.OS === "web" || !Notifications) return;
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== "granted") {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== "granted") {
+        console.warn("Failed to get push token for notification!");
+      }
+    } catch (e) {
+      console.warn("Error setting up expo-notifications:", e);
+    }
+  };
 
   useEffect(() => {
     if (user?.tenant_id) {
@@ -220,6 +254,19 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // 4. Alert alerts sound & vibration (unless quiet hours are on)
     if (isQuietHours()) return;
+
+    // 5. Trigger native OS heads-up drop-down notification (like WhatsApp)
+    if (Platform.OS !== "web" && Notifications) {
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: notif.title,
+          body: notif.message,
+          sound: preferences.sound_enabled ? "default" : undefined,
+          badge: unreadCount + 1,
+        },
+        trigger: null,
+      }).catch((e) => console.warn("Failed to schedule local notification:", e));
+    }
 
     if (preferences.sound_enabled) {
       playSound();
