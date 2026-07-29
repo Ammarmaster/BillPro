@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -21,8 +21,8 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = os.environ.get("JWT_ALGO", "HS256")
 ADMIN_EMAIL = os.environ["ADMIN_EMAIL"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
-ACCESS_TTL_MIN = int(os.environ.get("ACCESS_TTL_MIN", "60"))
-REFRESH_TTL_DAYS = int(os.environ.get("REFRESH_TTL_DAYS", "14"))
+ACCESS_TTL_MIN = int(os.environ.get("ACCESS_TTL_MIN", "52560000"))
+REFRESH_TTL_DAYS = int(os.environ.get("REFRESH_TTL_DAYS", "36500"))
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
@@ -36,6 +36,64 @@ razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)) i
 
 app = FastAPI(title="Lumina ERP API")
 api = APIRouter(prefix="/api")
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, tenant_id: str, websocket: WebSocket):
+        await websocket.accept()
+        if tenant_id not in self.active_connections:
+            self.active_connections[tenant_id] = []
+        self.active_connections[tenant_id].append(websocket)
+
+    def disconnect(self, tenant_id: str, websocket: WebSocket):
+        if tenant_id in self.active_connections:
+            if websocket in self.active_connections[tenant_id]:
+                self.active_connections[tenant_id].remove(websocket)
+            if not self.active_connections[tenant_id]:
+                del self.active_connections[tenant_id]
+
+    async def broadcast_to_tenant(self, tenant_id: str, message: dict):
+        if tenant_id in self.active_connections:
+            for connection in self.active_connections[tenant_id]:
+                try:
+                    await connection.send_json(message)
+                except Exception:
+                    pass
+
+manager = ConnectionManager()
+
+
+async def notify_tenant(tenant_id: str, category: str, title: str, message: str, data: dict = None):
+    if not tenant_id:
+        return
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "category": category,  # sales | kitchen | waiter | cashier | system | payment
+        "title": title,
+        "message": message,
+        "data": data or {},
+        "is_read": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.notifications.insert_one(doc)
+    doc.pop("_id", None)
+    await manager.broadcast_to_tenant(tenant_id, doc)
+
+
+@app.websocket("/ws/{tenant_id}")
+async def websocket_endpoint(websocket: WebSocket, tenant_id: str):
+    await manager.connect(tenant_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect(tenant_id, websocket)
 
 
 # ---------- helpers ----------
@@ -93,6 +151,7 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=6)
     full_name: str
     role: str = "owner"  # owner registers themselves; super_admin creates staff
+    terms_accepted: Optional[bool] = False
 
 
 class LoginIn(BaseModel):
@@ -200,6 +259,8 @@ async def root():
 
 @api.post("/auth/register", response_model=TokenOut)
 async def register(payload: RegisterIn):
+    if not payload.terms_accepted:
+        raise HTTPException(status_code=400, detail="You must agree to the Terms & Conditions and Privacy Policy")
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -213,6 +274,8 @@ async def register(payload: RegisterIn):
         "full_name": payload.full_name,
         "role": payload.role,
         "tenant_id": None,
+        "terms_accepted": True,
+        "terms_accepted_at": datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(doc)
@@ -474,6 +537,13 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
     }
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
+    await notify_tenant(
+        tid,
+        "kitchen",
+        "New KOT Placed",
+        f"New order placed for Table {doc.get('table_number', '-')}",
+        {"order_id": doc["id"], "table_number": doc.get("table_number", "-")}
+    )
     return doc
 
 
@@ -495,7 +565,15 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     res = await db.orders.update_one({"id": oid}, {"$set": {"status": payload.status}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
-    return await db.orders.find_one({"id": oid}, {"_id": 0})
+    order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    await notify_tenant(
+        order["tenant_id"],
+        "waiter" if payload.status in ("in_kitchen", "ready") else "cashier",
+        "Order Status Updated",
+        f"Order for Table {order.get('table_number', '-')} is now {payload.status.replace('_', ' ').upper()}",
+        {"order_id": oid, "status": payload.status, "table_number": order.get("table_number", "-")}
+    )
+    return order
 
 
 @api.patch("/orders/{oid}")
@@ -544,6 +622,13 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
                 "upi_url": upi_url
             }}
         )
+    await notify_tenant(
+        tid,
+        "kitchen",
+        "KOT Order Modified",
+        f"Items updated for Table {order.get('table_number', '-')}",
+        {"order_id": oid, "table_number": order.get("table_number", "-")}
+    )
     return await db.orders.find_one({"id": oid}, {"_id": 0})
 
 
@@ -613,6 +698,14 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         raise HTTPException(status_code=404, detail="Bill not found")
     bill = await db.bills.find_one({"id": bid}, {"_id": 0})
     await db.orders.update_one({"id": bill["order_id"], "tenant_id": tid}, {"$set": {"status": "served"}})
+    
+    await notify_tenant(
+        tid,
+        "payment",
+        "Payment Received",
+        f"Table {bill.get('table_number', '-')} paid ₹{bill.get('total', 0.0):.2f} via {pm}",
+        {"bill_id": bid, "total": bill.get("total", 0.0), "table_number": bill.get("table_number", "-")}
+    )
     return bill
 
 
@@ -621,6 +714,49 @@ async def list_bills(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
     bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return bills
+
+
+# ---------- notifications ----------
+@api.get("/notifications")
+async def list_notifications(category: Optional[str] = None, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    q = {"tenant_id": tid}
+    if category:
+        q["category"] = category
+    notifs = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return notifs
+
+
+@api.patch("/notifications/{nid}/read")
+async def read_notification(nid: str, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    res = await db.notifications.update_one({"id": nid, "tenant_id": tid}, {"$set": {"is_read": True}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "success"}
+
+
+@api.post("/notifications/read-all")
+async def read_all_notifications(user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    await db.notifications.update_many({"tenant_id": tid}, {"$set": {"is_read": True}})
+    return {"status": "success"}
+
+
+@api.delete("/notifications/{nid}")
+async def delete_notification(nid: str, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    res = await db.notifications.delete_one({"id": nid, "tenant_id": tid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "success"}
+
+
+@api.delete("/notifications")
+async def clear_notifications(user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    await db.notifications.delete_many({"tenant_id": tid})
+    return {"status": "success"}
 
 
 # ---------- dashboard ----------

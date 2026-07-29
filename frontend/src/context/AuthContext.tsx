@@ -59,8 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await saveTokens(r.access_token, r.refresh_token);
     setUser(r.user);
   };
-  const register = async (email: string, password: string, full_name: string, role = "owner") => {
-    const r = await api.register(email, password, full_name, role);
+  const register = async (email: string, password: string, full_name: string, role = "owner", terms_accepted = false) => {
+    const r = await api.register(email, password, full_name, role, terms_accepted);
     await saveTokens(r.access_token, r.refresh_token);
     setUser(r.user);
   };

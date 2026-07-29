@@ -15,7 +15,7 @@ import { menuItemImageSource } from "@/src/lib/foodImage";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
-
+import { getPrinterSettings, printKitchenKOT } from "@/src/lib/print";
 type Cat = { id: string; name: string };
 type Item = { id: string; category_id: string; name: string; price: number; description: string; image_base64?: string; image_url?: string };
 type Table = { id: string; label: string; seats: number };
@@ -209,16 +209,24 @@ export default function WaiterScreen() {
 
       // Dispatch backend sync in background without blocking UI
       if (isEdit) {
-        api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "" }).then(realOrder => {
+        api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "" }).then(async realOrder => {
           setActiveOrder(realOrder);
           setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
+          const settings = await getPrinterSettings("kitchen");
+          if (settings && settings.type !== "none" && settings.auto_print) {
+            await printKitchenKOT(realOrder);
+          }
         }).catch(e => {
           setErr(e.message);
         });
       } else {
-        api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "" }).then(realOrder => {
+        api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "" }).then(async realOrder => {
           setActiveOrder(realOrder);
           setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
+          const settings = await getPrinterSettings("kitchen");
+          if (settings && settings.type !== "none" && settings.auto_print) {
+            await printKitchenKOT(realOrder);
+          }
         }).catch(e => {
           setErr(e.message);
         });

@@ -10,6 +10,9 @@ import { AuthProvider } from "@/src/context/AuthContext";
 import { ThemeProvider } from "@/src/context/ThemeContext";
 import { colors } from "@/src/theme";
 
+import { NotificationProvider } from "@/src/context/NotificationContext";
+import DynamicIslandBanner from "@/src/components/DynamicIslandBanner";
+
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
 
@@ -30,7 +33,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+            <NotificationProvider>
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+              <DynamicIslandBanner />
+            </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

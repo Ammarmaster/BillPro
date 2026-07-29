@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Switch,
+  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Switch, Alert,
 } from "react-native";
+import PermissionDisclosureModal from "@/src/components/PermissionDisclosureModal";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -28,6 +29,7 @@ export default function SettingsDetails() {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [printerUrl, setPrinterUrl] = useState<string | null>(null);
+  const [showMediaDisclosure, setShowMediaDisclosure] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -53,6 +55,19 @@ export default function SettingsDetails() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const pickLogo = async () => {
+    if (Platform.OS === "web") {
+      runImagePicker();
+      return;
+    }
+    const status = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (status.granted) {
+      runImagePicker();
+    } else {
+      setShowMediaDisclosure(true);
+    }
+  };
+
+  const runImagePicker = async () => {
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -62,6 +77,16 @@ export default function SettingsDetails() {
         setForm(f => ({ ...f, logo_base64: res.assets[0].base64 || "" }));
       }
     } catch {}
+  };
+
+  const handleAllowMedia = async () => {
+    setShowMediaDisclosure(false);
+    const res = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (res.granted) {
+      runImagePicker();
+    } else {
+      Alert.alert("Permission Required", "EzBill needs photo library access to let you select a logo.");
+    }
   };
 
   const save = async () => {
@@ -204,6 +229,15 @@ export default function SettingsDetails() {
 
         </View>
       </KeyboardAvoidingView>
+
+      <PermissionDisclosureModal
+        visible={showMediaDisclosure}
+        title="Photo Library Permission"
+        description="EzBill needs access to your photo library to let you select a restaurant logo."
+        icon="images-outline"
+        onAllow={handleAllowMedia}
+        onCancel={() => setShowMediaDisclosure(false)}
+      />
     </SafeAreaView>
   );
 }

@@ -104,8 +104,8 @@ export const api = {
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
   staffLogin: (phone: string, pin: string) =>
     req("/auth/staff-login", { method: "POST", body: JSON.stringify({ phone, pin }) }, false),
-  register: (email: string, password: string, full_name: string, role = "owner") =>
-    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name, role }) }, false),
+  register: (email: string, password: string, full_name: string, role = "owner", terms_accepted = false) =>
+    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name, role, terms_accepted }) }, false),
   me: () => req("/auth/me"),
   getRestaurant: () => req("/restaurant"),
   saveRestaurant: (payload: any) => {
@@ -262,6 +262,16 @@ export const api = {
     return req("/subscriptions/verify", { method: "POST", body: JSON.stringify(payload) });
   },
   deleteAccount: () => req("/auth/delete-account", { method: "DELETE" }),
+
+  // Notifications API bindings
+  listNotifications: (category?: string) => {
+    const qs = category ? `?category=${category}` : "";
+    return req(`/notifications${qs}`);
+  },
+  readNotification: (nid: string) => req(`/notifications/${nid}/read`, { method: "PATCH" }),
+  readAllNotifications: () => req("/notifications/read-all", { method: "POST" }),
+  deleteNotification: (nid: string) => req(`/notifications/${nid}`, { method: "DELETE" }),
+  clearNotifications: () => req("/notifications", { method: "DELETE" }),
   
   // Cache utilities
   getCachedOrders: () => memoryCache['/orders'] || null,

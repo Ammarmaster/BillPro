@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
-import { printBill, sharePdf } from "@/src/lib/print";
+import { printBill, sharePdf, getPrinterSettings } from "@/src/lib/print";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import QRCode from "qrcode";
@@ -264,6 +264,13 @@ export default function Billing() {
     if (updatedOrder) {
       api.updateCachedOrder(bill.order_id, { ...updatedOrder, status: "served" });
     }
+
+    // Auto-print receipt optimistically if cashier printer is configured for auto-print
+    getPrinterSettings("cashier").then(async settings => {
+      if (settings && settings.type !== "none" && settings.auto_print) {
+        await printBill(updatedLocalBill);
+      }
+    }).catch(() => {});
     
     // Perform background sync silently
     api.markBillPaid(bill.id, method).catch((e: any) => {

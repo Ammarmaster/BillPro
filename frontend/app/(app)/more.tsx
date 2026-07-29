@@ -114,6 +114,32 @@ export default function More() {
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
+            {/* Printer Settings */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/printer-settings")} testID="manage-printers-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="print" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Printer Settings</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Setup Cashier and Kitchen thermal printers</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Notifications */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/notifications")} testID="manage-notifications-btn">
+              <View style={styles.iconBox}>
+                <Ionicons name="notifications" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Notifications</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>View logs, category filters, sound & quiet hour setup</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
             {/* Subscription */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/subscribe")} testID="manage-subscribe-btn">
               <View style={styles.iconBox}>
