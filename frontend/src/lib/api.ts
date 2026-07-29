@@ -51,8 +51,10 @@ export async function clearTokens() {
   clearCachePrefix("/orders");
   clearCachePrefix("/bills");
   clearCachePrefix("/menu-items");
+  clearCachePrefix("/subscriptions/mine");
   await delItem(KEYS.access);
   await delItem(KEYS.refresh);
+  await delItem("cached_sub");
 }
 export async function getAccess() { return getItem(KEYS.access); }
 export async function getRefresh() { return getItem(KEYS.refresh); }
@@ -227,11 +229,36 @@ export const api = {
     req(`/admin/restaurants/${tid}/subscription`, { method: "POST", body: JSON.stringify({ plan_id, status: "active" }) }),
   adminCancelSubscription: (tid: string) => req(`/admin/restaurants/${tid}/subscription`, { method: "DELETE" }),
   // Razorpay subscription flow (owner)
-  mySubscription: () => req("/subscriptions/mine"),
+  mySubscription: async () => {
+    const cacheKey = "/subscriptions/mine";
+    if (memoryCache[cacheKey]) {
+      return memoryCache[cacheKey];
+    }
+    let storedSub: any = null;
+    try {
+      const val = await getItem("cached_sub");
+      if (val) {
+        storedSub = JSON.parse(val);
+        memoryCache[cacheKey] = storedSub;
+      }
+    } catch {}
+    try {
+      const res = await req("/subscriptions/mine");
+      memoryCache[cacheKey] = res;
+      try {
+        await setItem("cached_sub", JSON.stringify(res));
+      } catch {}
+      return res;
+    } catch (e) {
+      if (storedSub) return storedSub;
+      throw e;
+    }
+  },
   publicPlans: () => req("/plans"),
   checkout: (plan_id: string) => req("/subscriptions/checkout", { method: "POST", body: JSON.stringify({ plan_id }) }),
-  verifyPayment: (payload: any) => {
+  verifyPayment: async (payload: any) => {
     clearCachePrefix("/subscriptions/mine");
+    await delItem("cached_sub");
     return req("/subscriptions/verify", { method: "POST", body: JSON.stringify(payload) });
   },
   deleteAccount: () => req("/auth/delete-account", { method: "DELETE" }),

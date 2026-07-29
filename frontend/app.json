@@ -47,7 +47,8 @@
           "photosPermission": "Choose menu photos and restaurant logo",
           "cameraPermission": "Take menu photos and restaurant logo"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

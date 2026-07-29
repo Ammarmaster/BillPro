@@ -8,7 +8,7 @@ import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { Audio } from "expo-av";
+import { createAudioPlayer } from "expo-audio";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 
@@ -88,18 +88,13 @@ class KitchenSoundPlayer {
     } else {
       try {
         if (!this.nativeSound) {
-          await Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: false,
-            shouldRouteThroughReceiverIOS: false,
-          });
-          const { sound } = await Audio.Sound.createAsync(
-            { uri: url },
-            { shouldPlay: true, isLooping: true, volume: 1.0 }
-          );
-          this.nativeSound = sound;
+          const player = createAudioPlayer(url);
+          player.loop = true;
+          player.volume = 1.0;
+          player.play();
+          this.nativeSound = player;
         } else {
-          await this.nativeSound.playAsync();
+          this.nativeSound.play();
         }
       } catch (e) {
         console.warn("Native audio play failed:", e);
@@ -118,8 +113,8 @@ class KitchenSoundPlayer {
     } else {
       if (this.nativeSound) {
         try {
-          await this.nativeSound.stopAsync();
-          await this.nativeSound.unloadAsync();
+          this.nativeSound.stop();
+          this.nativeSound.release();
         } catch {}
         this.nativeSound = null;
       }
