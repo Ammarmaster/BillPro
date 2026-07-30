@@ -100,7 +100,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     loadPreferences();
-    registerForPushNotificationsAsync();
   }, []);
 
   const registerForPushNotificationsAsync = async () => {
@@ -114,6 +113,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       if (finalStatus !== "granted") {
         console.warn("Failed to get push token for notification!");
+        return;
+      }
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: "a99f95ae-d53d-4601-9b28-eb2305abab3e",
+      });
+      const pushToken = tokenData.data;
+      if (pushToken) {
+        await api.savePushToken(pushToken);
       }
     } catch (e) {
       console.warn("Error setting up expo-notifications:", e);
@@ -124,6 +131,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (user?.tenant_id) {
       fetchNotifications();
       connectWebSocket();
+      registerForPushNotificationsAsync();
     } else {
       disconnectWebSocket();
       setNotifications([]);
@@ -171,6 +179,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     console.log("[WS] Connecting to:", wsUrl);
     
     const socket = new WebSocket(wsUrl);
+    let pingInterval: any = null;
+
+    const cleanup = () => {
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
+    };
 
     socket.onopen = () => {
       console.log("[WS] Connected successfully");
@@ -178,10 +194,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
       }
+      // Keep connection active with 20s heartbeat ping
+      pingInterval = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send("ping");
+        }
+      }, 20000);
     };
 
     socket.onmessage = (event) => {
       try {
+        if (event.data === "pong") return;
         const notif: Notification = JSON.parse(event.data);
         handleIncomingNotification(notif);
       } catch (e) {
@@ -191,8 +214,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     socket.onclose = () => {
       console.log("[WS] Connection closed");
+      cleanup();
       ws.current = null;
-      // Auto-reconnect with exponential backoff / simple 5s delay
       if (user?.tenant_id) {
         reconnectTimer.current = setTimeout(connectWebSocket, 5000);
       }
@@ -200,6 +223,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     socket.onerror = (e) => {
       console.warn("[WS] Socket error:", e);
+      cleanup();
       socket.close();
     };
 

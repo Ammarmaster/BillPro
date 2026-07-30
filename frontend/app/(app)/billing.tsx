@@ -239,10 +239,8 @@ export default function Billing() {
         setSyncing(false);
       }
       
-      // Also fetch latest revalidation from server in the background (skip for temporary ones since we triggered manually)
-      if (!orderId.startsWith("temp-")) {
-        load();
-      }
+      // Also fetch latest revalidation from server in the background
+      load();
     }
   }, [orderId, load]);
 
@@ -308,9 +306,21 @@ export default function Billing() {
 
   if (!order && !bill) {
     return (
-      <View style={[styles.wrap, { paddingTop: insets.top, justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color={colors.brand} />
-        <Text style={{ color: colors.onSurfaceSecondary, marginTop: spacing.md }}>Loading bill details…</Text>
+      <View style={[styles.wrap, { paddingTop: insets.top, justifyContent: "center", alignItems: "center", padding: 24 }]}>
+        {err ? (
+          <>
+            <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+            <Text style={{ color: "#EF4444", marginTop: spacing.md, textAlign: "center", fontWeight: "600" }}>{err}</Text>
+            <Pressable onPress={load} style={{ marginTop: 16, backgroundColor: "#635BFF", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }}>
+              <Text style={{ color: "#FFF", fontWeight: "700" }}>Retry</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <ActivityIndicator size="large" color={colors.brand} />
+            <Text style={{ color: colors.onSurfaceSecondary, marginTop: spacing.md }}>Loading bill details…</Text>
+          </>
+        )}
       </View>
     );
   }

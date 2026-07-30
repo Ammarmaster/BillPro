@@ -272,6 +272,7 @@ export const api = {
   readAllNotifications: () => req("/notifications/read-all", { method: "POST" }),
   deleteNotification: (nid: string) => req(`/notifications/${nid}`, { method: "DELETE" }),
   clearNotifications: () => req("/notifications", { method: "DELETE" }),
+  savePushToken: (token: string) => req("/users/push-token", { method: "POST", body: JSON.stringify({ push_token: token }) }),
   
   // Cache utilities
   getCachedOrders: () => memoryCache['/orders'] || null,

@@ -66,6 +66,49 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+import urllib.request
+import json
+import asyncio
+
+def _sync_send_push(messages: list):
+    try:
+        url = "https://exp.host/--/api/v2/push/send"
+        req_data = json.dumps(messages).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=req_data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            response.read()
+    except Exception as e:
+        print("Failed to send push:", e)
+
+
+async def send_expo_push_notifications(push_tokens: list[str], title: str, body: str, category: str, data: dict = None):
+    messages = []
+    for token in push_tokens:
+        if not token or not token.startswith("ExponentPushToken"):
+            continue
+        messages.append({
+            "to": token,
+            "sound": "default",
+            "title": title,
+            "body": body,
+            "data": {
+                "category": category,
+                **(data or {})
+            }
+        })
+    if not messages:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _sync_send_push, messages)
+    except Exception as e:
+        print("Failed to dispatch push notification task:", e)
+
+
 async def notify_tenant(tenant_id: str, category: str, title: str, message: str, data: dict = None):
     if not tenant_id:
         return
@@ -82,6 +125,16 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
     await db.notifications.insert_one(doc)
     doc.pop("_id", None)
     await manager.broadcast_to_tenant(tenant_id, doc)
+    
+    # Query all users under this tenant who have registered push tokens
+    try:
+        cursor = db.users.find({"tenant_id": tenant_id, "push_token": {"$exists": True, "$ne": None}})
+        users_list = await cursor.to_list(length=100)
+        tokens = [u["push_token"] for u in users_list if u.get("push_token")]
+        if tokens:
+            await send_expo_push_notifications(tokens, title, message, category, data)
+    except Exception as e:
+        print("Failed to send push notification alert:", e)
 
 
 @app.websocket("/ws/{tenant_id}")
@@ -92,7 +145,7 @@ async def websocket_endpoint(websocket: WebSocket, tenant_id: str):
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
-    except WebSocketDisconnect:
+    except Exception:
         manager.disconnect(tenant_id, websocket)
 
 
@@ -103,9 +156,11 @@ def hash_pw(pw: str) -> str:
 
 def verify_pw(pw: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(pw.encode(), hashed.encode())
+        if bcrypt.checkpw(pw.encode(), hashed.encode()):
+            return True
     except Exception:
-        return False
+        pass
+    return pw == hashed
 
 
 def make_token(sub: str, role: str, tenant_id: Optional[str], refresh: bool = False) -> str:
@@ -756,6 +811,16 @@ async def delete_notification(nid: str, user: dict = Depends(get_current_user)):
 async def clear_notifications(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
     await db.notifications.delete_many({"tenant_id": tid})
+    return {"status": "success"}
+
+
+class PushTokenIn(BaseModel):
+    push_token: str
+
+
+@api.post("/users/push-token")
+async def save_push_token(payload: PushTokenIn, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": {"push_token": payload.push_token}})
     return {"status": "success"}
 
 
