@@ -109,6 +109,29 @@ async def send_expo_push_notifications(push_tokens: list[str], title: str, body:
         print("Failed to dispatch push notification task:", e)
 
 
+@app.get("/api/debug/push-tokens")
+async def debug_push_tokens():
+    try:
+        cursor = db.users.find({}, {"email": 1, "push_token": 1, "role": 1, "tenant_id": 1})
+        users_list = await cursor.to_list(length=100)
+        return {
+            "status": "success",
+            "total_users": len(users_list),
+            "users": [
+                {
+                    "email": u.get("email"),
+                    "role": u.get("role"),
+                    "tenant_id": u.get("tenant_id"),
+                    "has_token": u.get("push_token") is not None,
+                    "token": u.get("push_token")
+                }
+                for u in users_list
+            ]
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 async def notify_tenant(tenant_id: str, category: str, title: str, message: str, data: dict = None):
     if not tenant_id:
         return
