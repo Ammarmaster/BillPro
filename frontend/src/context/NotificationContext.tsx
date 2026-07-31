@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import { Platform, Vibration } from "react-native";
+import { Platform, Vibration, Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/context/AuthContext";
@@ -103,7 +103,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   const registerForPushNotificationsAsync = async () => {
-    if (Platform.OS === "web" || !Notifications) return;
+    if (Platform.OS === "web") return;
+    if (!Notifications) {
+      console.warn("Notifications module is null! Expo-notifications is not compiled in the native build.");
+      Alert.alert(
+        "Setup Warning",
+        "Notifications module is missing from the native build. Please rebuild the app using: npx expo run:android"
+      );
+      return;
+    }
     try {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
@@ -112,7 +120,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         finalStatus = status;
       }
       if (finalStatus !== "granted") {
-        console.warn("Failed to get push token for notification!");
+        Alert.alert("Permission Blocked", "Notification permissions were denied. Please enable them in your Android Settings.");
         return;
       }
       const tokenData = await Notifications.getExpoPushTokenAsync({
@@ -131,8 +139,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           sound: "default",
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Error setting up expo-notifications:", e);
+      Alert.alert("Push Registration Error", e.message || "Failed to retrieve push token");
     }
   };
 
