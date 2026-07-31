@@ -122,6 +122,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (pushToken) {
         await api.savePushToken(pushToken);
       }
+      if (Platform.OS === "android") {
+        await Notifications.setNotificationChannelAsync("default", {
+          name: "Default Alerts",
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: "#FF5E2B",
+          sound: "default",
+        });
+      }
     } catch (e) {
       console.warn("Error setting up expo-notifications:", e);
     }
@@ -279,7 +288,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // 4. Alert alerts sound & vibration (unless quiet hours are on)
     if (isQuietHours()) return;
 
-    // 5. Trigger native OS heads-up drop-down notification (like WhatsApp)
     if (Platform.OS !== "web" && Notifications) {
       Notifications.scheduleNotificationAsync({
         content: {
@@ -287,6 +295,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           body: notif.message,
           sound: preferences.sound_enabled ? "default" : undefined,
           badge: unreadCount + 1,
+          android: {
+            channelId: "default",
+          },
         },
         trigger: null,
       }).catch((e) => console.warn("Failed to schedule local notification:", e));
@@ -316,11 +327,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     } else if (createAudioPlayer) {
       try {
-        if (!audioPlayer.current) {
-          audioPlayer.current = createAudioPlayer(SOUND_URL);
-          audioPlayer.current.volume = 0.8;
-        }
-        audioPlayer.current.play();
+        const player = createAudioPlayer(SOUND_URL);
+        player.play();
       } catch (e) {
         console.warn("Native notification audio failed:", e);
       }

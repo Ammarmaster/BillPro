@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "127650302665",
+    "project_id": "ezbill-app",
+    "storage_bucket": "ezbill-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:127650302665:android:2d5485f59f87024b489b18",
+        "android_client_info": {
+          "package_name": "com.ezbill.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAl6jl9xgxiZEqt0blU8KhUj66r28svN0w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

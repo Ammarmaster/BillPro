@@ -18,9 +18,11 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
+"googleServicesFile": "./google-services.json",
       "package": "com.ezbill.app",
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -48,7 +50,9 @@
           "cameraPermission": "Take menu photos and restaurant logo"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-notifications",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

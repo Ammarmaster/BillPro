@@ -101,6 +101,10 @@ export default function Login() {
               </View>
             </View>
 
+            <Pressable onPress={() => router.push("/forgot-password")} style={styles.forgotBtn} testID="login-forgot-password-btn">
+              <Text style={styles.forgotAccent}>Forgot password?</Text>
+            </Pressable>
+
             {/* Error Message */}
             {err && (
               <View style={styles.errBox}>
@@ -263,4 +267,7 @@ const styles = StyleSheet.create({
   staffBtn: { marginTop: spacing.lg, alignItems: "center" },
   staffText: { color: "#64748B", fontSize: 13, fontWeight: "500" },
   staffAccent: { color: "#FF5E2B", fontWeight: "700" },
+
+  forgotBtn: { alignSelf: "flex-end", marginTop: 4, marginBottom: 8 },
+  forgotAccent: { color: "#FF5E2B", fontSize: 13, fontWeight: "600" },
 });

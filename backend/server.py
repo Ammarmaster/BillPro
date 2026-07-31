@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect, BackgroundTasks
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -149,6 +149,123 @@ async def websocket_endpoint(websocket: WebSocket, tenant_id: str):
         manager.disconnect(tenant_id, websocket)
 
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import random
+
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 465
+SMTP_USER = "contactprodevopz@gmail.com"
+SMTP_PASSWORD = "ydqm zvap zecd xsql"
+
+
+def send_reset_pin_email(to_email: str, pin: str, name: str):
+    try:
+        subject = "Reset Your ProDevOpz POS Password"
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Reset Password</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background-color: #f8fafc;
+                    margin: 0;
+                    padding: 0;
+                }}
+                .container {{
+                    max-width: 600px;
+                    margin: 40px auto;
+                    background: #ffffff;
+                    border-radius: 16px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+                    overflow: hidden;
+                    border: 1px solid #e2e8f0;
+                }}
+                .header {{
+                    background-color: #FF5E2B;
+                    padding: 30px;
+                    text-align: center;
+                }}
+                .header h1 {{
+                    color: #ffffff;
+                    margin: 0;
+                    font-size: 24px;
+                    font-weight: 700;
+                }}
+                .content {{
+                    padding: 40px 30px;
+                    color: #334155;
+                    line-height: 1.6;
+                }}
+                .content h2 {{
+                    color: #0f172a;
+                    font-size: 20px;
+                    margin-top: 0;
+                }}
+                .pin-box {{
+                    background-color: #f1f5f9;
+                    border-radius: 12px;
+                    padding: 20px;
+                    text-align: center;
+                    margin: 30px 0;
+                    border: 1px dashed #cbd5e1;
+                }}
+                .pin-code {{
+                    font-size: 32px;
+                    font-weight: 800;
+                    letter-spacing: 6px;
+                    color: #FF5E2B;
+                    margin: 0;
+                }}
+                .footer {{
+                    background-color: #f8fafc;
+                    padding: 20px;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #64748b;
+                    border-top: 1px solid #e2e8f0;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>ProDevOpz ERP</h1>
+                </div>
+                <div class="content">
+                    <h2>Hello {name},</h2>
+                    <p>We received a request to reset the password for your account. Use the verification code below to set a new password. This code is valid for 15 minutes.</p>
+                    <div class="pin-box">
+                        <p class="pin-code">{pin}</p>
+                    </div>
+                    <p>If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+                    <p>Best regards,<br><strong>ProDevOpz Support Team</strong></p>
+                </div>
+                <div class="footer">
+                    <p>This is an automated email. Please do not reply to this message.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"ProDevOpz POS <{SMTP_USER}>"
+        msg["To"] = to_email
+        part_html = MIMEText(html_content, "html")
+        msg.attach(part_html)
+        
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_USER, to_email, msg.as_string())
+    except Exception as e:
+        print("Failed to send reset PIN email:", e)
+
+
 # ---------- helpers ----------
 def hash_pw(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
@@ -212,6 +329,16 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordWithPinIn(BaseModel):
+    email: EmailStr
+    pin: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=6)
 
 
 class TokenOut(BaseModel):
@@ -353,6 +480,67 @@ async def login(payload: LoginIn):
         refresh_token=make_token(user["id"], user["role"], user.get("tenant_id"), refresh=True),
         user=user_out,
     )
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordIn, background_tasks: BackgroundTasks):
+    user = await db.users.find_one({"email": payload.email.lower()})
+    if not user:
+        raise HTTPException(status_code=404, detail="Email address not found")
+    
+    # Generate 6-digit PIN
+    pin = f"{random.randint(100000, 999999)}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "reset_pin": pin,
+            "reset_pin_expires_at": expires_at.isoformat()
+        }}
+    )
+    
+    # Send email in background task
+    background_tasks.add_task(
+        send_reset_pin_email,
+        user["email"],
+        pin,
+        user.get("full_name", "User")
+    )
+    
+    return {"message": "Verification code sent successfully"}
+
+
+@api.post("/auth/reset-password-with-pin")
+async def reset_password_with_pin(payload: ResetPasswordWithPinIn):
+    user = await db.users.find_one({"email": payload.email.lower()})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    saved_pin = user.get("reset_pin")
+    expires_str = user.get("reset_pin_expires_at")
+    
+    if not saved_pin or not expires_str:
+        raise HTTPException(status_code=400, detail="No reset code requested")
+        
+    if saved_pin != payload.pin:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+        
+    expires_at = datetime.fromisoformat(expires_str)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Verification code has expired")
+        
+    # Update password
+    hashed_pwd = hash_pw(payload.new_password)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {"password": hashed_pwd},
+            "$unset": {"reset_pin": "", "reset_pin_expires_at": ""}
+        }
+    )
+    
+    return {"message": "Password reset successfully"}
 
 
 @api.get("/auth/me")
@@ -822,6 +1010,26 @@ class PushTokenIn(BaseModel):
 async def save_push_token(payload: PushTokenIn, user: dict = Depends(get_current_user)):
     await db.users.update_one({"id": user["id"]}, {"$set": {"push_token": payload.push_token}})
     return {"status": "success"}
+
+
+@api.post("/notifications/test-push")
+async def test_push_notification(payload: dict, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    cursor = db.users.find({"tenant_id": tid, "push_token": {"$exists": True, "$ne": None}})
+    users_list = await cursor.to_list(length=100)
+    tokens = [u["push_token"] for u in users_list if u.get("push_token")]
+    
+    title = payload.get("title", "Test Alert")
+    msg = payload.get("message", "This is a test notification from your ProDevOpz POS server!")
+    
+    if tokens:
+        await send_expo_push_notifications(tokens, title, msg, "system")
+    return {
+        "status": "success",
+        "tokens_found": len(tokens),
+        "tokens": tokens,
+        "recipient_count": len(tokens)
+    }
 
 
 # ---------- dashboard ----------

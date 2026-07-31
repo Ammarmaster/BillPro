@@ -8,7 +8,7 @@ import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { createAudioPlayer } from "expo-audio";
+import { useAudioPlayer } from "expo-audio";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 
@@ -69,59 +69,6 @@ const CARD_BORDER: Record<string, string> = {
 
 import { useTheme } from "@/src/context/ThemeContext";
 
-class KitchenSoundPlayer {
-  private nativeSound: any = null;
-  private webAudio: any = null;
-
-  async loadAndPlay(url: string) {
-    if (Platform.OS === "web") {
-      try {
-        if (!this.webAudio) {
-          this.webAudio = new window.Audio(url);
-          this.webAudio.loop = true;
-          this.webAudio.volume = 1.0;
-        }
-        await this.webAudio.play();
-      } catch (e) {
-        console.warn("Web audio play failed:", e);
-      }
-    } else {
-      try {
-        if (!this.nativeSound) {
-          const player = createAudioPlayer(url);
-          player.loop = true;
-          player.volume = 1.0;
-          player.play();
-          this.nativeSound = player;
-        } else {
-          this.nativeSound.play();
-        }
-      } catch (e) {
-        console.warn("Native audio play failed:", e);
-      }
-    }
-  }
-
-  async stop() {
-    if (Platform.OS === "web") {
-      if (this.webAudio) {
-        try {
-          this.webAudio.pause();
-          this.webAudio.currentTime = 0;
-        } catch {}
-      }
-    } else {
-      if (this.nativeSound) {
-        try {
-          this.nativeSound.stop();
-          this.nativeSound.release();
-        } catch {}
-        this.nativeSound = null;
-      }
-    }
-  }
-}
-
 export default function Kitchen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
@@ -131,9 +78,13 @@ export default function Kitchen() {
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   
-  // Kitchen Alert Audio Engine (configured for 0ms start/stop)
+  // Kitchen Alert Audio Engine (using official expo-audio hook)
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const playerRef = useRef(new KitchenSoundPlayer());
+  const isRingingRef = useRef(false);
+
+  const player = useAudioPlayer("https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav", {
+    loop: true,
+  });
 
   // Load sound preference on mount
   useEffect(() => {
@@ -161,36 +112,38 @@ export default function Kitchen() {
       await SecureStore.setItemAsync("kitchen_sound_pref", String(nextVal));
     }
     
-    if (!nextVal) {
-      await playerRef.current.stop();
+    if (!nextVal && player) {
+      try {
+        player.pause();
+        player.seek(0);
+      } catch {}
     }
-  };
-
-  const playAlertSound = async () => {
-    if (!soundEnabled) return;
-    await playerRef.current.loadAndPlay("https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav");
-  };
-
-  const stopAlertSound = async () => {
-    await playerRef.current.stop();
   };
 
   // Sync audio status based on active placed orders list changes
   useEffect(() => {
     const hasPlaced = orders.some(o => o.status === "placed");
     if (hasPlaced && soundEnabled) {
-      playAlertSound();
+      if (!isRingingRef.current && player) {
+        isRingingRef.current = true;
+        try {
+          player.play();
+        } catch (e) {
+          console.warn("Failed to play alert sound:", e);
+        }
+      }
     } else {
-      stopAlertSound();
+      if (isRingingRef.current && player) {
+        isRingingRef.current = false;
+        try {
+          player.pause();
+          player.seek(0);
+        } catch (e) {
+          console.warn("Failed to stop alert sound:", e);
+        }
+      }
     }
-  }, [orders, soundEnabled]);
-
-  // Clean up sound object on unmount
-  useEffect(() => {
-    return () => {
-      playerRef.current.stop().catch(() => {});
-    };
-  }, []);
+  }, [orders, soundEnabled, player]);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -310,19 +263,19 @@ export default function Kitchen() {
 
                     {/* Live Timer */}
                     <View style={styles.timerBox}>
-                      <Ionicons name="time-outline" size={15} color={colors.onSurfaceSecondary} />
-                      <Text style={styles.timerText}>{elapsedTime}</Text>
+                      <Ionicons name="time-outline" size={15} color={theme.onSurfaceSecondary} />
+                      <Text style={[styles.timerText, { color: theme.onSurfaceSecondary }]}>{elapsedTime}</Text>
                     </View>
                   </View>
 
-                  <Text style={styles.tableName}>Table {item.table_number}</Text>
+                  <Text style={[styles.tableName, { color: theme.onSurfaceSecondary }]}>Table {item.table_number}</Text>
 
                   {/* Items List */}
                   <View style={styles.itemsList}>
                     {item.items.map((it, idx) => (
                       <View key={idx} style={styles.itemRow}>
                         <Text style={styles.itemQty}>{it.quantity}×</Text>
-                        <Text style={styles.itemName}>{it.name}</Text>
+                        <Text style={[styles.itemName, { color: theme.onSurface }]}>{it.name}</Text>
                       </View>
                     ))}
                   </View>
