@@ -88,7 +88,7 @@ def _sync_send_push(messages: list):
 async def send_expo_push_notifications(push_tokens: list[str], title: str, body: str, category: str, data: dict = None):
     messages = []
     for token in push_tokens:
-        if not token or not token.startswith("ExponentPushToken"):
+        if not token or not (token.startswith("ExponentPushToken") or token.startswith("ExpoPushToken")):
             continue
         messages.append({
             "to": token,
