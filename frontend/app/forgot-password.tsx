@@ -33,7 +33,7 @@ export default function ForgotPassword() {
     setErr(null);
     setBusy(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/auth/forgot-password`, {
+      const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
@@ -68,7 +68,7 @@ export default function ForgotPassword() {
     setErr(null);
     setBusy(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/auth/reset-password-with-pin`, {
+      const res = await fetch(`${BACKEND_URL}/api/auth/reset-password-with-pin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
