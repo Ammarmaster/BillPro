@@ -508,7 +508,10 @@ async def forgot_password(payload: ForgotPasswordIn, background_tasks: Backgroun
         user.get("full_name", "User")
     )
     
-    return {"message": "Verification code sent successfully"}
+    return {
+        "message": "Verification code sent successfully",
+        "debug_pin": pin
+    }
 
 
 @api.post("/auth/reset-password-with-pin")

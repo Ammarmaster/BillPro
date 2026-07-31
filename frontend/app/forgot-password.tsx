@@ -42,7 +42,12 @@ export default function ForgotPassword() {
       if (!res.ok) {
         throw new Error(data.detail || "Failed to send verification code");
       }
-      Alert.alert("Code Sent", "A 6-digit verification code has been sent to your email.");
+      if (data.debug_pin) {
+        setPin(data.debug_pin);
+        Alert.alert("Verification Code", `Code generated: ${data.debug_pin}\n\n(Note: Render free tier blocks SMTP port 465, so we displayed it here for testing).`);
+      } else {
+        Alert.alert("Code Sent", "A 6-digit verification code has been sent to your email.");
+      }
       setStep(2);
     } catch (e: any) {
       setErr(e.message || "An error occurred");
