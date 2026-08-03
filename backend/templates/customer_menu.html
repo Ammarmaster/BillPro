@@ -1000,6 +1000,8 @@
           }
         } else if (item.image_url) {
           imgSrc = item.image_url;
+        } else {
+          imgSrc = foodImageUrl(item.name, item.category_id);
         }
 
         const imgBlock = imgSrc 
@@ -1264,16 +1266,41 @@
 
     // Helper functions for placeholder image generation
     function hashStr(s) {
+      if (!s) return 0;
       let h = 0;
-      for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+      for (let i = 0; i < s.length; i++) h = (s.charCodeAt(i) + (h << 5) - h) | 0;
       return h;
     }
 
-    function foodImageUrl(name) {
-      const q = encodeURIComponent(
-        name.trim().replace(/[^a-zA-Z0-9, ]/g, "").replace(/\s+/g, ",") || "food"
-      );
-      return `https://loremflickr.com/320/320/${q},food?lock=${Math.abs(hashStr(name)) % 1000}`;
+    function getCategoryName(catId) {
+      if (!menuData || !menuData.categories) return "";
+      const cat = menuData.categories.find(c => c.id === catId);
+      return cat ? cat.name.toLowerCase() : "";
+    }
+
+    function foodImageUrl(name, catId) {
+      const catName = getCategoryName(catId);
+      const title = (name || "food").toString().toLowerCase();
+      
+      if (catName.includes("chicken") || title.includes("chicken")) {
+        return "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=200&h=200&fit=crop";
+      }
+      if (catName.includes("mutton") || title.includes("mutton") || title.includes("meat")) {
+        return "https://images.unsplash.com/photo-1544025162-d76694265947?w=200&h=200&fit=crop";
+      }
+      if (catName.includes("rice") || title.includes("rice") || title.includes("biryani") || title.includes("kushka")) {
+        return "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=200&h=200&fit=crop";
+      }
+      if (catName.includes("chapati") || catName.includes("roti") || title.includes("chapati") || title.includes("roti") || title.includes("naan") || title.includes("prota") || title.includes("paratha")) {
+        return "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=200&h=200&fit=crop";
+      }
+      if (catName.includes("egg") || title.includes("egg")) {
+        return "https://images.unsplash.com/photo-1587486913049-53fc88980cfc?w=200&h=200&fit=crop";
+      }
+      if (catName.includes("starter") || catName.includes("kabab") || title.includes("65") || title.includes("starter") || title.includes("kabab") || title.includes("fry")) {
+        return "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=200&h=200&fit=crop";
+      }
+      return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=200&h=200&fit=crop";
     }
 
     // Copy Review Feedback

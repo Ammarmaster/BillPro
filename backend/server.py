@@ -1659,9 +1659,14 @@ async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None)
             html_content = f.read()
         html_content = html_content.replace("{{TENANT_ID}}", tenant_id)
         html_content = html_content.replace("{{TABLE_LABEL}}", table_label or "")
-        return html_content
+        headers = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        return HTMLResponse(content=html_content, headers=headers)
     except Exception as e:
-        return f"<h3>Error loading customer menu page: {str(e)}</h3>"
+        return HTMLResponse(content=f"<h3>Error loading customer menu page: {str(e)}</h3>", status_code=500)
 
 app.add_middleware(
     CORSMiddleware,
