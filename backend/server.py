@@ -891,7 +891,7 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
 
 
 # ---------- public guest api ----------
-@api.get("/api/public/restaurant/{tenant_id}")
+@api.get("/public/restaurant/{tenant_id}")
 async def public_get_restaurant(tenant_id: str):
     res = await db.restaurants.find_one({"id": tenant_id}, {"_id": 0})
     if not res:
@@ -909,7 +909,7 @@ async def public_get_restaurant(tenant_id: str):
         "google_maps_link": res.get("google_maps_link", ""),
     }
 
-@api.get("/api/public/menu/{tenant_id}")
+@api.get("/public/menu/{tenant_id}")
 async def public_list_menu(tenant_id: str):
     items = await db.menu_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
     categories = await db.categories.find({"tenant_id": tenant_id}, {"_id": 0}).sort("sort_order", 1).to_list(500)
@@ -918,7 +918,7 @@ async def public_list_menu(tenant_id: str):
         "categories": categories
     }
 
-@api.post("/api/public/orders")
+@api.post("/public/orders")
 async def public_create_order(payload: PublicOrderIn):
     restaurant = await db.restaurants.find_one({"id": payload.tenant_id})
     if not restaurant:
