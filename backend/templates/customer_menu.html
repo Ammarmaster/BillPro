@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Menu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090D16;
+      --surface: #121824;
+      --surface-sec: #1C2434;
+      --brand: #6366F1;
+      --brand-gradient: linear-gradient(135deg, #6366F1, #8B5CF6);
+      --on-surface: #F1F5F9;
+      --on-surface-sec: #94A3B8;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(99, 102, 241, 0.4);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 24px;
+      --font: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--on-surface);
+      font-family: var(--font);
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      padding-bottom: 120px;
+    }
+
+    /* Premium Header */
+    header {
+      background: rgba(9, 13, 22, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-container {
+      width: 50px;
+      height: 50px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .logo-fallback {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--brand);
+    }
+
+    .header-info h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .header-info p {
+      font-size: 13px;
+      color: var(--on-surface-sec);
+      margin-top: 2px;
+    }
+
+    /* Search & Filters */
+    .search-wrapper {
+      padding: 16px 20px 8px;
+    }
+
+    .search-input-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-input-container svg {
+      position: absolute;
+      left: 16px;
+      fill: var(--on-surface-sec);
+      width: 18px;
+      height: 18px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 14px 16px 14px 48px;
+      border-radius: var(--radius-md);
+      color: var(--on-surface);
+      font-family: var(--font);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.3s ease;
+    }
+
+    .search-input:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--border-focus);
+    }
+
+    /* Categories horizontal scroller */
+    .categories-scroller {
+      display: flex;
+      overflow-x: auto;
+      gap: 10px;
+      padding: 12px 20px;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+    }
+
+    .categories-scroller::-webkit-scrollbar {
+      display: none;
+    }
+
+    .category-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 10px 18px;
+      border-radius: var(--radius-lg);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      color: var(--on-surface-sec);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .category-pill.active {
+      background: var(--brand-gradient);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      transform: translateY(-1px);
+    }
+
+    /* Menu Items Grid */
+    .menu-section {
+      padding: 16px 20px;
+    }
+
+    .menu-section-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--on-surface);
+      letter-spacing: -0.3px;
+    }
+
+    .menu-items-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .menu-item-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      transition: all 0.3s ease;
+    }
+
+    .menu-item-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    .menu-item-info {
+      flex: 1;
+    }
+
+    .menu-item-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--on-surface);
+    }
+
+    .menu-item-desc {
+      font-size: 12px;
+      color: var(--on-surface-sec);
+      margin-top: 4px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .menu-item-price {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--brand);
+      margin-top: 8px;
+    }
+
+    .menu-item-image-wrapper {
+      position: relative;
+      width: 90px;
+      height: 90px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+    }
+
+    .menu-item-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .menu-item-action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .add-to-cart-btn {
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      color: var(--brand);
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: var(--radius-lg);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .add-to-cart-btn:hover {
+      background: var(--brand-gradient);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    /* Quantity Selector Controls */
+    .qty-controls {
+      display: flex;
+      align-items: center;
+      background: var(--brand-gradient);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);
+    }
+
+    .qty-btn {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .qty-btn:active {
+      background: rgba(0, 0, 0, 0.15);
+    }
+
+    .qty-val {
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      min-width: 20px;
+      text-align: center;
+    }
+
+    /* Floating Cart Bar */
+    .cart-bar-floating {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(150px);
+      width: calc(100% - 40px);
+      max-width: 560px;
+      background: var(--brand-gradient);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #fff;
+      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
+      z-index: 20;
+      cursor: pointer;
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .cart-bar-floating.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .cart-bar-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+      opacity: 0.9;
+    }
+
+    .cart-bar-info p {
+      font-size: 18px;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+
+    .cart-bar-action {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* Overlay Sheets / Modals */
+    .sheet-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .sheet-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sheet-card {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%) translateY(100%);
+      width: 100%;
+      max-width: 600px;
+      background: var(--surface);
+      border-top-left-radius: var(--radius-lg);
+      border-top-right-radius: var(--radius-lg);
+      border-top: 1px solid var(--border);
+      z-index: 31;
+      padding: 24px;
+      max-height: 85vh;
+      overflow-y: auto;
+      transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    .sheet-card.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .sheet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .sheet-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .sheet-close-btn {
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sheet-close-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: var(--on-surface);
+    }
+
+    /* Cart item rows inside sheet */
+    .cart-items-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .cart-item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .cart-item-details h5 {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .cart-item-details p {
+      font-size: 13px;
+      color: var(--brand);
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    /* Forms in Sheets */
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--on-surface-sec);
+      margin-bottom: 6px;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
+      width: 100%;
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      color: var(--on-surface);
+      font-family: var(--font);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.3s;
+    }
+
+    .form-input:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--border-focus);
+    }
+
+    /* Segmented Order Type Picker */
+    .seg-picker {
+      display: flex;
+      background: var(--surface-sec);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .seg-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--on-surface-sec);
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      text-align: center;
+    }
+
+    .seg-btn.active {
+      background: var(--surface);
+      color: var(--brand);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Button group checkouts */
+    .checkout-btn {
+      width: 100%;
+      background: var(--brand-gradient);
+      border: none;
+      color: #fff;
+      padding: 16px;
+      border-radius: var(--radius-md);
+      font-family: var(--font);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+      transition: transform 0.2s;
+    }
+
+    .checkout-btn:active {
+      transform: scale(0.98);
+    }
+
+    /* Status confirmation card styles */
+    .confirm-card {
+      text-align: center;
+      padding: 32px 16px;
+    }
+
+    .confirm-card svg.success-ring {
+      width: 64px;
+      height: 64px;
+      fill: none;
+      stroke: #10B981;
+      stroke-width: 4;
+      stroke-linecap: round;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .confirm-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .confirm-desc {
+      font-size: 14px;
+      color: var(--on-surface-sec);
+      margin-bottom: 24px;
+    }
+
+    /* UPI QR Display Panel */
+    .upi-panel {
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .upi-qr-img {
+      width: 160px;
+      height: 160px;
+      border-radius: var(--radius-sm);
+      border: 6px solid #fff;
+      margin-bottom: 12px;
+    }
+
+    .upi-btn-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #10B981;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: var(--radius-lg);
+      font-weight: 700;
+      font-size: 13px;
+      text-decoration: none;
+      margin-top: 6px;
+    }
+
+    /* Feedback Cards */
+    .feedback-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--on-surface-sec);
+      margin: 24px 0 12px;
+      letter-spacing: 0.5px;
+      text-align: left;
+    }
+
+    .feedback-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .feedback-option {
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 13px;
+      color: var(--on-surface);
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .feedback-option:hover {
+      border-color: var(--brand);
+      background: rgba(99, 102, 241, 0.05);
+    }
+
+    .feedback-option.copied {
+      border-color: #10B981;
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .copied-badge {
+      display: none;
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      color: #10B981;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .feedback-option.copied .copied-badge {
+      display: block;
+    }
+
+    .maps-redirect-btn {
+      width: 100%;
+      background: #EA4335;
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    /* Loader */
+    .loader-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(9, 13, 22, 0.9);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--brand);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header id="restaurant-header">
+      <div class="logo-container" id="logo-container">
+        <!-- JS inserts logo or fallback -->
+      </div>
+      <div class="header-info">
+        <h1 id="restaurant-name">Loading...</h1>
+        <p id="table-badge">Table --</p>
+      </div>
+    </header>
+
+    <!-- Search -->
+    <div class="search-wrapper">
+      <div class="search-input-container">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" id="search-box" class="search-input" placeholder="Search delicious dishes..." oninput="filterMenu()">
+      </div>
+    </div>
+
+    <!-- Category Selector -->
+    <div class="categories-scroller" id="category-pills-container">
+      <!-- Dynamic list of categories -->
+    </div>
+
+    <!-- Menu Items List -->
+    <div class="menu-section">
+      <h3 class="menu-section-title" id="section-title">All Items</h3>
+      <div class="menu-items-list" id="menu-items-container">
+        <!-- Dynamic list of menu items -->
+      </div>
+    </div>
+
+    <!-- Floating Cart Trigger -->
+    <div class="cart-bar-floating" id="cart-floating-bar" onclick="openCartSheet()">
+      <div class="cart-bar-info">
+        <h4 id="cart-items-count">0 Items Added</h4>
+        <p id="cart-total-price">₹0.00</p>
+      </div>
+      <div class="cart-bar-action">
+        <span>View Basket</span>
+        <svg style="width: 20px; height: 20px; fill: #fff;" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cart / Checkout Sheet -->
+  <div class="sheet-overlay" id="cart-sheet-overlay" onclick="closeCartSheet()"></div>
+  <div class="sheet-card" id="cart-sheet-card">
+    <div class="sheet-header">
+      <h3 class="sheet-title">My Basket</h3>
+      <button class="sheet-close-btn" onclick="closeCartSheet()">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+
+    <!-- Segments Toggle -->
+    <div class="seg-picker">
+      <button class="seg-btn active" id="seg-dinein" onclick="setOrderType('dine_in')">Dine-In</button>
+      <button class="seg-btn" id="seg-takeaway" onclick="setOrderType('take_away')">Take-Away</button>
+    </div>
+
+    <div class="cart-items-container" id="cart-sheet-items">
+      <!-- Dynamic cart items rows -->
+    </div>
+
+    <!-- Inputs Form -->
+    <div class="form-group">
+      <label class="form-label">Phone Number *</label>
+      <input type="tel" id="cust-phone" class="form-input" placeholder="Enter phone number">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name (Optional)</label>
+      <input type="text" id="cust-name" class="form-input" placeholder="Your name">
+    </div>
+    <div class="form-group" id="table-number-form-group">
+      <label class="form-label">Table Number</label>
+      <input type="text" id="table-number-input" class="form-input" disabled>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Special Cooking Instructions / Description</label>
+      <textarea id="order-notes" class="form-input" rows="2" placeholder="E.g. Make it extra spicy, no onions..."></textarea>
+    </div>
+
+    <!-- Payment Type -->
+    <div class="form-group">
+      <label class="form-label">Select Payment Method</label>
+      <div class="seg-picker" style="margin-bottom: 0;">
+        <button class="seg-btn active" id="pay-cash" onclick="setPaymentMethod('Cash')">Pay at Counter</button>
+        <button class="seg-btn" id="pay-upi" onclick="setPaymentMethod('UPI')">Pay Now (UPI)</button>
+      </div>
+    </div>
+
+    <!-- Action Checkout Button -->
+    <button class="checkout-btn" style="margin-top: 16px;" onclick="submitOrder()">Place Order</button>
+  </div>
+
+  <!-- Post-Order Confirmation & Feedback Sheet -->
+  <div class="sheet-overlay" id="checkout-sheet-overlay"></div>
+  <div class="sheet-card" id="checkout-sheet-card">
+    <div class="confirm-card">
+      <svg class="success-ring" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M8 12l3 3 5-5" />
+      </svg>
+      <h3 class="confirm-title" id="confirm-h3">Order Confirmed!</h3>
+      <p class="confirm-desc" id="confirm-body">Your order has been sent to the kitchen. Please relax while we prepare your fresh meal.</p>
+
+      <!-- Dynamic UPI QR code section -->
+      <div id="upi-qrcode-container" style="display: none;">
+        <div class="upi-panel">
+          <p style="font-size: 13px; font-weight: 700; color: var(--brand); margin-bottom: 12px;">SCAN OR TAP TO PAY UPI</p>
+          <img id="upi-qr" class="upi-qr-img" src="" alt="UPI Code">
+          <a id="upi-deep-link" href="#" class="upi-btn-link">
+            <svg style="width: 16px; height: 16px; fill:#fff;" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 12H9v-2h6v2zm0-4H9V10h6v2z"/></svg>
+            Pay using any UPI App
+          </a>
+        </div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="feedback-title">Rate Your Experience</div>
+      <p style="font-size: 12px; color: var(--on-surface-sec); text-align: left; margin-bottom: 12px;">Choose a preset 5-star review below to copy, then tap review to paste on Google Maps!</p>
+      
+      <div class="feedback-list">
+        <div class="feedback-option" onclick="copyFeedback(this, 1)">
+          <span id="feedback-t1">Loading...</span>
+          <span class="copied-badge">Copied ✓</span>
+        </div>
+        <div class="feedback-option" onclick="copyFeedback(this, 2)">
+          <span id="feedback-t2">Loading...</span>
+          <span class="copied-badge">Copied ✓</span>
+        </div>
+        <div class="feedback-option" onclick="copyFeedback(this, 3)">
+          <span id="feedback-t3">Loading...</span>
+          <span class="copied-badge">Copied ✓</span>
+        </div>
+      </div>
+
+      <button id="google-maps-btn" class="maps-redirect-btn" onclick="openGoogleReviews()">
+        <svg style="width: 18px; height: 18px; fill: #fff;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+        Paste & Write Review on Google Maps
+      </button>
+    </div>
+  </div>
+
+  <!-- Loading Mask Overlay -->
+  <div class="loader-overlay" id="loading-overlay">
+    <div class="spinner"></div>
+    <p style="font-weight: 600; font-size: 15px;">Processing your order...</p>
+  </div>
+
+  <script>
+    // Injected variables
+    const tenantId = "{{TENANT_ID}}";
+    const initialTableLabel = "{{TABLE_LABEL}}";
+
+    let restaurantInfo = null;
+    let menuData = { items: [], categories: [] };
+    let selectedCategory = null;
+    let cart = {}; // itemId -> { item, quantity }
+    let orderType = "dine_in";
+    let paymentMethod = "Cash";
+
+    // Initialize Page
+    async function init() {
+      showLoader(true);
+      try {
+        // Load Restaurant Info
+        const rRes = await fetch(`/api/public/restaurant/${tenantId}`);
+        if (!rRes.ok) throw new Error("Restaurant not found");
+        restaurantInfo = await rRes.json();
+        
+        // Update header UI
+        document.getElementById("restaurant-name").textContent = restaurantInfo.name;
+        document.title = `${restaurantInfo.name} - Luxury QR Menu`;
+        
+        const logoCont = document.getElementById("logo-container");
+        if (restaurantInfo.logo_base64) {
+          logoCont.innerHTML = `<img src="data:image/jpeg;base64,${restaurantInfo.logo_base64}" class="logo-img" alt="logo">`;
+        } else {
+          logoCont.innerHTML = `<span class="logo-fallback">${restaurantInfo.name.charAt(0).toUpperCase()}</span>`;
+        }
+
+        // Set table number UI
+        const badge = document.getElementById("table-badge");
+        const tblInput = document.getElementById("table-number-input");
+        if (initialTableLabel) {
+          badge.textContent = `Table ${initialTableLabel}`;
+          tblInput.value = initialTableLabel;
+        } else {
+          badge.textContent = `Contactless Menu`;
+          document.getElementById("table-number-form-group").style.display = "none";
+          setOrderType("take_away");
+        }
+
+        // Build preset reviews
+        document.getElementById("feedback-t1").textContent = `Fabulous service and incredible food here at ${restaurantInfo.name}! Strongly recommended.`;
+        document.getElementById("feedback-t2").textContent = `The menu selection at ${restaurantInfo.name} is outstanding. The QR ordering was extremely fast and convenient!`;
+        document.getElementById("feedback-t3").textContent = `Clean atmosphere, prompt KOT, and very hygienic dishes at ${restaurantInfo.name}. Will visit again.`;
+
+        // Load Menu Data
+        const mRes = await fetch(`/api/public/menu/${tenantId}`);
+        menuData = await mRes.json();
+        
+        renderCategories();
+        renderMenu();
+      } catch (e) {
+        alert("Failed to initialize: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    // Loader controls
+    function showLoader(show) {
+      document.getElementById("loading-overlay").style.display = show ? "flex" : "none";
+    }
+
+    // Render Categories
+    function renderCategories() {
+      const container = document.getElementById("category-pills-container");
+      container.innerHTML = "";
+
+      // All category
+      const allPill = document.createElement("div");
+      allPill.className = `category-pill ${selectedCategory === null ? 'active' : ''}`;
+      allPill.textContent = "All Items";
+      allPill.onclick = () => selectCategory(null);
+      container.appendChild(allPill);
+
+      menuData.categories.forEach(cat => {
+        const pill = document.createElement("div");
+        pill.className = `category-pill ${selectedCategory === cat.name ? 'active' : ''}`;
+        pill.textContent = cat.name;
+        pill.onclick = () => selectCategory(cat.name);
+        container.appendChild(pill);
+      });
+    }
+
+    function selectCategory(catName) {
+      selectedCategory = catName;
+      renderCategories();
+      renderMenu();
+      document.getElementById("section-title").textContent = catName || "All Items";
+    }
+
+    // Render Menu Items
+    function renderMenu() {
+      const container = document.getElementById("menu-items-container");
+      container.innerHTML = "";
+
+      const query = document.getElementById("search-box").value.toLowerCase().trim();
+
+      // Filter items
+      const filtered = menuData.items.filter(item => {
+        const matchCat = !selectedCategory || item.category === selectedCategory;
+        const matchQuery = !query || item.name.toLowerCase().includes(query) || (item.description || "").toLowerCase().includes(query);
+        return matchCat && matchQuery;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding: 40px 0; color: var(--on-surface-sec);">No items match search.</div>`;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "menu-item-card";
+
+        const hasImage = item.image_base64;
+        const imgBlock = hasImage 
+          ? `<div class="menu-item-image-wrapper"><img src="data:image/jpeg;base64,${item.image_base64}" class="menu-item-image" alt="item"></div>`
+          : "";
+
+        const cartQty = cart[item.id] ? cart[item.id].quantity : 0;
+        const actionBlock = cartQty > 0 
+          ? `<div class="qty-controls">
+               <button class="qty-btn" onclick="updateCartQty('${item.id}', -1)">-</button>
+               <span class="qty-val">${cartQty}</span>
+               <button class="qty-btn" onclick="updateCartQty('${item.id}', 1)">+</button>
+             </div>`
+          : `<button class="add-to-cart-btn" onclick="updateCartQty('${item.id}', 1)">ADD</button>`;
+
+        card.innerHTML = `
+          <div class="menu-item-info">
+            <h4 class="menu-item-title">${item.name}</h4>
+            <p class="menu-item-desc">${item.description || "No description available."}</p>
+            <p class="menu-item-price">₹${item.price.toFixed(2)}</p>
+          </div>
+          ${imgBlock}
+          <div class="menu-item-action">${actionBlock}</div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function filterMenu() {
+      renderMenu();
+    }
+
+    // Cart state controls
+    function updateCartQty(itemId, change) {
+      const item = menuData.items.find(i => i.id === itemId);
+      if (!item) return;
+
+      if (!cart[itemId]) {
+        cart[itemId] = { item, quantity: 0 };
+      }
+
+      cart[itemId].quantity += change;
+
+      if (cart[itemId].quantity <= 0) {
+        delete cart[itemId];
+      }
+
+      // Reload UI
+      renderMenu();
+      updateCartBar();
+    }
+
+    function updateCartBar() {
+      const bar = document.getElementById("cart-floating-bar");
+      const itemsCount = Object.values(cart).reduce((sum, c) => sum + c.quantity, 0);
+      const totalPrice = Object.values(cart).reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
+
+      document.getElementById("cart-items-count").textContent = `${itemsCount} Item${itemsCount !== 1 ? 's' : ''} Added`;
+      document.getElementById("cart-total-price").textContent = `₹${totalPrice.toFixed(2)}`;
+
+      if (itemsCount > 0) {
+        bar.classList.add("show");
+      } else {
+        bar.classList.remove("show");
+      }
+    }
+
+    // Modal Cart Sheet controls
+    function openCartSheet() {
+      document.getElementById("cart-sheet-overlay").classList.add("show");
+      document.getElementById("cart-sheet-card").classList.add("show");
+      renderCartSheetItems();
+    }
+
+    function closeCartSheet() {
+      document.getElementById("cart-sheet-overlay").classList.remove("show");
+      document.getElementById("cart-sheet-card").classList.remove("show");
+    }
+
+    function renderCartSheetItems() {
+      const container = document.getElementById("cart-sheet-items");
+      container.innerHTML = "";
+
+      Object.values(cart).forEach(cartItem => {
+        const row = document.createElement("div");
+        row.className = "cart-item-row";
+
+        row.innerHTML = `
+          <div class="cart-item-details">
+            <h5>${cartItem.item.name}</h5>
+            <p>₹${cartItem.item.price.toFixed(2)}</p>
+          </div>
+          <div class="qty-controls">
+             <button class="qty-btn" onclick="updateCartItemQty('${cartItem.item.id}', -1)">-</button>
+             <span class="qty-val">${cartItem.quantity}</span>
+             <button class="qty-btn" onclick="updateCartItemQty('${cartItem.item.id}', 1)">+</button>
+           </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function updateCartItemQty(itemId, change) {
+      updateCartQty(itemId, change);
+      renderCartSheetItems();
+      if (Object.keys(cart).length === 0) {
+        closeCartSheet();
+      }
+    }
+
+    function setOrderType(type) {
+      orderType = type;
+      document.getElementById("seg-dinein").classList.toggle("active", type === "dine_in");
+      document.getElementById("seg-takeaway").classList.toggle("active", type === "take_away");
+      
+      const tblGroup = document.getElementById("table-number-form-group");
+      if (type === "dine_in") {
+        tblGroup.style.display = "block";
+      } else {
+        tblGroup.style.display = "none";
+      }
+    }
+
+    function setPaymentMethod(method) {
+      paymentMethod = method;
+      document.getElementById("pay-cash").classList.toggle("active", method === "Cash");
+      document.getElementById("pay-upi").classList.toggle("active", method === "UPI");
+    }
+
+    // Submit Order API
+    async function submitOrder() {
+      const phoneInput = document.getElementById("cust-phone");
+      const phone = phoneInput.value.trim();
+      const name = document.getElementById("cust-name").value.trim();
+      const notes = document.getElementById("order-notes").value.trim();
+
+      if (!phone || phone.length < 9) {
+        alert("Please enter a valid phone number.");
+        phoneInput.focus();
+        return;
+      }
+
+      showLoader(true);
+      try {
+        const orderItems = Object.values(cart).map(c => ({
+          menu_item_id: c.item.id,
+          name: c.item.name,
+          price: c.item.price,
+          quantity: c.quantity,
+          notes: ""
+        }));
+
+        const body = {
+          tenant_id: tenantId,
+          table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
+          order_type: orderType,
+          items: orderItems,
+          notes: notes,
+          customer_phone: phone,
+          customer_name: name,
+          payment_method: paymentMethod
+        };
+
+        const res = await fetch("/api/public/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to place order.");
+        }
+
+        const placedOrder = await res.json();
+        
+        // Success: clear local cart
+        cart = {};
+        renderMenu();
+        updateCartBar();
+        closeCartSheet();
+
+        // Open checkout confirmation overlay
+        showCheckoutConfirmation(placedOrder);
+
+      } catch (e) {
+        alert("Ordering Error: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    // Checkout Confirmation Sheet
+    function showCheckoutConfirmation(order) {
+      document.getElementById("checkout-sheet-overlay").classList.add("show");
+      document.getElementById("checkout-sheet-card").classList.add("show");
+
+      const upiContainer = document.getElementById("upi-qrcode-container");
+      if (order.payment_method === "UPI" && restaurantInfo.upi_id) {
+        upiContainer.style.display = "block";
+        
+        // Generate UPI URL
+        const amount = order.subtotal.toFixed(2);
+        const upiUrl = `upi://pay?pa=${restaurantInfo.upi_id}&pn=${encodeURIComponent(restaurantInfo.merchant_name || restaurantInfo.name)}&am=${amount}&cu=INR&tn=Order-${order.id.slice(0,8)}`;
+        
+        // Set QR image using public API
+        document.getElementById("upi-qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}`;
+        
+        // Set deep link
+        document.getElementById("upi-deep-link").href = upiUrl;
+      } else {
+        upiContainer.style.display = "none";
+      }
+
+      // Hide Google Maps button if no link exists
+      const mapsBtn = document.getElementById("google-maps-btn");
+      if (!restaurantInfo.google_maps_link) {
+        mapsBtn.style.display = "none";
+      } else {
+        mapsBtn.style.display = "flex";
+      }
+    }
+
+    // Copy Review Feedback
+    let selectedReviewText = "";
+    function copyFeedback(elem, index) {
+      // Clear previous copied styles
+      const options = document.querySelectorAll(".feedback-option");
+      options.forEach(o => o.classList.remove("copied"));
+
+      // Copy text to clipboard
+      const reviewText = document.getElementById(`feedback-t${index}`).textContent;
+      selectedReviewText = reviewText;
+
+      navigator.clipboard.writeText(reviewText).then(() => {
+        elem.classList.add("copied");
+      }).catch(err => {
+        console.error("Failed to copy review:", err);
+      });
+    }
+
+    // Launch Google Maps Review Link
+    function openGoogleReviews() {
+      if (restaurantInfo && restaurantInfo.google_maps_link) {
+        window.open(restaurantInfo.google_maps_link, "_blank");
+      }
+    }
+
+    // Bootstrap
+    init();
+  </script>
+</body>
+</html>

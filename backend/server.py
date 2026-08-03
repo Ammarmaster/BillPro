@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -361,6 +362,7 @@ class RestaurantIn(BaseModel):
     fssai: Optional[str] = ""
     upi_id: str
     merchant_name: str
+    google_maps_link: Optional[str] = ""
 
 
 class CategoryIn(BaseModel):
@@ -415,6 +417,17 @@ class OrderIn(BaseModel):
     table_number: str
     items: List[OrderItemIn]
     notes: str = ""
+
+
+class PublicOrderIn(BaseModel):
+    tenant_id: str
+    table_number: str
+    order_type: str = "dine_in"  # dine_in, take_away
+    items: List[OrderItemIn]
+    notes: str = ""
+    customer_phone: str = ""
+    customer_name: str = ""
+    payment_method: str = "Cash"  # Cash, UPI
 
 
 class OrderStatusIn(BaseModel):
@@ -875,6 +888,73 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
         {"order_id": oid, "table_number": order.get("table_number", "-")}
     )
     return await db.orders.find_one({"id": oid}, {"_id": 0})
+
+
+# ---------- public guest api ----------
+@api.get("/api/public/restaurant/{tenant_id}")
+async def public_get_restaurant(tenant_id: str):
+    res = await db.restaurants.find_one({"id": tenant_id}, {"_id": 0})
+    if not res:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    return {
+        "id": res.get("id"),
+        "name": res.get("name"),
+        "owner_name": res.get("owner_name"),
+        "bio": res.get("bio"),
+        "logo_base64": res.get("logo_base64"),
+        "address": res.get("address"),
+        "phone": res.get("phone"),
+        "upi_id": res.get("upi_id"),
+        "merchant_name": res.get("merchant_name"),
+        "google_maps_link": res.get("google_maps_link", ""),
+    }
+
+@api.get("/api/public/menu/{tenant_id}")
+async def public_list_menu(tenant_id: str):
+    items = await db.menu_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+    categories = await db.categories.find({"tenant_id": tenant_id}, {"_id": 0}).sort("sort_order", 1).to_list(500)
+    return {
+        "items": items,
+        "categories": categories
+    }
+
+@api.post("/api/public/orders")
+async def public_create_order(payload: PublicOrderIn):
+    restaurant = await db.restaurants.find_one({"id": payload.tenant_id})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    subtotal = sum(i.price * i.quantity for i in payload.items)
+    order_id = str(uuid.uuid4())
+    
+    doc = {
+        "id": order_id,
+        "tenant_id": payload.tenant_id,
+        "table_number": payload.table_number,
+        "items": [i.dict() for i in payload.items],
+        "notes": payload.notes,
+        "subtotal": subtotal,
+        "status": "placed",
+        "created_by": "guest",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "customer_phone": payload.customer_phone,
+        "customer_name": payload.customer_name,
+        "order_type": payload.order_type,
+        "payment_method": payload.payment_method,
+    }
+    
+    await db.orders.insert_one(doc)
+    doc.pop("_id", None)
+    
+    await notify_tenant(
+        payload.tenant_id,
+        "kitchen",
+        "New Contactless Order",
+        f"New QR order for Table {payload.table_number or '-'}",
+        {"order_id": order_id, "table_number": payload.table_number or "-"}
+    )
+    
+    return doc
 
 
 # ---------- bills ----------
@@ -1526,6 +1606,20 @@ async def razorpay_webhook(request: Request):
 
 
 app.include_router(api)
+
+
+@app.get("/menu/{tenant_id}", response_class=HTMLResponse)
+@app.get("/menu/{tenant_id}/{table_label}", response_class=HTMLResponse)
+async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None):
+    try:
+        template_path = Path(__file__).parent / "templates" / "customer_menu.html"
+        with open(template_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        html_content = html_content.replace("{{TENANT_ID}}", tenant_id)
+        html_content = html_content.replace("{{TABLE_LABEL}}", table_label or "")
+        return html_content
+    except Exception as e:
+        return f"<h3>Error loading customer menu page: {str(e)}</h3>"
 
 app.add_middleware(
     CORSMiddleware,

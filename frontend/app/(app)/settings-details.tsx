@@ -22,7 +22,7 @@ export default function SettingsDetails() {
   const [form, setForm] = useState({
     name: "", owner_name: "", bio: "", address: "", phone: "",
     gst: "", gst_enabled: false, gst_rate: "5", fssai: "", upi_id: "", merchant_name: "",
-    logo_base64: "",
+    logo_base64: "", google_maps_link: "",
   });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,7 @@ export default function SettingsDetails() {
           address: r.address || "", phone: r.phone || "",
           gst: r.gst || "", gst_enabled: !!r.gst_enabled, gst_rate: String(r.gst_rate ?? "5"), fssai: r.fssai || "",
           upi_id: r.upi_id || "", merchant_name: r.merchant_name || "",
-          logo_base64: r.logo_base64 || "",
+          logo_base64: r.logo_base64 || "", google_maps_link: r.google_maps_link || "",
         });
       }
     } catch (e: any) { setErr(e.message); }
@@ -166,6 +166,7 @@ export default function SettingsDetails() {
                 {field("upi_id", "UPI ID (for payments) *", "8152075375-2@ybl")}
                 {field("gst", "GSTIN", "22AAAAA0000A1Z5")}
                 {field("fssai", "FSSAI License", "License #")}
+                {field("google_maps_link", "Google Maps Review Link", "https://g.page/r/your-restaurant/review")}
 
                 {/* GST Toggle Switch */}
                 <View style={[styles.switchRow, { borderColor: theme.border }]}>
