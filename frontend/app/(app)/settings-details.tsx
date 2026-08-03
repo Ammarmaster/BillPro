@@ -167,6 +167,9 @@ export default function SettingsDetails() {
                 {field("gst", "GSTIN", "22AAAAA0000A1Z5")}
                 {field("fssai", "FSSAI License", "License #")}
                 {field("google_maps_link", "Google Maps Review Link", "https://g.page/r/your-restaurant/review")}
+                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, marginTop: -8, marginBottom: 12 }}>
+                  Use your Google Business dashboard's "Get more reviews" short link for direct 1-click rating box popups.
+                </Text>
 
                 {/* GST Toggle Switch */}
                 <View style={[styles.switchRow, { borderColor: theme.border }]}>
