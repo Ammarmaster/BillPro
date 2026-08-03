@@ -807,15 +807,14 @@
 
     <!-- Payment Type -->
     <div class="form-group">
-      <label class="form-label">Select Payment Method</label>
+      <label class="form-label">Payment Method</label>
       <div class="seg-picker" style="margin-bottom: 0;">
-        <button class="seg-btn active" id="pay-cash" onclick="setPaymentMethod('Cash')">Pay at Counter</button>
-        <button class="seg-btn" id="pay-upi" onclick="setPaymentMethod('UPI')">Pay Now (UPI)</button>
+        <button class="seg-btn active" style="flex: 1; pointer-events: none;" id="pay-upi">UPI Online Payment</button>
       </div>
     </div>
 
     <!-- Action Checkout Button -->
-    <button class="checkout-btn" style="margin-top: 16px;" onclick="submitOrder()">Place Order</button>
+    <button class="checkout-btn" style="margin-top: 16px;" onclick="submitOrder()">Place & Pay Order (UPI)</button>
   </div>
 
   <!-- Post-Order Confirmation & Feedback Sheet -->
@@ -883,7 +882,7 @@
     let selectedCategory = null;
     let cart = {}; // itemId -> { item, quantity }
     let orderType = "dine_in";
-    let paymentMethod = "Cash";
+    let paymentMethod = "UPI";
 
     // Initialize Page
     async function init() {
@@ -949,20 +948,20 @@
       const allPill = document.createElement("div");
       allPill.className = `category-pill ${selectedCategory === null ? 'active' : ''}`;
       allPill.textContent = "All Items";
-      allPill.onclick = () => selectCategory(null);
+      allPill.onclick = () => selectCategory(null, "All Items");
       container.appendChild(allPill);
 
       menuData.categories.forEach(cat => {
         const pill = document.createElement("div");
-        pill.className = `category-pill ${selectedCategory === cat.name ? 'active' : ''}`;
+        pill.className = `category-pill ${selectedCategory === cat.id ? 'active' : ''}`;
         pill.textContent = cat.name;
-        pill.onclick = () => selectCategory(cat.name);
+        pill.onclick = () => selectCategory(cat.id, cat.name);
         container.appendChild(pill);
       });
     }
 
-    function selectCategory(catName) {
-      selectedCategory = catName;
+    function selectCategory(catId, catName) {
+      selectedCategory = catId;
       renderCategories();
       renderMenu();
       document.getElementById("section-title").textContent = catName || "All Items";
@@ -977,7 +976,7 @@
 
       // Filter items
       const filtered = menuData.items.filter(item => {
-        const matchCat = !selectedCategory || item.category === selectedCategory;
+        const matchCat = !selectedCategory || item.category_id === selectedCategory;
         const matchQuery = !query || item.name.toLowerCase().includes(query) || (item.description || "").toLowerCase().includes(query);
         return matchCat && matchQuery;
       });
@@ -991,9 +990,19 @@
         const card = document.createElement("div");
         card.className = "menu-item-card";
 
-        const hasImage = item.image_base64;
-        const imgBlock = hasImage 
-          ? `<div class="menu-item-image-wrapper"><img src="data:image/jpeg;base64,${item.image_base64}" class="menu-item-image" alt="item"></div>`
+        let imgSrc = "";
+        if (item.image_base64) {
+          if (item.image_base64.startsWith("data:image")) {
+            imgSrc = item.image_base64;
+          } else {
+            imgSrc = `data:image/jpeg;base64,${item.image_base64}`;
+          }
+        } else if (item.image_url) {
+          imgSrc = item.image_url;
+        }
+
+        const imgBlock = imgSrc 
+          ? `<div class="menu-item-image-wrapper"><img src="${imgSrc}" class="menu-item-image" alt="item"></div>`
           : "";
 
         const cartQty = cart[item.id] ? cart[item.id].quantity : 0;
@@ -1225,8 +1234,12 @@
 
       navigator.clipboard.writeText(reviewText).then(() => {
         elem.classList.add("copied");
+        setTimeout(() => {
+          openGoogleReviews();
+        }, 300);
       }).catch(err => {
         console.error("Failed to copy review:", err);
+        openGoogleReviews();
       });
     }
 
