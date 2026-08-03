@@ -280,3 +280,45 @@ export async function sharePdf(bill: any) {
     await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Share Bill" });
   }
 }
+
+export async function getDefaultPrinter(): Promise<string | null> {
+  try {
+    const val = await storage.getItem("lumina_default_printer_url");
+    return typeof val === "string" ? val : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function selectDefaultPrinter(): Promise<string | null> {
+  if (Platform.OS === "web") {
+    Alert.alert("Print Settings", "Browser printing is handled natively by your OS print dialog.");
+    return null;
+  }
+  
+  if (Platform.OS === "android") {
+    Alert.alert(
+      "Android Thermal Printing",
+      "Android uses the system print service. Make sure your thermal printer is connected and active in your phone's Settings -> Connection & Sharing -> Print."
+    );
+    return null;
+  }
+  
+  try {
+    const result = await Print.selectPrinterAsync();
+    if (result && result.url) {
+      await storage.setItem("lumina_default_printer_url", result.url);
+      return result.url;
+    }
+    return null;
+  } catch (e: any) {
+    Alert.alert("Printer Error", e.message || "Failed to select printer");
+    return null;
+  }
+}
+
+export async function clearDefaultPrinter(): Promise<void> {
+  try {
+    await storage.removeItem("lumina_default_printer_url");
+  } catch {}
+}
