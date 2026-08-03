@@ -21,16 +21,28 @@ export default function TablesScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [qrTable, setQrTable] = useState<Table | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [seats, setSeats] = useState("4");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    try { setTables(await api.listTables()); }
+    try {
+      const [tbls, rest] = await Promise.all([
+        api.listTables(),
+        api.getRestaurant()
+      ]);
+      setTables(tbls);
+      if (rest) {
+        setTenantId(rest.id);
+      } else if (user?.tenant_id) {
+        setTenantId(user.tenant_id);
+      }
+    }
     catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
-  }, []);
+  }, [user]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -119,8 +131,9 @@ export default function TablesScreen() {
         <Pressable style={styles.modalBg} onPress={() => setQrTable(null)}>
           <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, alignItems: "center" }]} onPress={() => {}}>
             {qrTable && (() => {
-              const qrUrl = `https://billpro-g1th.onrender.com/menu/${user?.tenant_id}/${qrTable.label}`;
+              const qrUrl = `https://billpro-g1th.onrender.com/menu/${tenantId || user?.tenant_id || "undefined"}/${qrTable.label}`;
               const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`;
+              const hasTenant = !!(tenantId || user?.tenant_id);
               return (
                 <>
                   <View style={[styles.modalHead, { width: "100%" }]}>
@@ -130,13 +143,21 @@ export default function TablesScreen() {
                     </Pressable>
                   </View>
                   
-                  <View style={styles.qrContainer}>
-                    <Image source={{ uri: qrImgUrl }} style={styles.qrImage} />
-                  </View>
-                  
-                  <Text style={styles.qrText}>
-                    Scan this QR code with any smartphone to open the contactless restaurant menu for Table {qrTable.label}.
-                  </Text>
+                  {hasTenant ? (
+                    <>
+                      <View style={styles.qrContainer}>
+                        <Image source={{ uri: qrImgUrl }} style={styles.qrImage} />
+                      </View>
+                      
+                      <Text style={styles.qrText}>
+                        Scan this QR code with any smartphone to open the contactless restaurant menu for Table {qrTable.label}.
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={[styles.qrText, { color: colors.onError, marginVertical: 30 }]}>
+                      Warning: Tenant ID not found. Please complete restaurant setup in Settings first.
+                    </Text>
+                  )}
                   
                   <Pressable style={[styles.primaryBtn, { width: "100%" }]} onPress={() => setQrTable(null)}>
                     <Text style={styles.primaryText}>Done</Text>
