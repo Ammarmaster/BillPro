@@ -427,8 +427,15 @@ class PublicOrderIn(BaseModel):
     notes: str = ""
     customer_phone: str = ""
     customer_name: str = ""
-    payment_method: str = "Cash"  # Cash, UPI
+    payment_method: str = "UPI"  # UPI
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
 
+
+class PublicCheckoutIn(BaseModel):
+    tenant_id: str
+    amount: float
 
 class OrderStatusIn(BaseModel):
     status: str  # placed, in_kitchen, ready, served, cancelled
@@ -924,6 +931,19 @@ async def public_create_order(payload: PublicOrderIn):
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     
+    # Verify Razorpay signature to prevent scam/fake orders
+    if not razorpay_client:
+        raise HTTPException(status_code=500, detail="Razorpay is not configured on server")
+        
+    try:
+        razorpay_client.utility.verify_payment_signature({
+            "razorpay_order_id": payload.razorpay_order_id,
+            "razorpay_payment_id": payload.razorpay_payment_id,
+            "razorpay_signature": payload.razorpay_signature,
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Payment signature verification failed: {str(e)}")
+
     subtotal = sum(i.price * i.quantity for i in payload.items)
     order_id = str(uuid.uuid4())
     
@@ -941,6 +961,8 @@ async def public_create_order(payload: PublicOrderIn):
         "customer_name": payload.customer_name,
         "order_type": payload.order_type,
         "payment_method": payload.payment_method,
+        "razorpay_payment_id": payload.razorpay_payment_id,
+        "razorpay_order_id": payload.razorpay_order_id,
     }
     
     await db.orders.insert_one(doc)
@@ -955,6 +977,26 @@ async def public_create_order(payload: PublicOrderIn):
     )
     
     return doc
+
+
+@api.post("/public/orders/checkout")
+async def public_orders_checkout(payload: PublicCheckoutIn):
+    if not razorpay_client:
+        raise HTTPException(status_code=500, detail="Razorpay is not configured on server")
+    try:
+        order = razorpay_client.order.create({
+            "amount": int(payload.amount * 100),
+            "currency": "INR",
+            "payment_capture": 1
+        })
+        return {
+            "razorpay_order_id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "key_id": RAZORPAY_KEY_ID
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------- bills ----------

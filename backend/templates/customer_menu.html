@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <style>
     :root {
       --bg: #090D16;
@@ -1151,41 +1152,95 @@
           notes: ""
         }));
 
-        const body = {
-          tenant_id: tenantId,
-          table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
-          order_type: orderType,
-          items: orderItems,
-          notes: notes,
-          customer_phone: phone,
-          customer_name: name,
-          payment_method: paymentMethod
-        };
+        const totalPrice = Object.values(cart).reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
 
-        const res = await fetch("/api/public/orders", {
+        // 1. Create Razorpay Payment Session on backend
+        const checkoutRes = await fetch("/api/public/orders/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            amount: totalPrice
+          })
         });
 
-        if (!res.ok) {
-          throw new Error("Failed to place order.");
+        if (!checkoutRes.ok) {
+          throw new Error("Failed to initialize checkout session.");
         }
 
-        const placedOrder = await res.json();
-        
-        // Success: clear local cart
-        cart = {};
-        renderMenu();
-        updateCartBar();
-        closeCartSheet();
+        const checkoutData = await checkoutRes.json();
 
-        // Open checkout confirmation overlay
-        showCheckoutConfirmation(placedOrder);
+        // 2. Launch Razorpay Web Checkout Modal
+        const options = {
+          key: checkoutData.key_id,
+          amount: checkoutData.amount,
+          currency: checkoutData.currency,
+          name: restaurantInfo.name,
+          description: `Contactless Order - Table ${orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away"}`,
+          order_id: checkoutData.razorpay_order_id,
+          handler: async function (response) {
+            showLoader(true);
+            try {
+              const body = {
+                tenant_id: tenantId,
+                table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
+                order_type: orderType,
+                items: orderItems,
+                notes: notes,
+                customer_phone: phone,
+                customer_name: name,
+                payment_method: "UPI",
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature
+              };
+
+              const verifyRes = await fetch("/api/public/orders", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+              });
+
+              if (!verifyRes.ok) {
+                const errData = await verifyRes.json();
+                throw new Error(errData.detail || "Payment verification failed.");
+              }
+
+              const placedOrder = await verifyRes.json();
+
+              // Clear Cart
+              cart = {};
+              renderMenu();
+              updateCartBar();
+              closeCartSheet();
+
+              // Open success & review page
+              showCheckoutConfirmation(placedOrder);
+            } catch (e) {
+              alert("Order Placement / Verification Error: " + e.message);
+            } finally {
+              showLoader(false);
+            }
+          },
+          prefill: {
+            name: name,
+            contact: phone
+          },
+          theme: {
+            color: "#6366F1"
+          },
+          modal: {
+            ondismiss: function() {
+              showLoader(false);
+            }
+          }
+        };
+
+        const rzp = new Razorpay(options);
+        rzp.open();
 
       } catch (e) {
         alert("Ordering Error: " + e.message);
-      } finally {
         showLoader(false);
       }
     }
@@ -1195,22 +1250,8 @@
       document.getElementById("checkout-sheet-overlay").classList.add("show");
       document.getElementById("checkout-sheet-card").classList.add("show");
 
-      const upiContainer = document.getElementById("upi-qrcode-container");
-      if (order.payment_method === "UPI" && restaurantInfo.upi_id) {
-        upiContainer.style.display = "block";
-        
-        // Generate UPI URL
-        const amount = order.subtotal.toFixed(2);
-        const upiUrl = `upi://pay?pa=${restaurantInfo.upi_id}&pn=${encodeURIComponent(restaurantInfo.merchant_name || restaurantInfo.name)}&am=${amount}&cu=INR&tn=Order-${order.id.slice(0,8)}`;
-        
-        // Set QR image using public API
-        document.getElementById("upi-qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}`;
-        
-        // Set deep link
-        document.getElementById("upi-deep-link").href = upiUrl;
-      } else {
-        upiContainer.style.display = "none";
-      }
+      // Hide UPI Container since payment was pre-captured and verified in Razorpay modal
+      document.getElementById("upi-qrcode-container").style.display = "none";
 
       // Hide Google Maps button if no link exists
       const mapsBtn = document.getElementById("google-maps-btn");
@@ -1219,6 +1260,20 @@
       } else {
         mapsBtn.style.display = "flex";
       }
+    }
+
+    // Helper functions for placeholder image generation
+    function hashStr(s) {
+      let h = 0;
+      for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+      return h;
+    }
+
+    function foodImageUrl(name) {
+      const q = encodeURIComponent(
+        name.trim().replace(/[^a-zA-Z0-9, ]/g, "").replace(/\s+/g, ",") || "food"
+      );
+      return `https://loremflickr.com/320/320/${q},food?lock=${Math.abs(hashStr(name)) % 1000}`;
     }
 
     // Copy Review Feedback
