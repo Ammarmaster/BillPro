@@ -19,6 +19,14 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Gradle & Android builds
+.gradle/
+build/
+android/.gradle/
+android/build/
+android/app/build/
+local.properties
+
 # Metro
 .metro-health-check*
 
