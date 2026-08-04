@@ -80,3 +80,12 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/app/.cxx/
+frontend/android/app/build-cache/
+frontend/.expo/
+frontend/.metro-cache/
+frontend/dist/
+frontend/web-build/

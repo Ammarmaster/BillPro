@@ -1,0 +1,13 @@
+# Ignore rules for parent repository context
+frontend/node_modules/
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/app/.cxx/
+frontend/android/app/build-cache/
+frontend/.expo/
+frontend/.metro-cache/
+frontend/dist/
+frontend/web-build/
+node_modules/
+.git/
