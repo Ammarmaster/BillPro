@@ -968,6 +968,31 @@ async def public_create_order(payload: PublicOrderIn):
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
     
+    # Create corresponding paid bill in db.bills to track revenue and dashboard totals
+    bill_id = str(uuid.uuid4())
+    bill_doc = {
+        "id": bill_id,
+        "tenant_id": payload.tenant_id,
+        "order_id": order_id,
+        "table_number": payload.table_number or "",
+        "items": [i.dict() for i in payload.items],
+        "subtotal": float(subtotal),
+        "tax_percent": 0.0,
+        "tax": 0.0,
+        "cgst": 0.0,
+        "sgst": 0.0,
+        "gst_enabled": False,
+        "discount": 0.0,
+        "total": float(subtotal),
+        "upi_url": "",
+        "status": "paid",
+        "payment_method": payload.payment_method or "online",
+        "created_by": "guest", # Indicates web QR guest billing
+        "created_at": doc["created_at"],
+        "paid_at": doc["created_at"],
+    }
+    await db.bills.insert_one(bill_doc)
+    
     await notify_tenant(
         payload.tenant_id,
         "kitchen",
@@ -1170,7 +1195,14 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     ready_count = await db.orders.count_documents({"tenant_id": tid, "status": "ready"})
 
     total_tables = await db.tables.count_documents({"tenant_id": tid})
-    occupied_tables = await db.tables.count_documents({"tenant_id": tid, "occupied": True})
+    
+    # Calculate occupied tables dynamically from active orders (status placed/in_kitchen/ready) to count web orders
+    active_orders = await db.orders.find(
+        {"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready"]}},
+        {"table_number": 1}
+    ).to_list(1000)
+    occupied_table_labels = {o["table_number"] for o in active_orders if o.get("table_number") and o.get("table_number") not in ["Takeaway", "Take-Away", "Contactless"]}
+    occupied_tables = len(occupied_table_labels)
     tables_free = max(0, total_tables - occupied_tables) if total_tables > 0 else 5
 
     paid_bills = await db.bills.find({"tenant_id": tid, "status": "paid"}, {"_id": 0}).to_list(2000)
@@ -1183,6 +1215,10 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     ]
     revenue_today = round(sum(b.get("total", 0) for b in today_bills), 2)
     avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / len(paid_bills), 2) if paid_bills else 0)
+
+    # Calculate web payments (created_by == "guest")
+    revenue_web_today = round(sum(b.get("total", 0) for b in today_bills if b.get("created_by") == "guest"), 2)
+    revenue_web_total = round(sum(b.get("total", 0) for b in paid_bills if b.get("created_by") == "guest"), 2)
 
     # Last 7 days revenue calculation
     last_7_days = []
@@ -1221,6 +1257,8 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         "tables_free": tables_free,
         "revenue_total": revenue_total,
         "revenue_today": revenue_today,
+        "revenue_web_today": revenue_web_today,
+        "revenue_web_total": revenue_web_total,
         "avg_bill": avg_bill,
         "menu_count": menu_count,
         "last_7_days": last_7_days,

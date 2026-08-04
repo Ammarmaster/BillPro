@@ -92,6 +92,20 @@ export default function WaiterScreen() {
     }
   }, [tableParam, tables]);
 
+  // Poll backend every 6s for background sync in waiter app
+  useEffect(() => {
+    const iv = setInterval(() => {
+      // Only poll in background if we are not actively creating/editing an order
+      if (viewMode === "tables" || viewMode === "order_details") {
+        Promise.all([api.listOrders(), api.listBills()]).then(([o, b]) => {
+          setOrders(o || []);
+          setBills(b || []);
+        }).catch(err => console.warn("Waiter background sync failed:", err.message));
+      }
+    }, 6000);
+    return () => clearInterval(iv);
+  }, [viewMode]);
+
   // Helper to determine table status & matching order
   const getTableStatusInfo = (tblLabel: string) => {
     const matchingOrder = orders.find(
@@ -201,7 +215,7 @@ export default function WaiterScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
       const tblLabel = table.trim();
-      const tblObj = tables.find(t => String(t.label).toLowerCase() === String(tblLabel).toLowerCase()) || { id: "temp-tbl", label: tblLabel, status: "occupied" };
+      const tblObj = tables.find(t => String(t.label).toLowerCase() === String(tblLabel).toLowerCase()) || { id: "temp-tbl", label: tblLabel, status: "occupied", seats: 4 };
       setSelectedTableObj(tblObj);
       setTable(tblLabel);
       setActiveOrder(localOrder);
@@ -287,6 +301,23 @@ export default function WaiterScreen() {
                   ))
                 )}
               </View>
+
+              {/* Special Cooking Instructions / Notes */}
+              {activeOrder?.notes ? (
+                <View style={[
+                  styles.notesContainer, 
+                  { 
+                    backgroundColor: isDark ? "#2B2212" : "#FFFBEB", 
+                    borderColor: isDark ? "#78350F" : "#FDE68A",
+                    marginVertical: spacing.md
+                  }
+                ]}>
+                  <Ionicons name="document-text-outline" size={15} color={isDark ? "#FBBF24" : "#D97706"} />
+                  <Text style={[styles.notesText, { color: isDark ? "#FBBF24" : "#D97706" }]}>
+                    Instructions: {activeOrder.notes}
+                  </Text>
+                </View>
+              ) : null}
 
               {/* Subtotal Footer */}
               <View style={styles.subtotalRow}>
@@ -692,4 +723,17 @@ const styles = StyleSheet.create({
   cta: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: colors.brand, paddingVertical: 14, borderRadius: radius.lg, alignItems: "center" },
   ctaText: { color: colors.onBrand, fontWeight: "700", fontSize: 15, letterSpacing: 0.3 },
   err: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: 140, color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, textAlign: "center" },
+  notesContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    padding: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  notesText: {
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1,
+  },
 });

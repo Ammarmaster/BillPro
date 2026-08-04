@@ -280,6 +280,16 @@ export default function Kitchen() {
                     ))}
                   </View>
 
+                  {/* Special Cooking Instructions / Notes */}
+                  {item.notes ? (
+                    <View style={[styles.notesContainer, { backgroundColor: isDark ? "#2B2212" : "#FFFBEB", borderColor: isDark ? "#78350F" : "#FDE68A" }]}>
+                      <Ionicons name="document-text-outline" size={15} color={isDark ? "#FBBF24" : "#D97706"} />
+                      <Text style={[styles.notesText, { color: isDark ? "#FBBF24" : "#D97706" }]}>
+                        Instructions: {item.notes}
+                      </Text>
+                    </View>
+                  ) : null}
+
                   {/* Action Button */}
                   {nextStatus && (
                     <Pressable
@@ -360,4 +370,18 @@ const styles = StyleSheet.create({
   },
   actionBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
   err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
+  notesContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    padding: 10,
+    borderRadius: radius.md,
+    marginVertical: spacing.sm,
+    borderWidth: 1,
+  },
+  notesText: {
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1,
+  },
 });

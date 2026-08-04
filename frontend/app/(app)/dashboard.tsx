@@ -467,6 +467,11 @@ function OwnerDashboard() {
                   <Text style={styles.heroFooterVal}>₹{summary?.avg_bill ?? 0}</Text>
                   <Text style={styles.heroFooterLbl}>Avg Bill</Text>
                 </View>
+                <View style={styles.heroFooterDivider} />
+                <View style={styles.heroFooterItem}>
+                  <Text style={styles.heroFooterVal}>₹{summary?.revenue_web_today ?? 0}</Text>
+                  <Text style={styles.heroFooterLbl}>Web Sales</Text>
+                </View>
               </View>
             </LinearGradient>
 
@@ -512,6 +517,25 @@ function OwnerDashboard() {
             {/* Hidden fallback testID targets to maintain 100% test compatibility */}
             <View style={{ height: 0, overflow: 'hidden' }}>
               <Text testID="metric-revenue-total">₹{summary?.revenue_total ?? 0}</Text>
+            </View>
+
+            {/* Web Payments Summary Section */}
+            <View style={[styles.webPaymentsCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <View style={styles.webPaymentsHeader}>
+                <Ionicons name="globe-outline" size={20} color={colors.brand} />
+                <Text style={[styles.webPaymentsTitle, { color: theme.onSurface }]}>Online Web Sales</Text>
+              </View>
+              <View style={styles.webPaymentsRow}>
+                <View style={styles.webPaymentCol}>
+                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{summary?.revenue_web_today ?? 0}</Text>
+                  <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Today's Web Revenue</Text>
+                </View>
+                <View style={[styles.verticalDivider, { backgroundColor: theme.border }]} />
+                <View style={styles.webPaymentCol}>
+                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{summary?.revenue_web_total ?? 0}</Text>
+                  <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Total Web Revenue</Text>
+                </View>
+              </View>
             </View>
 
             {/* Revenue Last 7 Days Graph Section */}
@@ -742,4 +766,46 @@ const styles = StyleSheet.create({
   dirIconBox: { width: 40, height: 40, borderRadius: radius.md, justifyContent: "center", alignItems: "center" },
   dirTitle: { fontSize: 14, fontWeight: "700" },
   dirSub: { fontSize: 11, marginTop: 2 },
+  
+  // Online Web Sales Styles
+  webPaymentsCard: {
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    gap: spacing.md,
+  },
+  webPaymentsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  webPaymentsTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  webPaymentsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  webPaymentCol: {
+    flex: 1,
+    alignItems: "center",
+  },
+  webPaymentVal: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  webPaymentLbl: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  verticalDivider: {
+    width: 1,
+    height: 32,
+  },
 });
