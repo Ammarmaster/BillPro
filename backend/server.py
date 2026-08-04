@@ -1274,6 +1274,7 @@ class PlanIn(BaseModel):
     interval: str = "month"  # "month" or "year"
     features: List[str] = []
     is_active: bool = True
+    valid_days: Optional[int] = None
 
 
 class SubscribeIn(BaseModel):
@@ -1500,6 +1501,18 @@ async def admin_assign_subscription(tid: str, payload: SubscribeIn, user: dict =
         raise HTTPException(status_code=404, detail="Plan not found")
     if not await db.restaurants.find_one({"id": tid}, {"_id": 0}):
         raise HTTPException(status_code=404, detail="Restaurant not found")
+        
+    valid_days = plan.get("valid_days")
+    if not valid_days:
+        valid_days = 365 if plan.get("interval") == "year" else 30
+    ends_at = datetime.now(timezone.utc) + timedelta(days=int(valid_days))
+
+    # Cancel previous active subscriptions
+    await db.subscriptions.update_many(
+        {"tenant_id": tid, "status": "active"},
+        {"$set": {"status": "cancelled"}}
+    )
+
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1509,6 +1522,7 @@ async def admin_assign_subscription(tid: str, payload: SubscribeIn, user: dict =
         "interval": plan["interval"],
         "status": payload.status,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "ends_at": ends_at.isoformat() if payload.status == "active" else None
     }
     await db.subscriptions.insert_one(doc)
     doc.pop("_id", None)
@@ -1544,59 +1558,59 @@ async def my_subscription(user: dict = Depends(get_current_user)):
         {"_id": 0},
         sort=[("created_at", -1)]
     )
-    if sub and tid and sub.get("tenant_id") != tid:
-        await db.subscriptions.update_many(
-            {"user_id": user["id"]},
-            {"$set": {"tenant_id": tid}}
-        )
-        sub["tenant_id"] = tid
+    if sub:
+        if tid and sub.get("tenant_id") != tid:
+            await db.subscriptions.update_many(
+                {"user_id": user["id"]},
+                {"$set": {"tenant_id": tid}}
+            )
+            sub["tenant_id"] = tid
+            
+        # Check if subscription has expired
+        ends_at_str = sub.get("ends_at")
+        if ends_at_str and sub.get("status") == "active":
+            ends_at = datetime.fromisoformat(ends_at_str.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > ends_at:
+                sub["status"] = "expired"
+                await db.subscriptions.update_one({"id": sub["id"]}, {"$set": {"status": "expired"}})
     return sub
 
 
 @api.post("/subscriptions/checkout")
 async def checkout(payload: CheckoutIn, user: dict = Depends(require_roles("owner", "manager"))):
-    if not razorpay_client:
-        raise HTTPException(status_code=503, detail="Razorpay not configured")
     tid = user.get("tenant_id") or user["id"]
-    plan = await db.plans.find_one({"id": payload.plan_id, "is_active": True}, {"_id": 0})
+    plan = await db.plans.find_one({"id": payload.plan_id}, {"_id": 0})
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
-    amount_paise = int(round(float(plan["price"]) * 100))
-    receipt = f"tid-{tid[:8]}-{uuid.uuid4().hex[:8]}"[:40]
-    try:
-        order = razorpay_client.order.create({
-            "amount": amount_paise,
-            "currency": "INR",
-            "receipt": receipt,
-            "payment_capture": 1,
-            "notes": {"tenant_id": tid, "plan_id": plan["id"], "plan_name": plan["name"]},
-        })
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Razorpay error: {e}")
-    await db.payment_orders.insert_one({
+        
+    # Deactivate prior subscriptions
+    await db.subscriptions.update_many(
+        {"$or": [{"tenant_id": tid}, {"user_id": user["id"]}], "status": "active"},
+        {"$set": {"status": "cancelled"}}
+    )
+    
+    # Calculate ends_at based on plan valid_days
+    valid_days = plan.get("valid_days")
+    if not valid_days:
+        valid_days = 365 if plan.get("interval") == "year" else 30
+    ends_at = datetime.now(timezone.utc) + timedelta(days=int(valid_days))
+    
+    sub = {
         "id": str(uuid.uuid4()),
-        "razorpay_order_id": order["id"],
-        "tenant_id": tid,
+        "tenant_id": user.get("tenant_id") or tid,
+        "user_id": user["id"],
         "plan_id": plan["id"],
-        "amount": amount_paise,
-        "status": "created",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
-    return {
-        "key_id": RAZORPAY_KEY_ID,
-        "order_id": order["id"],
-        "amount": amount_paise,
-        "currency": "INR",
         "plan_name": plan["name"],
+        "price": plan["price"],
         "interval": plan["interval"],
-        "prefill": {
-            "name": restaurant.get("owner_name", user["full_name"]),
-            "email": user["email"],
-            "contact": restaurant.get("phone", ""),
-        },
-        "notes": {"tenant_id": tid, "plan_id": plan["id"]},
+        "status": "active",
+        "payment_method": "auto_pay",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "ends_at": ends_at.isoformat(),
     }
+    await db.subscriptions.insert_one(sub)
+    sub.pop("_id", None)
+    return {"status": "success", "subscription": sub}
 
 
 @api.post("/subscriptions/verify")
@@ -1739,9 +1753,9 @@ async def seed_super_admin():
 
     # Seed default subscription plans idempotently
     defaults = [
-        {"name": "Monthly", "price": 499.0, "interval": "month",
+        {"name": "Monthly", "price": 499.0, "interval": "month", "valid_days": 30,
          "features": ["Unlimited menu items", "Unlimited orders", "KDS", "Billing with UPI QR"]},
-        {"name": "Yearly", "price": 4999.0, "interval": "year",
+        {"name": "Yearly", "price": 4999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Monthly", "2 months free", "Priority support"]},
     ]
     for p in defaults:

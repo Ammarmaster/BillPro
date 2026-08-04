@@ -21,13 +21,15 @@ export default function AppLayout() {
         return;
       }
       api.mySubscription().then(sub => {
-        if (!sub || sub.status !== "active") {
+        if (!sub) {
           router.replace("/demo-billing");
+        } else if (sub.status === "expired" || sub.status !== "active") {
+          router.replace("/(app)/subscribe");
         } else if (!user.tenant_id) {
           router.replace("/onboarding");
         }
       }).catch(() => {
-        router.replace("/demo-billing");
+        router.replace("/(app)/subscribe");
       });
     }
   }, [user, loading, router, pathname]);

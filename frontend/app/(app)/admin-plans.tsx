@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 
-type Plan = { id: string; name: string; price: number; interval: string; features: string[]; is_active: boolean };
+type Plan = { id: string; name: string; price: number; interval: string; valid_days?: number; features: string[]; is_active: boolean };
 
 export default function AdminPlans() {
   const insets = useSafeAreaInsets();
@@ -21,6 +21,7 @@ export default function AdminPlans() {
   const [price, setPrice] = useState("");
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [features, setFeatures] = useState("");
+  const [validDays, setValidDays] = useState("30");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -34,15 +35,17 @@ export default function AdminPlans() {
 
   const save = async () => {
     const p = parseFloat(price);
-    if (!name.trim() || isNaN(p) || p <= 0) { setErr("Enter name and valid price."); return; }
+    const d = parseInt(validDays);
+    if (!name.trim() || isNaN(p) || p <= 0 || isNaN(d) || d <= 0) { setErr("Enter name, valid price, and validity days."); return; }
     setBusy(true); setErr(null);
     try {
       await api.adminCreatePlan({
         name: name.trim(), price: p, interval,
         features: features.split(",").map(s => s.trim()).filter(Boolean),
         is_active: true,
+        valid_days: d,
       });
-      setName(""); setPrice(""); setFeatures(""); setModal(false);
+      setName(""); setPrice(""); setFeatures(""); setValidDays("30"); setModal(false);
       await load();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -76,7 +79,7 @@ export default function AdminPlans() {
             <View style={styles.card} testID={`admin-plan-${item.id}`}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{item.name}</Text>
-                <Text style={styles.cardPrice}>₹{item.price} / {item.interval}</Text>
+                <Text style={styles.cardPrice}>₹{item.price} / {item.interval} ({item.valid_days ?? (item.interval === "year" ? 365 : 30)} days)</Text>
                 {!!item.features?.length && (
                   <Text style={styles.cardFeat} numberOfLines={3}>{item.features.map(f => `• ${f}`).join("\n")}</Text>
                 )}
@@ -97,6 +100,7 @@ export default function AdminPlans() {
             <Text style={styles.modalTitle}>New Plan</Text>
             <TextInput value={name} onChangeText={setName} placeholder="e.g. Pro Yearly" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-name-input" />
             <TextInput value={price} onChangeText={setPrice} placeholder="Price in ₹" keyboardType="decimal-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-price-input" />
+            <TextInput value={validDays} onChangeText={setValidDays} placeholder="Validity in days (e.g. 30)" keyboardType="number-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-days-input" />
             <View style={styles.intervalRow}>
               {(["month", "year"] as const).map(v => (
                 <Pressable key={v} style={[styles.intervalChip, interval === v && styles.intervalChipActive]} onPress={() => setInterval(v)} testID={`plan-interval-${v}`}>
