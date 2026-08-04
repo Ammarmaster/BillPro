@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "preinstall": "node ./scripts/cmd-guard.js --preinstall",
+    "postinstall": "node ./scripts/postinstall.js",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
