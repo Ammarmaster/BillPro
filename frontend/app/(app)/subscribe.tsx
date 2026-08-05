@@ -311,7 +311,7 @@ function buildCheckoutHtml(co: any): string {
     key: co.key_id,
     subscription_id: co.subscription_id,
     name: "EzBill ERP",
-    description: `${co.plan_name} Subscription`,
+    description: (`${co.plan_name} Subscription`).replace(/[^a-zA-Z0-9 ]/g, ""),
     prefill: co.prefill,
     theme: { color: "#635BFF" },
   };

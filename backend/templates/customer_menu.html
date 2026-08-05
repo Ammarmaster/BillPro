@@ -1177,8 +1177,8 @@
           key: checkoutData.key_id,
           amount: checkoutData.amount,
           currency: checkoutData.currency,
-          name: restaurantInfo.name,
-          description: "Order Table " + (initialTableLabel || "Contactless"),
+          name: (restaurantInfo.name || "EzBill").replace(/[^a-zA-Z0-9 ]/g, ""),
+          description: ("Order Table " + (initialTableLabel || "Contactless")).replace(/[^a-zA-Z0-9 ]/g, ""),
           order_id: checkoutData.razorpay_order_id,
           handler: async function (response) {
             showLoader(true);

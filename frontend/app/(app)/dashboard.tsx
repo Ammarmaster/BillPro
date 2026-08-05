@@ -9,6 +9,14 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 
+const formatAmount = (num: number, detailed: boolean = false) => {
+  if (detailed) return `₹${num.toLocaleString("en-IN")}`;
+  if (num >= 10000000) return `₹${(num / 10000000).toFixed(2).replace(/\.00$/, "")}Cr`;
+  if (num >= 100000) return `₹${(num / 100000).toFixed(2).replace(/\.00$/, "")}L`;
+  if (num >= 1000) return `₹${(num / 1000).toFixed(2).replace(/\.00$/, "")}k`;
+  return `₹${num}`;
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
   if (user?.role === "waiter") return <Redirect href="/(app)/waiter" />;
@@ -79,13 +87,7 @@ function AdminConsole() {
     }
   }, [summary]);
 
-  const formatAmount = (num: number, detailed: boolean = false) => {
-    if (detailed) return `₹${num.toLocaleString("en-IN")}`;
-    if (num >= 10000000) return `₹${(num / 10000000).toFixed(2).replace(/\.00$/, "")}Cr`;
-    if (num >= 100000) return `₹${(num / 100000).toFixed(2).replace(/\.00$/, "")}L`;
-    if (num >= 1000) return `₹${(num / 1000).toFixed(2).replace(/\.00$/, "")}k`;
-    return `₹${num}`;
-  };
+
 
   const handleCall = (phone: string) => {
     if (!phone) return;
@@ -113,7 +115,7 @@ function AdminConsole() {
             {user?.role?.replace("_", " ").toUpperCase()}
           </Text>
           <Text style={[styles.name, { color: theme.onSurface, marginTop: 4, marginBottom: 0 }]}>
-            Dashboard
+            System Console
           </Text>
         </View>
         <View style={[styles.adminAvatar, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.2)" : "rgba(99, 91, 255, 0.1)" }]}>
@@ -144,7 +146,7 @@ function AdminConsole() {
                 testID="admin-metric-mrr"
               >
                 <View>
-                  <Text style={styles.heroAdminLabel}>ESTIMATED MRR (TAP TO EXPAND)</Text>
+                  <Text style={styles.heroAdminLabel}>ESTIMATED MRR (TAP FOR DETAIL)</Text>
                   <Text style={styles.heroAdminValue}>{formatAmount(animatedMRR, detailedMRR)}</Text>
                 </View>
                 <View style={styles.heroAdminIconBox}>
@@ -181,9 +183,9 @@ function AdminConsole() {
                 <View style={[styles.metricIconBox, { backgroundColor: "rgba(99, 91, 255, 0.1)" }]}>
                   <Ionicons name="storefront" size={20} color={colors.brand} />
                 </View>
-                <View>
-                  <Text style={styles.metricValText}>{animatedRests}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Restaurants</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedRests}</Text>
+                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Stores</Text>
                 </View>
               </Pressable>
 
@@ -195,9 +197,9 @@ function AdminConsole() {
                 <View style={[styles.metricIconBox, { backgroundColor: "rgba(16, 185, 129, 0.1)" }]}>
                   <Ionicons name="people" size={20} color="#10B981" />
                 </View>
-                <View>
-                  <Text style={styles.metricValText}>{animatedUsers}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Total Users</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedUsers}</Text>
+                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Users</Text>
                 </View>
               </Pressable>
 
@@ -209,8 +211,8 @@ function AdminConsole() {
                 <View style={[styles.metricIconBox, { backgroundColor: "rgba(245, 158, 11, 0.1)" }]}>
                   <Ionicons name="person-circle" size={20} color="#F59E0B" />
                 </View>
-                <View>
-                  <Text style={styles.metricValText}>{animatedOwners}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedOwners}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Owners</Text>
                 </View>
               </Pressable>
@@ -223,8 +225,8 @@ function AdminConsole() {
                 <View style={[styles.metricIconBox, { backgroundColor: "rgba(59, 130, 246, 0.1)" }]}>
                   <Ionicons name="ribbon" size={20} color="#3B82F6" />
                 </View>
-                <View>
-                  <Text style={styles.metricValText}>{animatedSubs}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedSubs}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Subscriptions</Text>
                 </View>
               </Pressable>
@@ -269,7 +271,7 @@ function AdminConsole() {
                       onPress={() => handleCall(r.phone)}
                     >
                       <Ionicons name="call" size={14} color="#FFFFFF" />
-                      <Text style={styles.actionCallText}>Call Owner</Text>
+                      <Text style={styles.actionCallText}>Call</Text>
                     </Pressable>
                   )}
                 </View>
@@ -419,14 +421,14 @@ function OwnerDashboard() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl tintColor="#635BFF" refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
       >
-        {/* Header Bar */}
+        {/* Profile Header */}
         <View style={styles.ownerHeader}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.greetText, { color: theme.onSurfaceSecondary }]}>Welcome back</Text>
-            <Text style={[styles.ownerTitle, { color: theme.onSurface }]} numberOfLines={1}>{user?.full_name || "System Owner"}</Text>
+            <Text style={[styles.ownerTitle, { color: theme.onSurface }]} numberOfLines={1}>{user?.full_name || "Business Partner"}</Text>
           </View>
-          <View style={styles.roleBadge}>
-            <Ionicons name="shield-checkmark" size={14} color="#635BFF" />
+          <View style={[styles.roleBadge, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "rgba(99, 91, 255, 0.08)" }]}>
+            <Ionicons name="shield-checkmark" size={14} color={colors.brand} />
             <Text style={styles.roleBadgeText}>OWNER</Text>
           </View>
         </View>
@@ -435,14 +437,14 @@ function OwnerDashboard() {
           <Pressable style={styles.onboardCard} onPress={() => router.push("/(app)/more")} testID="dashboard-onboard-cta">
             <Ionicons name="storefront" size={28} color={colors.brand} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.onboardTitle}>Set up your business</Text>
-              <Text style={styles.onboardSub}>Add your details, UPI, and billing settings to unlock EzBill.</Text>
+              <Text style={styles.onboardTitle}>Set up your store</Text>
+              <Text style={styles.onboardSub}>Configure your business settings and menus to unlock billing.</Text>
             </View>
             <Ionicons name="chevron-forward" size={22} color={colors.onSurfaceSecondary} />
           </Pressable>
         ) : (
           <>
-            {/* Hero Revenue Purple Card */}
+            {/* Hero Analytics Gradient Box */}
             <LinearGradient
               colors={["#635BFF", "#4F46E5"]}
               start={{ x: 0, y: 0 }}
@@ -452,104 +454,109 @@ function OwnerDashboard() {
             >
               <View style={styles.liveBadgeRow}>
                 <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE • Today's Revenue</Text>
+                <Text style={styles.liveText}>LIVE SALES TODAY</Text>
               </View>
 
-              <Text style={styles.heroRevenueValue}>₹{animatedRevenue}</Text>
+              <Text style={styles.heroRevenueValue}>₹{animatedRevenue.toLocaleString("en-IN")}</Text>
 
               <View style={styles.heroFooterRow}>
                 <View style={styles.heroFooterItem}>
                   <Text style={styles.heroFooterVal} testID="metric-orders-open">{summary?.orders_total ?? summary?.orders_open ?? 0}</Text>
-                  <Text style={styles.heroFooterLbl}>Orders</Text>
+                  <Text style={styles.heroFooterLbl}>Total Orders</Text>
                 </View>
                 <View style={styles.heroFooterDivider} />
                 <View style={styles.heroFooterItem}>
-                  <Text style={styles.heroFooterVal}>₹{summary?.avg_bill ?? 0}</Text>
-                  <Text style={styles.heroFooterLbl}>Avg Bill</Text>
+                  <Text style={styles.heroFooterVal}>₹{(summary?.avg_bill ?? 0).toLocaleString("en-IN")}</Text>
+                  <Text style={styles.heroFooterLbl}>Average ticket</Text>
                 </View>
                 <View style={styles.heroFooterDivider} />
                 <View style={styles.heroFooterItem}>
-                  <Text style={styles.heroFooterVal}>₹{summary?.revenue_web_today ?? 0}</Text>
-                  <Text style={styles.heroFooterLbl}>Web Sales</Text>
+                  <Text style={styles.heroFooterVal}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
+                  <Text style={styles.heroFooterLbl}>Web payments</Text>
                 </View>
               </View>
             </LinearGradient>
 
-            {/* 4 Status Cards Grid */}
+            {/* Quick Metrics Grid */}
             <View style={styles.statusGrid}>
-              {/* Pending */}
               <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#3B2914" : "#FEF3C7" }]}>
-                  <Ionicons name="time-outline" size={22} color="#D97706" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#332210" : "#FFFBEB" }]}>
+                  <Ionicons name="time" size={22} color="#D97706" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.pending_count ?? summary?.orders_open ?? 0}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Pending</Text>
               </View>
 
-              {/* Cooking */}
               <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
-                  <Ionicons name="flame-outline" size={22} color="#635BFF" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#28173B" : "#F5F3FF" }]}>
+                  <Ionicons name="flame" size={22} color="#8B5CF6" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.cooking_count ?? 0}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Cooking</Text>
               </View>
 
-              {/* Ready */}
               <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#143B29" : "#DCFCE7" }]}>
-                  <Ionicons name="notifications-outline" size={22} color="#16A34A" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0F3220" : "#ECFDF5" }]}>
+                  <Ionicons name="checkmark-done-circle" size={22} color="#10B981" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.ready_count ?? 0}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Ready</Text>
               </View>
 
-              {/* Tables Free */}
               <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} testID="metric-menu-count">
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#142F3B" : "#E0F2FE" }]}>
-                  <Ionicons name="restaurant-outline" size={22} color="#0284C7" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0D2E3E" : "#F0F9FF" }]}>
+                  <Ionicons name="grid" size={22} color="#0EA5E9" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.tables_free ?? 5}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Tables Free</Text>
               </View>
             </View>
 
-            {/* Hidden fallback testID targets to maintain 100% test compatibility */}
+            {/* Hidden fallback testIDs for integration tests */}
             <View style={{ height: 0, overflow: 'hidden' }}>
               <Text testID="metric-revenue-total">₹{summary?.revenue_total ?? 0}</Text>
             </View>
 
-            {/* Web Payments Summary Section */}
+            {/* Online Web Sales */}
             <View style={[styles.webPaymentsCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
               <View style={styles.webPaymentsHeader}>
-                <Ionicons name="globe-outline" size={20} color={colors.brand} />
-                <Text style={[styles.webPaymentsTitle, { color: theme.onSurface }]}>Online Web Sales</Text>
+                <View style={[styles.webPayIconBg, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "rgba(99, 91, 255, 0.08)" }]}>
+                  <Ionicons name="globe" size={18} color={colors.brand} />
+                </View>
+                <Text style={[styles.webPaymentsTitle, { color: theme.onSurface }]}>Online Web Sales Summary</Text>
               </View>
               <View style={styles.webPaymentsRow}>
                 <View style={styles.webPaymentCol}>
-                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{summary?.revenue_web_today ?? 0}</Text>
+                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
                   <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Today's Web Revenue</Text>
                 </View>
                 <View style={[styles.verticalDivider, { backgroundColor: theme.border }]} />
                 <View style={styles.webPaymentCol}>
-                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{summary?.revenue_web_total ?? 0}</Text>
+                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{(summary?.revenue_web_total ?? 0).toLocaleString("en-IN")}</Text>
                   <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Total Web Revenue</Text>
                 </View>
               </View>
             </View>
 
-            {/* Revenue Last 7 Days Graph Section */}
+            {/* Weekly Analytics Graph */}
             <View style={[styles.chartSectionCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-              <Text style={[styles.sectionHeading, { color: theme.onSurface }]}>Revenue • Last 7 days</Text>
+              <View style={styles.chartHeader}>
+                <Ionicons name="bar-chart" size={18} color={colors.brand} />
+                <Text style={[styles.sectionHeading, { color: theme.onSurface, marginBottom: 0 }]}>Weekly Revenue Insights</Text>
+              </View>
+              
               <View style={styles.barChartContainer}>
                 {last7Days.map((d: any, idx: number) => {
                   const pct = Math.max(8, Math.min(100, (d.revenue / maxRevenue) * 100));
                   const isToday = idx === last7Days.length - 1;
                   return (
                     <View key={idx} style={styles.barColumn}>
-                      <View style={[styles.barTrack, { backgroundColor: isDark ? "#1F293D" : "#F1F4FA" }]}>
+                      <Text style={[styles.barValueText, { color: isToday ? colors.brand : theme.onSurfaceSecondary }]}>
+                        {d.revenue > 0 ? formatAmount(d.revenue) : ""}
+                      </Text>
+                      <View style={[styles.barTrack, { backgroundColor: isDark ? "#1C1D24" : "#F8FAFC" }]}>
                         <LinearGradient
-                          colors={isToday ? ["#635BFF", "#4F46E5"] : ["#635BFF", "#635BFF"]}
+                          colors={isToday ? ["#635BFF", "#4F46E5"] : ["#E2E8F0", "#CBD5E1"]}
                           style={[styles.barFill, { height: `${pct}%` }]}
                         />
                       </View>
@@ -562,29 +569,45 @@ function OwnerDashboard() {
               </View>
             </View>
 
-            {/* Top Selling Today Section */}
+            {/* Top Selling Items */}
             <View style={[styles.topSellingCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-              <Text style={[styles.sectionHeading, { color: theme.onSurface }]}>Top Selling Today</Text>
+              <View style={styles.chartHeader}>
+                <Ionicons name="trophy" size={18} color="#F59E0B" />
+                <Text style={[styles.sectionHeading, { color: theme.onSurface, marginBottom: 0 }]}>Popular Leaderboard</Text>
+              </View>
+              
               {summary?.top_selling && summary.top_selling.length > 0 ? (
-                summary.top_selling.map((item: any, idx: number) => (
-                  <View key={idx} style={[styles.topSellingRow, { borderBottomColor: theme.border }]}>
-                    <View style={styles.rankBadge}>
-                      <Text style={styles.rankText}>{idx + 1}</Text>
+                summary.top_selling.map((item: any, idx: number) => {
+                  const medalColors = ["#F59E0B", "#94A3B8", "#B45309"];
+                  const isMedal = idx < 3;
+                  return (
+                    <View key={idx} style={[styles.topSellingRow, { borderBottomColor: theme.border }]}>
+                      <View style={[
+                        styles.rankBadge, 
+                        { backgroundColor: isMedal ? `${medalColors[idx]}15` : "transparent" }
+                      ]}>
+                        <Text style={[
+                          styles.rankText, 
+                          { color: isMedal ? medalColors[idx] : theme.onSurfaceSecondary }
+                        ]}>{idx + 1}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.topSellingName, { color: theme.onSurface }]}>{item.name}</Text>
+                        <Text style={[styles.topSellingMeta, { color: theme.onSurfaceSecondary }]}>
+                          {item.sold} units sold • Value: ₹{item.amount.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.topSellingName, { color: theme.onSurface }]}>{item.name}</Text>
-                      <Text style={[styles.topSellingMeta, { color: theme.onSurfaceSecondary }]}>{item.sold} sold • ₹{item.amount}</Text>
-                    </View>
-                  </View>
-                ))
+                  );
+                })
               ) : (
                 <View style={styles.emptyTopSelling}>
-                  <View style={[styles.emptyRankBadge, { backgroundColor: isDark ? "#1F293D" : "#F1F4FA" }]}>
-                    <Text style={styles.rankText}>1</Text>
+                  <View style={[styles.emptyRankBadge, { backgroundColor: isDark ? "#1C1D24" : "#F1F5F9" }]}>
+                    <Text style={{ color: theme.onSurfaceTertiary }}>1</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.topSellingName, { color: theme.onSurface }]}>No items sold yet today</Text>
-                    <Text style={[styles.topSellingMeta, { color: theme.onSurfaceSecondary }]}>Orders placed today will appear here</Text>
+                    <Text style={[styles.topSellingName, { color: theme.onSurfaceSecondary }]}>No sales registered today</Text>
+                    <Text style={[styles.topSellingMeta, { color: theme.onSurfaceTertiary }]}>Dishes sold will show here in real-time</Text>
                   </View>
                 </View>
               )}
@@ -598,182 +621,134 @@ function OwnerDashboard() {
   );
 }
 
-function Metric({ label, value, testID }: { label: string; value: string; testID: string }) {
-  return (
-    <View style={styles.metric} testID={testID}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-    </View>
-  );
-}
-function Quick({ label, icon, onPress, testID }: { label: string; icon: any; onPress: () => void; testID: string }) {
-  return (
-    <Pressable style={styles.quickCell} onPress={onPress} testID={testID}>
-      <Ionicons name={icon} size={26} color={colors.brand} />
-      <Text style={styles.quickLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-function NavRow({ icon, label, onPress, testID }: { icon: any; label: string; onPress: () => void; testID: string }) {
-  return (
-    <Pressable style={styles.navRow} onPress={onPress} testID={testID}>
-      <Ionicons name={icon} size={22} color={colors.brand} />
-      <Text style={styles.navText}>{label}</Text>
-      <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceSecondary} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
-  greet: { color: colors.onSurfaceSecondary, letterSpacing: 1.4, fontSize: 12, textTransform: "uppercase" },
-  name: { color: colors.onSurface, fontSize: 28, fontWeight: "700", marginTop: spacing.xs, marginBottom: spacing.xl },
-  ownerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
-  greetText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: "500" },
-  ownerTitle: { color: colors.onSurface, fontSize: 24, fontWeight: "800", marginTop: 2 },
+  greet: { letterSpacing: 1.2, fontSize: 11, fontWeight: "800" },
+  name: { fontSize: 24, fontWeight: "900" },
+  ownerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg, paddingHorizontal: spacing.sm },
+  greetText: { fontSize: 13, fontWeight: "600", letterSpacing: 0.2 },
+  ownerTitle: { fontSize: 24, fontWeight: "900", marginTop: 2 },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(99, 91, 255, 0.08)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.2)",
+    borderColor: "rgba(99, 91, 255, 0.15)",
   },
-  roleBadgeText: { color: colors.brand, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 },
+  roleBadgeText: { color: colors.brand, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
   heroRevenueCard: {
     padding: spacing.xl,
     borderRadius: radius.xl,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
     shadowColor: colors.brand,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 18,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 4,
   },
-  liveBadgeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: spacing.sm },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#4ADE80" },
-  liveText: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "700" },
-  heroRevenueValue: { color: "#FFFFFF", fontSize: 38, fontWeight: "900", marginVertical: spacing.xs },
-  heroFooterRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.2)" },
+  liveBadgeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: spacing.xs },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#34D399" },
+  liveText: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  heroRevenueValue: { color: "#FFFFFF", fontSize: 40, fontWeight: "900", marginVertical: spacing.xs },
+  heroFooterRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.15)" },
   heroFooterItem: { flex: 1 },
-  heroFooterVal: { color: "#FFFFFF", fontSize: 20, fontWeight: "800" },
-  heroFooterLbl: { color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 2 },
-  heroFooterDivider: { width: 1, height: 28, backgroundColor: "rgba(255,255,255,0.2)", marginHorizontal: spacing.md },
-  statusGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginBottom: spacing.lg },
+  heroFooterVal: { color: "#FFFFFF", fontSize: 18, fontWeight: "900" },
+  heroFooterLbl: { color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "600", marginTop: 2 },
+  heroFooterDivider: { width: 1, height: 26, backgroundColor: "rgba(255,255,255,0.15)", marginHorizontal: spacing.md },
+  statusGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginBottom: spacing.xl, justifyContent: "space-between" },
   statusCard: {
     width: "47.5%",
-    backgroundColor: colors.surfaceSecondary,
     padding: spacing.lg,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "rgba(99, 91, 255, 0.04)",
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: "rgba(0,0,0,0.02)",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  statusIconBox: { width: 44, height: 44, borderRadius: radius.md, justifyContent: "center", alignItems: "center", marginBottom: spacing.md },
-  statusCount: { color: colors.onSurface, fontSize: 28, fontWeight: "800" },
-  statusLabel: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: "600", marginTop: 2 },
+  statusIconBox: { width: 42, height: 42, borderRadius: radius.md, justifyContent: "center", alignItems: "center", marginBottom: spacing.md },
+  statusCount: { fontSize: 26, fontWeight: "900" },
+  statusLabel: { fontSize: 12, fontWeight: "700", marginTop: 2 },
   chartSectionCard: {
-    backgroundColor: colors.surfaceSecondary,
     padding: spacing.lg,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: colors.border,
+    marginBottom: spacing.xl,
+  },
+  chartHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: spacing.lg },
+  sectionHeading: { fontSize: 15, fontWeight: "800" },
+  barChartContainer: { height: 140, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingTop: spacing.xl },
+  barColumn: { flex: 1, alignItems: "center", height: "100%", justifyContent: "flex-end" },
+  barValueText: { fontSize: 9, fontWeight: "800", marginBottom: 6 },
+  barTrack: { width: 22, height: 80, borderRadius: radius.pill, overflow: "hidden", justifyContent: "flex-end" },
+  barFill: { width: "100%", borderRadius: radius.pill },
+  barDateLabel: { fontSize: 10, fontWeight: "700", marginTop: 8 },
+  barDateLabelActive: { color: colors.brand, fontWeight: "900" },
+  topSellingCard: {
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1,
     marginBottom: spacing.lg,
   },
-  sectionHeading: { color: colors.onSurface, fontSize: 16, fontWeight: "800", marginBottom: spacing.lg },
-  barChartContainer: { height: 130, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingTop: spacing.md },
-  barColumn: { flex: 1, alignItems: "center", height: "100%", justifyContent: "flex-end" },
-  barTrack: { width: 22, height: 90, backgroundColor: "#F1F4FA", borderRadius: radius.sm, overflow: "hidden", justifyContent: "flex-end" },
-  barFill: { width: "100%", borderRadius: radius.sm },
-  barDateLabel: { color: colors.onSurfaceSecondary, fontSize: 10, fontWeight: "600", marginTop: 8 },
-  barDateLabelActive: { color: colors.brand, fontWeight: "800" },
-  topSellingCard: {
-    backgroundColor: colors.surfaceSecondary,
-    padding: spacing.lg,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  topSellingRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  rankBadge: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(99, 91, 255, 0.1)", justifyContent: "center", alignItems: "center" },
-  emptyRankBadge: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#F1F4FA", justifyContent: "center", alignItems: "center" },
-  rankText: { color: colors.brand, fontSize: 14, fontWeight: "800" },
-  topSellingName: { color: colors.onSurface, fontSize: 15, fontWeight: "700" },
-  topSellingMeta: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
+  topSellingRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1 },
+  rankBadge: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  emptyRankBadge: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  rankText: { fontSize: 13, fontWeight: "900" },
+  topSellingName: { fontSize: 14, fontWeight: "800" },
+  topSellingMeta: { fontSize: 12, marginTop: 2, fontWeight: "500" },
   emptyTopSelling: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm },
-  onboardCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  onboardTitle: { color: colors.onSurface, fontSize: 16, fontWeight: "600", marginBottom: 2 },
-  onboardSub: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18 },
-  metricsRow: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.md },
-  metric: { flex: 1, backgroundColor: colors.surfaceSecondary, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  metricLabel: { color: colors.onSurfaceSecondary, fontSize: 12, letterSpacing: 0.5 },
-  metricValue: { color: colors.brand, fontSize: 22, fontWeight: "700", marginTop: spacing.sm },
-  section: { color: colors.onSurfaceSecondary, fontSize: 12, letterSpacing: 1.2, marginTop: spacing.xl, marginBottom: spacing.md, textTransform: "uppercase" },
-  quick: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
-  quickCell: { width: "47%", backgroundColor: colors.surfaceSecondary, padding: spacing.lg, borderRadius: radius.lg, alignItems: "flex-start", gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  quickLabel: { color: colors.onSurface, fontSize: 14, fontWeight: "600" },
-  navRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm },
-  navText: { color: colors.onSurface, fontSize: 14, flex: 1, fontWeight: "600" },
-  err: { color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.lg },
-  unreadCard: { flexDirection: "row", padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, alignItems: "center", gap: spacing.md },
-  unreadName: { fontSize: 16, fontWeight: "800" },
-  callBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "#16A34A", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  callText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700", marginLeft: 4 },
-  readBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(22, 163, 74, 0.1)", borderWidth: 1, borderColor: "rgba(22, 163, 74, 0.2)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-  readText: { color: "#16A34A", fontSize: 12, fontWeight: "700", marginLeft: 4 },
-  emptyUnread: { flexDirection: "row", alignItems: "center", padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
-  adminHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  onboardCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md },
+  onboardTitle: { color: colors.onSurface, fontSize: 15, fontWeight: "800", marginBottom: 2 },
+  onboardSub: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, fontWeight: "500" },
+  err: { color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.lg, fontWeight: "700", fontSize: 13 },
+  adminHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginBottom: spacing.md },
   adminAvatar: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center", position: "relative" },
-  avatarText: { fontSize: 18, fontWeight: "800" },
-  activeIndicator: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#4ADE80", position: "absolute", bottom: 0, right: 0, borderWidth: 1.5, borderColor: colors.surface },
-  heroAdminCard: { padding: spacing.xl, borderRadius: radius.xl, marginBottom: spacing.lg, elevation: 4 },
-  heroAdminLabel: { color: "rgba(255, 255, 255, 0.7)", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  avatarText: { fontSize: 18, fontWeight: "900" },
+  activeIndicator: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#34D399", position: "absolute", bottom: 0, right: 0, borderWidth: 1.5, borderColor: colors.surface },
+  heroAdminCard: { padding: spacing.xl, borderRadius: radius.xl, marginBottom: spacing.xl, elevation: 4 },
+  heroAdminLabel: { color: "rgba(255, 255, 255, 0.75)", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
   heroAdminValue: { color: "#FFFFFF", fontSize: 34, fontWeight: "900", marginTop: 4 },
-  heroAdminIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255, 255, 255, 0.15)", justifyContent: "center", alignItems: "center" },
+  heroAdminIconBox: { width: 42, height: 42, borderRadius: 21, backgroundColor: "rgba(255, 255, 255, 0.15)", justifyContent: "center", alignItems: "center" },
   heroDivider: { height: 1, backgroundColor: "rgba(255, 255, 255, 0.15)", marginVertical: spacing.lg },
-  heroAdminSubLabel: { color: "rgba(255, 255, 255, 0.65)", fontSize: 11, fontWeight: "600" },
+  heroAdminSubLabel: { color: "rgba(255, 255, 255, 0.7)", fontSize: 11, fontWeight: "600" },
   heroAdminSubValue: { color: "#FFFFFF", fontSize: 16, fontWeight: "800", marginTop: 2 },
-  activeSubBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255, 255, 255, 0.18)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-  activeSubText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
-  metricsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: spacing.md, marginBottom: spacing.lg },
-  metricCard: { width: "47.5%", padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  activeSubBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255, 255, 255, 0.18)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill },
+  activeSubText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+  metricsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: spacing.md, marginBottom: spacing.xl },
+  metricCard: { width: "47.5%", padding: spacing.md, borderRadius: radius.xl, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm },
   metricIconBox: { width: 36, height: 36, borderRadius: radius.md, justifyContent: "center", alignItems: "center" },
-  metricValText: { fontSize: 18, fontWeight: "800", color: colors.onSurface },
-  metricLblText: { fontSize: 11, fontWeight: "500", marginTop: 2 },
-  adminSecHeader: { fontSize: 14, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: spacing.sm },
-  noUnreadCard: { padding: spacing.xl, borderRadius: radius.xl, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  greenCircle: { width: 52, height: 52, borderRadius: 26, justifyContent: "center", alignItems: "center", marginBottom: spacing.md },
+  metricValText: { fontSize: 18, fontWeight: "900" },
+  metricLblText: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  adminSecHeader: { fontSize: 13, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
+  noUnreadCard: { padding: spacing.xl, borderRadius: radius.xl, borderWidth: 1, alignItems: "center", justifyContent: "center", marginBottom: spacing.xl },
+  greenCircle: { width: 50, height: 50, borderRadius: 25, justifyContent: "center", alignItems: "center", marginBottom: spacing.md },
   noUnreadTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
-  noUnreadSub: { fontSize: 12, textAlign: "center", lineHeight: 18 },
-  newRestCard: { padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1, gap: spacing.md },
+  noUnreadSub: { fontSize: 12, textAlign: "center", lineHeight: 18, fontWeight: "500" },
+  newRestCard: { padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1, gap: spacing.md, marginBottom: spacing.md },
   newRestName: { fontSize: 16, fontWeight: "800" },
   glowingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#EF4444" },
-  newRestOwner: { fontSize: 13, fontWeight: "500", marginTop: 2 },
-  actionCallBtn: { flexDirection: "row", alignItems: "center", gap: spacing.xs, backgroundColor: "#16A34A", paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill },
-  actionCallText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
+  newRestOwner: { fontSize: 13, fontWeight: "600", marginTop: 2 },
+  actionCallBtn: { flexDirection: "row", alignItems: "center", gap: spacing.xs, backgroundColor: "#10B981", paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill },
+  actionCallText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
   newRestDetailsBox: { padding: spacing.md, borderRadius: radius.md, gap: 4 },
-  newRestDetailText: { fontSize: 12, fontWeight: "500" },
-  actionReadBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: radius.md, borderWidth: 1 },
-  actionReadText: { color: "#16A34A", fontSize: 13, fontWeight: "700" },
+  newRestDetailText: { fontSize: 12, fontWeight: "600" },
+  actionReadBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: radius.lg, borderWidth: 1, backgroundColor: "transparent" },
+  actionReadText: { color: "#10B981", fontSize: 13, fontWeight: "800" },
   dirRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.xl, borderWidth: 1 },
   dirIconBox: { width: 40, height: 40, borderRadius: radius.md, justifyContent: "center", alignItems: "center" },
-  dirTitle: { fontSize: 14, fontWeight: "700" },
-  dirSub: { fontSize: 11, marginTop: 2 },
+  dirTitle: { fontSize: 14, fontWeight: "800" },
+  dirSub: { fontSize: 11, marginTop: 2, fontWeight: "500" },
   
   // Online Web Sales Styles
   webPaymentsCard: {
     padding: spacing.lg,
     borderRadius: radius.xl,
     borderWidth: 1,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
+    marginBottom: spacing.xl,
     gap: spacing.md,
   },
   webPaymentsHeader: {
@@ -781,8 +756,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  webPayIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   webPaymentsTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "800",
   },
   webPaymentsRow: {
@@ -796,12 +778,12 @@ const styles = StyleSheet.create({
   },
   webPaymentVal: {
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
   },
   webPaymentLbl: {
     fontSize: 11,
-    fontWeight: "500",
-    marginTop: 2,
+    fontWeight: "600",
+    marginTop: 4,
     textAlign: "center",
   },
   verticalDivider: {
