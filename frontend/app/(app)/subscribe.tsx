@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, SafeAreaView, StatusBar,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, SafeAreaView, StatusBar, Modal,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,6 +32,9 @@ export default function Subscribe() {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
+  
+  const [checkoutHtml, setCheckoutHtml] = useState<string | null>(null);
+  const currentPlanRef = useRef<Plan | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -48,13 +52,32 @@ export default function Subscribe() {
 
   const startCheckout = async (plan: Plan) => {
     setLoadingPlanId(plan.id); setErr(null); setMsg(null);
+    currentPlanRef.current = plan;
     try {
-      // Direct auto pay activation bypassing WebView
-      const res = await api.checkout(plan.id);
-      if (res.status === "success" || res.subscription) {
-        setMsg(`Subscription activated successfully! Unlocking ${plan.name}...`);
-        const updatedSub = await api.mySubscription();
-        setSub(updatedSub);
+      const co = await api.checkout(plan.id);
+      const html = buildCheckoutHtml(co);
+      setCheckoutHtml(html);
+    } catch (e: any) { 
+      setErr(e.message || "An error occurred."); 
+    } finally { 
+      setLoadingPlanId(null); 
+    }
+  };
+
+  const onWebMessage = async (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === "success" && currentPlanRef.current) {
+        setCheckoutHtml(null);
+        setLoadingPlanId(currentPlanRef.current.id);
+        const verified = await api.verifyPayment({
+          razorpay_subscription_id: data.razorpay_subscription_id,
+          razorpay_payment_id: data.razorpay_payment_id,
+          razorpay_signature: data.razorpay_signature,
+          plan_id: currentPlanRef.current.id,
+        });
+        setSub(verified);
+        setMsg(`Subscription activated successfully! Unlocking ${currentPlanRef.current.name}...`);
         
         setTimeout(() => {
           if (!user?.tenant_id) {
@@ -63,11 +86,15 @@ export default function Subscribe() {
             router.replace("/(app)/dashboard");
           }
         }, 1500);
-      } else {
-        throw new Error("Subscription activation failed.");
+      } else if (data.type === "cancel") {
+        setCheckoutHtml(null);
+        setErr("Checkout cancelled.");
+      } else if (data.type === "error") {
+        setCheckoutHtml(null);
+        setErr(data.message || "Payment failed.");
       }
     } catch (e: any) { 
-      setErr(e.message || "An error occurred."); 
+      setErr(e.message); 
     } finally { 
       setLoadingPlanId(null); 
     }
@@ -253,8 +280,62 @@ export default function Subscribe() {
           )}
         </ScrollView>
       </View>
+
+      <Modal visible={!!checkoutHtml} animationType="slide" onRequestClose={() => setCheckoutHtml(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+          <View style={styles.webviewHeader}>
+            <Pressable onPress={() => setCheckoutHtml(null)} hitSlop={12} style={styles.closeBtn} testID="checkout-close-btn">
+              <Ionicons name="close" size={24} color="#111" />
+            </Pressable>
+            <Text style={styles.webviewTitle}>Autopay Registration</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          {checkoutHtml && (
+            <WebView
+              source={{ html: checkoutHtml, baseUrl: "https://checkout.razorpay.com" }}
+              originWhitelist={["*"]}
+              javaScriptEnabled
+              onMessage={onWebMessage}
+              startInLoadingState
+              style={{ flex: 1 }}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
+}
+
+function buildCheckoutHtml(co: any): string {
+  const opts = {
+    key: co.key_id,
+    subscription_id: co.subscription_id,
+    name: "EzBill ERP",
+    description: `${co.plan_name} Subscription`,
+    prefill: co.prefill,
+    theme: { color: "#635BFF" },
+  };
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>
+    body { font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:#0D0D0D; color:#F7F7F7; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+    .card { text-align:center; }
+    button { background:#635BFF; color:#FFFFFF; border:none; padding:14px 28px; font-size:16px; border-radius:12px; font-weight:600; }
+  </style></head><body>
+    <div class="card"><p>Loading Razorpay Autopay Mandate Setup…</p><button id="pay">Authorize Mandate</button></div>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script>
+      var opts = ${JSON.stringify(opts)};
+      opts.handler = function(res){
+        window.ReactNativeWebView.postMessage(JSON.stringify({type:"success", ...res}));
+      };
+      opts.modal = { ondismiss: function(){ window.ReactNativeWebView.postMessage(JSON.stringify({type:"cancel"})); } };
+      var rzp = new Razorpay(opts);
+      rzp.on('payment.failed', function(resp){
+        window.ReactNativeWebView.postMessage(JSON.stringify({type:"error", message: resp.error && resp.error.description}));
+      });
+      document.getElementById('pay').onclick = function(){ rzp.open(); };
+      setTimeout(function(){ rzp.open(); }, 200);
+    </script>
+  </body></html>`;
 }
 
 const styles = StyleSheet.create({
@@ -421,5 +502,27 @@ const styles = StyleSheet.create({
   },
   btnPressed: {
     opacity: 0.85,
+  },
+  webviewHeader: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between", 
+    paddingHorizontal: spacing.lg, 
+    paddingVertical: spacing.md, 
+    borderBottomWidth: 1, 
+    borderBottomColor: "#E2E8F0", 
+    backgroundColor: "#FFFFFF" 
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  webviewTitle: { 
+    fontSize: 16, 
+    fontWeight: "800", 
+    color: "#111111" 
   },
 });

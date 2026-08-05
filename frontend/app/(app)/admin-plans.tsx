@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 
-type Plan = { id: string; name: string; price: number; interval: string; valid_days?: number; features: string[]; is_active: boolean };
+type Plan = { id: string; name: string; price: number; interval: string; valid_days?: number; razorpay_plan_id?: string; features: string[]; is_active: boolean };
 
 export default function AdminPlans() {
   const insets = useSafeAreaInsets();
@@ -22,6 +22,7 @@ export default function AdminPlans() {
   const [interval, setInterval] = useState<"month" | "year">("month");
   const [features, setFeatures] = useState("");
   const [validDays, setValidDays] = useState("30");
+  const [razorpayPlanId, setRazorpayPlanId] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -44,8 +45,9 @@ export default function AdminPlans() {
         features: features.split(",").map(s => s.trim()).filter(Boolean),
         is_active: true,
         valid_days: d,
+        razorpay_plan_id: razorpayPlanId.trim() || undefined,
       });
-      setName(""); setPrice(""); setFeatures(""); setValidDays("30"); setModal(false);
+      setName(""); setPrice(""); setFeatures(""); setValidDays("30"); setRazorpayPlanId(""); setModal(false);
       await load();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -80,6 +82,9 @@ export default function AdminPlans() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{item.name}</Text>
                 <Text style={styles.cardPrice}>₹{item.price} / {item.interval} ({item.valid_days ?? (item.interval === "year" ? 365 : 30)} days)</Text>
+                {!!item.razorpay_plan_id && (
+                  <Text style={styles.cardRzpId} numberOfLines={1}>RZP ID: {item.razorpay_plan_id}</Text>
+                )}
                 {!!item.features?.length && (
                   <Text style={styles.cardFeat} numberOfLines={3}>{item.features.map(f => `• ${f}`).join("\n")}</Text>
                 )}
@@ -101,6 +106,7 @@ export default function AdminPlans() {
             <TextInput value={name} onChangeText={setName} placeholder="e.g. Pro Yearly" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-name-input" />
             <TextInput value={price} onChangeText={setPrice} placeholder="Price in ₹" keyboardType="decimal-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-price-input" />
             <TextInput value={validDays} onChangeText={setValidDays} placeholder="Validity in days (e.g. 30)" keyboardType="number-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-days-input" />
+            <TextInput value={razorpayPlanId} onChangeText={setRazorpayPlanId} placeholder="Razorpay Plan ID (optional)" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="plan-rzp-id-input" />
             <View style={styles.intervalRow}>
               {(["month", "year"] as const).map(v => (
                 <Pressable key={v} style={[styles.intervalChip, interval === v && styles.intervalChipActive]} onPress={() => setInterval(v)} testID={`plan-interval-${v}`}>
@@ -140,6 +146,7 @@ const styles = StyleSheet.create({
   cardName: { color: colors.onSurface, fontSize: 18, fontFamily: "serif" },
   cardPrice: { color: colors.brand, fontSize: 15, marginTop: 4 },
   cardFeat: { color: colors.onSurfaceSecondary, fontSize: 11, marginTop: 6, lineHeight: 15 },
+  cardRzpId: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 4 },
   err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   modalCard: { backgroundColor: colors.surfaceSecondary, padding: spacing.xl, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, gap: spacing.md },

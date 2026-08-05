@@ -1275,6 +1275,7 @@ class PlanIn(BaseModel):
     features: List[str] = []
     is_active: bool = True
     valid_days: Optional[int] = None
+    razorpay_plan_id: Optional[str] = None
 
 
 class SubscribeIn(BaseModel):
@@ -1544,10 +1545,11 @@ class CheckoutIn(BaseModel):
 
 
 class VerifyIn(BaseModel):
-    razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
     plan_id: str
+    razorpay_order_id: Optional[str] = None
+    razorpay_subscription_id: Optional[str] = None
 
 
 @api.get("/subscriptions/mine")
@@ -1578,12 +1580,116 @@ async def my_subscription(user: dict = Depends(get_current_user)):
 
 @api.post("/subscriptions/checkout")
 async def checkout(payload: CheckoutIn, user: dict = Depends(require_roles("owner", "manager"))):
+    if not razorpay_client:
+        raise HTTPException(status_code=503, detail="Razorpay not configured")
     tid = user.get("tenant_id") or user["id"]
     plan = await db.plans.find_one({"id": payload.plan_id}, {"_id": 0})
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
         
-    # Deactivate prior subscriptions
+    # Check if the plan is already registered on Razorpay
+    razorpay_plan_id = plan.get("razorpay_plan_id")
+    if not razorpay_plan_id:
+        try:
+            period = "yearly" if plan.get("interval") == "year" else "monthly"
+            rzp_plan = razorpay_client.plan.create({
+                "period": period,
+                "interval": 1,
+                "item": {
+                    "name": plan["name"],
+                    "amount": int(round(float(plan["price"]) * 100)),
+                    "currency": "INR",
+                    "description": f"Subscription plan for {plan['name']}"
+                }
+            })
+            razorpay_plan_id = rzp_plan["id"]
+            await db.plans.update_one({"id": plan["id"]}, {"$set": {"razorpay_plan_id": razorpay_plan_id}})
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Razorpay Plan creation failed: {e}")
+            
+    # Create subscription on Razorpay (Autopay mandate)
+    try:
+        # If it's a monthly plan, set total_count to 12. If yearly, set total_count to 1.
+        total_count = 12 if plan.get("interval") == "month" else 1
+        subscription = razorpay_client.subscription.create({
+            "plan_id": razorpay_plan_id,
+            "customer_notify": 1,
+            "total_count": total_count,
+            "notes": {
+                "tenant_id": tid,
+                "plan_id": plan["id"]
+            }
+        })
+        razorpay_sub_id = subscription["id"]
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay Subscription creation failed: {e}")
+        
+    # Save the order in payment_orders
+    await db.payment_orders.insert_one({
+        "id": str(uuid.uuid4()),
+        "razorpay_subscription_id": razorpay_sub_id,
+        "tenant_id": tid,
+        "plan_id": plan["id"],
+        "amount": int(round(float(plan["price"]) * 100)),
+        "status": "created",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    
+    restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
+    return {
+        "key_id": RAZORPAY_KEY_ID,
+        "subscription_id": razorpay_sub_id,
+        "amount": int(round(float(plan["price"]) * 100)),
+        "plan_name": plan["name"],
+        "interval": plan["interval"],
+        "prefill": {
+            "name": restaurant.get("owner_name", user["full_name"]),
+            "email": user["email"],
+            "contact": restaurant.get("phone", ""),
+        }
+    }
+
+
+@api.post("/subscriptions/verify")
+async def verify_payment(payload: VerifyIn, user: dict = Depends(require_roles("owner", "manager"))):
+    if not razorpay_client:
+        raise HTTPException(status_code=503, detail="Razorpay not configured")
+    tid = user.get("tenant_id") or user["id"]
+    
+    # Verify signature based on order vs subscription payload
+    try:
+        if payload.razorpay_subscription_id:
+            razorpay_client.utility.verify_subscription_payment_signature({
+                "razorpay_subscription_id": payload.razorpay_subscription_id,
+                "razorpay_payment_id": payload.razorpay_payment_id,
+                "razorpay_signature": payload.razorpay_signature,
+            })
+        else:
+            razorpay_client.utility.verify_payment_signature({
+                "razorpay_order_id": payload.razorpay_order_id,
+                "razorpay_payment_id": payload.razorpay_payment_id,
+                "razorpay_signature": payload.razorpay_signature,
+            })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid signature: {e}")
+        
+    plan = await db.plans.find_one({"id": payload.plan_id}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+        
+    # Update payment_orders status
+    if payload.razorpay_subscription_id:
+        await db.payment_orders.update_one(
+            {"razorpay_subscription_id": payload.razorpay_subscription_id, "tenant_id": tid},
+            {"$set": {"status": "paid", "razorpay_payment_id": payload.razorpay_payment_id, "paid_at": datetime.now(timezone.utc).isoformat()}},
+        )
+    else:
+        await db.payment_orders.update_one(
+            {"razorpay_order_id": payload.razorpay_order_id, "tenant_id": tid},
+            {"$set": {"status": "paid", "razorpay_payment_id": payload.razorpay_payment_id, "paid_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        
+    # Deactivate any prior active subs
     await db.subscriptions.update_many(
         {"$or": [{"tenant_id": tid}, {"user_id": user["id"]}], "status": "active"},
         {"$set": {"status": "cancelled"}}
@@ -1604,51 +1710,10 @@ async def checkout(payload: CheckoutIn, user: dict = Depends(require_roles("owne
         "price": plan["price"],
         "interval": plan["interval"],
         "status": "active",
-        "payment_method": "auto_pay",
+        "razorpay_payment_id": payload.razorpay_payment_id,
+        "razorpay_subscription_id": payload.razorpay_subscription_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "ends_at": ends_at.isoformat(),
-    }
-    await db.subscriptions.insert_one(sub)
-    sub.pop("_id", None)
-    return {"status": "success", "subscription": sub}
-
-
-@api.post("/subscriptions/verify")
-async def verify_payment(payload: VerifyIn, user: dict = Depends(require_roles("owner", "manager"))):
-    if not razorpay_client:
-        raise HTTPException(status_code=503, detail="Razorpay not configured")
-    tid = user.get("tenant_id") or user["id"]
-    try:
-        razorpay_client.utility.verify_payment_signature({
-            "razorpay_order_id": payload.razorpay_order_id,
-            "razorpay_payment_id": payload.razorpay_payment_id,
-            "razorpay_signature": payload.razorpay_signature,
-        })
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid signature: {e}")
-    plan = await db.plans.find_one({"id": payload.plan_id}, {"_id": 0})
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    await db.payment_orders.update_one(
-        {"razorpay_order_id": payload.razorpay_order_id, "tenant_id": tid},
-        {"$set": {"status": "paid", "razorpay_payment_id": payload.razorpay_payment_id, "paid_at": datetime.now(timezone.utc).isoformat()}},
-    )
-    # Deactivate any prior active subs, insert new active sub
-    await db.subscriptions.update_many(
-        {"$or": [{"tenant_id": tid}, {"user_id": user["id"]}], "status": "active"},
-        {"$set": {"status": "cancelled"}}
-    )
-    sub = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": user.get("tenant_id"),
-        "user_id": user["id"],
-        "plan_id": plan["id"],
-        "plan_name": plan["name"],
-        "price": plan["price"],
-        "interval": plan["interval"],
-        "status": "active",
-        "razorpay_payment_id": payload.razorpay_payment_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.subscriptions.insert_one(sub)
     sub.pop("_id", None)
