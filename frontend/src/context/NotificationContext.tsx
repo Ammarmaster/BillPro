@@ -70,7 +70,9 @@ const NotificationContext = createContext<NotificationContextProps | undefined>(
 
 const PREFS_KEY = "lumina_notification_preferences";
 const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
-const SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
+const KITCHEN_ALERT_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
+const PAYMENT_MONEY_SOUND_URL = `${BACKEND_BASE}/static/sounds/payment-money.wav`;
+const GENERAL_NOTIFICATION_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
 
 
 const defaultPrefs: NotificationPreferences = {
@@ -128,7 +130,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (Platform.OS !== "web" && createAudioPlayer) {
       try {
         console.log("[Audio] Preloading notification sound player...");
-        audioPlayer.current = createAudioPlayer(SOUND_URL);
+        audioPlayer.current = createAudioPlayer(GENERAL_NOTIFICATION_SOUND_URL);
       } catch (e) {
         console.warn("[Audio] Failed to initialize preloaded player:", e);
       }
@@ -372,7 +374,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
 
     if (currentPrefs.sound_enabled) {
-      playSound();
+      playSound(notif);
     }
     if (currentPrefs.vibration_enabled) {
       if (Platform.OS === "web") {
@@ -384,53 +386,76 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const playSound = () => {
-    console.log("[KITCHEN SOUND] Attempting playback");
-    console.log("[KITCHEN SOUND] Audio source:", SOUND_URL);
+  const playSound = (notif?: Notification) => {
+    let targetSoundUrl = GENERAL_NOTIFICATION_SOUND_URL;
+    let isKitchenAlert = false;
+
+    if (notif) {
+      const isNewOrder = notif.category === "kitchen" && (
+        notif.title.toLowerCase().includes("new") ||
+        notif.title.toLowerCase().includes("placed") ||
+        notif.data?.status === "placed" ||
+        notif.data?.action === "new_order"
+      );
+
+      const isPayment = notif.category === "payment" ||
+        notif.title.toLowerCase().includes("payment") ||
+        notif.title.toLowerCase().includes("paid") ||
+        notif.data?.status === "paid";
+
+      if (isNewOrder) {
+        targetSoundUrl = KITCHEN_ALERT_SOUND_URL;
+        isKitchenAlert = true;
+      } else if (isPayment) {
+        targetSoundUrl = PAYMENT_MONEY_SOUND_URL;
+      } else {
+        targetSoundUrl = GENERAL_NOTIFICATION_SOUND_URL;
+      }
+    }
+
+    console.log(`[ALERT SOUND] Playing sound for category '${notif?.category || "general"}': ${targetSoundUrl}`);
+
     if (Platform.OS === "web") {
       try {
-        const audio = new window.Audio(SOUND_URL);
+        const audio = new window.Audio(targetSoundUrl);
         audio.volume = 1.0;
-        let count = 0;
-        audio.addEventListener("ended", () => {
-          count++;
-          if (count < 2) {
-            console.log(`[KITCHEN SOUND] Play count: ${count}. Replaying alert...`);
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
-          } else {
-            console.log("[KITCHEN SOUND] Played 2 times. Stopping.");
-          }
-        });
+
+        if (isKitchenAlert) {
+          let count = 0;
+          audio.addEventListener("ended", () => {
+            count++;
+            if (count < 2) {
+              console.log(`[KITCHEN SOUND] Play count: ${count}. Replaying alert...`);
+              audio.currentTime = 0;
+              audio.play().catch(() => {});
+            } else {
+              console.log("[KITCHEN SOUND] Played 2 times. Stopping.");
+            }
+          });
+        }
+
         const p = audio.play();
         if (p && typeof p.then === "function") {
           p.then(() => {
-            console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+            console.log("[ALERT SOUND] Playback started successfully");
           }).catch((err: any) => {
-            console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
-            console.warn("[KITCHEN SOUND] Error:", err);
+            console.warn("[ALERT SOUND] Playback failed:", err);
           });
         } else {
-          console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+          console.log("[ALERT SOUND] Playback started successfully");
         }
       } catch (e: any) {
-        console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
-        console.warn("[KITCHEN SOUND] Error:", e);
+        console.warn("[ALERT SOUND] Error:", e);
       }
     } else {
       try {
-        if (!audioPlayer.current && createAudioPlayer) {
-          audioPlayer.current = createAudioPlayer(SOUND_URL);
-        }
-        if (audioPlayer.current) {
-          console.log("[Audio] Playing preloaded notification sound (native)");
-          audioPlayer.current.seekTo(0);
-          audioPlayer.current.play();
-          console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+        if (createAudioPlayer) {
+          const nativePlayer = createAudioPlayer(targetSoundUrl);
+          nativePlayer.play();
+          console.log("[ALERT SOUND] Playback started (native)");
         }
       } catch (e: any) {
-        console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
-        console.warn("[KITCHEN SOUND] Error:", e);
+        console.warn("[ALERT SOUND] Error:", e);
       }
     }
   };

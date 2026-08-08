@@ -1010,6 +1010,14 @@ async def public_create_order(payload: PublicOrderIn):
         {"order_id": order_id, "table_number": payload.table_number or "-"}
     )
     
+    await notify_tenant(
+        payload.tenant_id,
+        "payment",
+        "Payment Received",
+        f"Table {payload.table_number or '-'} paid ₹{float(subtotal):.2f} via {payload.payment_method or 'online'}",
+        {"order_id": order_id, "table_number": payload.table_number or "-", "total": float(subtotal)}
+    )
+    
     return doc
 
 
@@ -1795,46 +1803,105 @@ async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None)
         return HTMLResponse(content=f"<h3>Error loading customer menu page: {str(e)}</h3>", status_code=500)
 
 
-@app.get("/static/sounds/kitchen-alert.wav")
-async def get_kitchen_alert_sound():
+def _synthesize_wav(sound_type: str) -> bytes:
     import io
     import wave
     import math
     import struct
-    from fastapi import Response
 
-    print("[AUDIO] Request received", flush=True)
-
-    # Synthesize the WAV file dynamically in memory
     sample_rate = 44100
-    duration = 1.2
-    freq = 800.0
+    if sound_type == "payment-money":
+        duration = 0.8
+        total_samples = int(sample_rate * duration)
+        data = bytearray()
+        for i in range(total_samples):
+            t = i / sample_rate
+            val = 0.0
+            if t < 0.4:
+                decay1 = math.exp(-t * 8.0)
+                val += 15000.0 * math.sin(2.0 * math.pi * 1864.0 * t) * decay1
+                val += 12000.0 * math.sin(2.0 * math.pi * 2349.0 * t) * decay1
+                val += 8000.0 * math.sin(2.0 * math.pi * 3729.0 * t) * decay1
+            if t >= 0.15:
+                t2 = t - 0.15
+                decay2 = math.exp(-t2 * 6.0)
+                val += 18000.0 * math.sin(2.0 * math.pi * 2793.0 * t2) * decay2
+                val += 14000.0 * math.sin(2.0 * math.pi * 3520.0 * t2) * decay2
+                val += 9000.0 * math.sin(2.0 * math.pi * 4186.0 * t2) * decay2
+            int_val = max(-32768, min(32767, int(val)))
+            data.extend(struct.pack("<h", int_val))
+    elif sound_type == "notification":
+        duration = 0.6
+        total_samples = int(sample_rate * duration)
+        data = bytearray()
+        for i in range(total_samples):
+            t = i / sample_rate
+            val = 0.0
+            if t < 0.35:
+                decay1 = math.exp(-t * 9.0)
+                val += 16000.0 * math.sin(2.0 * math.pi * 587.33 * t) * decay1
+                val += 6000.0 * math.sin(2.0 * math.pi * 1174.66 * t) * decay1
+            if t >= 0.12:
+                t2 = t - 0.12
+                decay2 = math.exp(-t2 * 7.0)
+                val += 18000.0 * math.sin(2.0 * math.pi * 880.0 * t2) * decay2
+                val += 7000.0 * math.sin(2.0 * math.pi * 1760.0 * t2) * decay2
+            int_val = max(-32768, min(32767, int(val)))
+            data.extend(struct.pack("<h", int_val))
+    else:
+        # Default / Kitchen alert
+        duration = 1.2
+        total_samples = int(sample_rate * duration)
+        data = bytearray()
+        for i in range(total_samples):
+            t = i / sample_rate
+            mod = 0.5 + 0.5 * math.sin(2.0 * math.pi * 8.0 * t)
+            val = int(32000.0 * math.sin(2.0 * math.pi * 800.0 * t) * mod)
+            val = max(-32768, min(32767, val))
+            data.extend(struct.pack("<h", val))
 
     wav_io = io.BytesIO()
     with wave.open(wav_io, "wb") as wav_file:
-        # 1 channel (mono), 2 bytes per sample (16-bit PCM), sample_rate
-        wav_file.setparams((1, 2, sample_rate, int(sample_rate * duration), "NONE", "not compressed"))
-        for i in range(int(sample_rate * duration)):
-            value = int(32767.0 * math.sin(2.0 * math.pi * freq * i / sample_rate))
-            data = struct.pack("<h", value)
-            wav_file.writeframesraw(data)
-
-    wav_data = wav_io.getvalue()
+        num_samples = len(data) // 2
+        wav_file.setparams((1, 2, sample_rate, num_samples, "NONE", "not compressed"))
+        wav_file.writeframesraw(bytes(data))
+    res = wav_io.getvalue()
     wav_io.close()
+    return res
 
-    print("[AUDIO] File path: memory://kitchen-alert.wav", flush=True)
-    print("[AUDIO] File exists: true", flush=True)
-    print(f"[AUDIO] File size: {len(wav_data)} bytes", flush=True)
-    print("[AUDIO] Content-Type: audio/wav", flush=True)
 
+@app.get("/static/sounds/{sound_filename}")
+async def get_sound_file(sound_filename: str):
+    from fastapi import Response
+    
+    # 1. Try serving from filesystem if available
+    paths_to_check = [
+        Path(__file__).parent / "static" / "sounds" / sound_filename,
+        Path(__file__).parent / "templates" / sound_filename,
+    ]
+    for p in paths_to_check:
+        if p.exists():
+            with open(p, "rb") as f:
+                return Response(
+                    content=f.read(),
+                    media_type="audio/wav",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, OPTIONS",
+                        "Access-Control-Allow-Headers": "*",
+                    }
+                )
+    
+    # 2. Dynamic in-memory synthesis fallback
+    sound_type = sound_filename.replace(".wav", "")
+    wav_bytes = _synthesize_wav(sound_type)
     return Response(
-        content=wav_data,
+        content=wav_bytes,
         media_type="audio/wav",
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "*",
-            "Content-Disposition": "inline; filename=kitchen-alert.wav"
         }
     )
 
