@@ -143,7 +143,7 @@ export default function More() {
             {/* Subscription */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/subscribe")} testID="manage-subscribe-btn">
               <View style={styles.iconBox}>
-                <Ionicons name="subtitles" size={20} color="#635BFF" />
+                <Ionicons name="card-outline" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Subscription</Text>

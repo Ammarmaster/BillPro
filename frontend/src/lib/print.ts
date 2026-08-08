@@ -283,7 +283,7 @@ export async function sharePdf(bill: any) {
 
 export async function getDefaultPrinter(): Promise<string | null> {
   try {
-    const val = await storage.getItem("lumina_default_printer_url");
+    const val = await storage.getItem("lumina_default_printer_url", null);
     return typeof val === "string" ? val : null;
   } catch {
     return null;

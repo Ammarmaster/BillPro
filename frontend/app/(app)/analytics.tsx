@@ -277,7 +277,7 @@ export default function Analytics() {
                         <Text style={[styles.dishAmt, { color: theme.onSurface }]}>₹{it.amt}</Text>
                       </View>
                       <View style={[styles.progressTrack, { backgroundColor: isDark ? "#1F293D" : "#F1F4FA" }]}>
-                        <View style={[styles.progressFill, { width: pct }]} />
+                        <View style={[styles.progressFill, { width: pct as any }]} />
                       </View>
                     </View>
                   );

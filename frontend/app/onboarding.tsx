@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "900" },
   subtitle: { fontSize: 13, marginTop: 4, textAlign: "center" },
 
-  card: { padding: spacing.xl, borderRadius: radius.xxl, borderWidth: 1, gap: spacing.md },
+  card: { padding: spacing.xl, borderRadius: 24, borderWidth: 1, gap: spacing.md },
   logoPicker: { alignSelf: "center", width: 100, height: 100, borderRadius: 50, overflow: "hidden", marginBottom: spacing.sm },
   logoImg: { width: "100%", height: "100%" },
   logoPlaceholder: { width: "100%", height: "100%", backgroundColor: "#26294D", alignItems: "center", justifyContent: "center", padding: 8 },

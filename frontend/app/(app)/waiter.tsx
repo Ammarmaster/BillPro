@@ -182,6 +182,17 @@ export default function WaiterScreen() {
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.price * l.quantity, 0), [lines]);
   const totalQty = useMemo(() => lines.reduce((s, l) => s + l.quantity, 0), [lines]);
 
+  const cartAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateY: withSpring(totalQty > 0 ? 0 : 150, {
+          damping: 15,
+          stiffness: 120,
+        }),
+      },
+    ],
+  }));
+
   useEffect(() => { if (subtotal > 0) { scale.value = withSpring(1.08, { damping: 10 }, () => { scale.value = withSpring(1); }); } }, [subtotal, scale]);
 
   const submitOrder = async () => {
@@ -434,7 +445,7 @@ export default function WaiterScreen() {
               columnWrapperStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
               contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: spacing.md }}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => {
+              renderItem={({ item, index }) => {
                 const { status } = getTableStatusInfo(item.label);
                 let bgColor = isDark ? "#161C2E" : "#ECFDF5";
                 let borderColor = isDark ? "#065F46" : "#A7F3D0";
@@ -459,23 +470,25 @@ export default function WaiterScreen() {
                 }
 
                 return (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.tableCard,
-                      { backgroundColor: bgColor, borderColor: borderColor },
-                      pressed && styles.cardPressed,
-                    ]}
-                    onPress={() => onSelectTable(item)}
-                    testID={`waiter-table-${item.id}`}
-                  >
-                    <View style={[styles.badgeIconBox, { backgroundColor: borderColor }]}>
-                      <Ionicons name={iconName} size={14} color={textColor} />
-                    </View>
+                  <Animated.View entering={FadeInDown.delay(index * 40).springify()} style={{ flex: 1 }}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.tableCard,
+                        { backgroundColor: bgColor, borderColor: borderColor },
+                        pressed && styles.cardPressed,
+                      ]}
+                      onPress={() => onSelectTable(item)}
+                      testID={`waiter-table-${item.id}`}
+                    >
+                      <View style={[styles.badgeIconBox, { backgroundColor: borderColor }]}>
+                        <Ionicons name={iconName} size={14} color={textColor} />
+                      </View>
 
-                    <Text style={[styles.cardLabel, { color: theme.onSurface }]}>{item.label}</Text>
-                    <Text style={[styles.cardSeats, { color: theme.onSurfaceSecondary }]}>{item.seats} seats</Text>
-                    <Text style={[styles.cardStatus, { color: textColor }]}>{status}</Text>
-                  </Pressable>
+                      <Text style={[styles.cardLabel, { color: theme.onSurface }]}>{item.label}</Text>
+                      <Text style={[styles.cardSeats, { color: theme.onSurfaceSecondary }]}>{item.seats} seats</Text>
+                      <Text style={[styles.cardStatus, { color: textColor }]}>{status}</Text>
+                    </Pressable>
+                  </Animated.View>
                 );
               }}
             />
@@ -596,11 +609,18 @@ export default function WaiterScreen() {
 
       {err && <Text style={styles.err} testID="waiter-error">{err}</Text>}
 
-      <Pressable style={[styles.cta, { bottom: 80 }]} onPress={submitOrder} disabled={busy} testID="waiter-send-btn">
-        {busy ? <ActivityIndicator color={colors.onBrand} /> : (
-          <Text style={styles.ctaText}>Place Order → · {totalQty} items · ₹{subtotal.toFixed(0)}</Text>
-        )}
-      </Pressable>
+      <Animated.View style={[styles.cta, { bottom: insets.bottom + 12 }, cartAnimatedStyle]}>
+        <Pressable 
+          style={{ width: "100%", paddingVertical: 14, alignItems: "center" }} 
+          onPress={submitOrder} 
+          disabled={busy} 
+          testID="waiter-send-btn"
+        >
+          {busy ? <ActivityIndicator color={colors.onBrand} /> : (
+            <Text style={styles.ctaText}>Place Order → · {totalQty} items · ₹{subtotal.toFixed(0)}</Text>
+          )}
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -720,7 +740,7 @@ const styles = StyleSheet.create({
   menuPrice: { color: colors.brand, fontSize: 15, fontWeight: "700", marginTop: 2 },
   plus: { position: "absolute", right: 8, top: 8, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center" },
-  cta: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: colors.brand, paddingVertical: 14, borderRadius: radius.lg, alignItems: "center" },
+  cta: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: colors.brand, borderRadius: radius.lg, overflow: "hidden" },
   ctaText: { color: colors.onBrand, fontWeight: "700", fontSize: 15, letterSpacing: 0.3 },
   err: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: 140, color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, textAlign: "center" },
   notesContainer: {

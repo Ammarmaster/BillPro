@@ -169,8 +169,8 @@ export async function exportAnalyticsExcel(period: string, bills: any[], topDish
   if (Platform.OS === "web") {
     downloadWebFile(csv, filename, "text/csv;charset=utf-8;");
   } else {
-    const fileUri = `${FileSystem.documentDirectory}${filename}`;
-    await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+    const fileUri = `${(FileSystem as any).documentDirectory}${filename}`;
+    await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: (FileSystem as any).EncodingType.UTF8 });
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(fileUri, { mimeType: "text/csv", dialogTitle: "Export Excel / CSV Sales Report" });
     }
@@ -206,8 +206,8 @@ export async function exportAnalyticsDocx(period: string, heroRev: number, total
   if (Platform.OS === "web") {
     downloadWebFile(doc, filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
   } else {
-    const fileUri = `${FileSystem.documentDirectory}${filename}`;
-    await FileSystem.writeAsStringAsync(fileUri, doc, { encoding: FileSystem.EncodingType.UTF8 });
+    const fileUri = `${(FileSystem as any).documentDirectory}${filename}`;
+    await FileSystem.writeAsStringAsync(fileUri, doc, { encoding: (FileSystem as any).EncodingType.UTF8 });
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(fileUri, { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", dialogTitle: "Export DOCX Sales Document" });
     }

@@ -69,7 +69,9 @@ interface NotificationContextProps {
 const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
 
 const PREFS_KEY = "lumina_notification_preferences";
-const SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav";
+const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+const SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
+
 
 const defaultPrefs: NotificationPreferences = {
   sound_enabled: true,
@@ -87,6 +89,24 @@ const defaultPrefs: NotificationPreferences = {
   quiet_end: "07:00"
 };
 
+const getRoleDefaultPrefs = (role: string | undefined): NotificationPreferences => {
+  return {
+    sound_enabled: true,
+    vibration_enabled: true,
+    categories: {
+      sales: role ? ["owner", "manager", "cashier"].includes(role) : true,
+      kitchen: role === "kitchen", // default OFF for waiter, cashier, owner; ON for kitchen
+      waiter: role ? ["waiter", "manager", "owner"].includes(role) : true,
+      cashier: role ? ["cashier", "manager", "owner"].includes(role) : true,
+      system: true,
+      payment: role ? ["owner", "manager", "cashier"].includes(role) : true,
+    },
+    quiet_hours: false,
+    quiet_start: "22:00",
+    quiet_end: "07:00"
+  };
+};
+
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -94,13 +114,26 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [banner, setBanner] = useState<Notification | null>(null);
   const [preferences, setPreferences] = useState<NotificationPreferences>(defaultPrefs);
 
+  const preferencesRef = useRef<NotificationPreferences>(preferences);
+  useEffect(() => {
+    preferencesRef.current = preferences;
+  }, [preferences]);
+
   const ws = useRef<WebSocket | null>(null);
   const audioPlayer = useRef<any>(null);
   const reconnectTimer = useRef<any>(null);
 
   useEffect(() => {
     loadPreferences();
-  }, []);
+    if (Platform.OS !== "web" && createAudioPlayer) {
+      try {
+        console.log("[Audio] Preloading notification sound player...");
+        audioPlayer.current = createAudioPlayer(SOUND_URL);
+      } catch (e) {
+        console.warn("[Audio] Failed to initialize preloaded player:", e);
+      }
+    }
+  }, [user]);
 
   const registerForPushNotificationsAsync = async () => {
     if (Platform.OS === "web") return;
@@ -162,18 +195,35 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [user]);
 
   const loadPreferences = async () => {
-    const data = await storage.getItem<string>(PREFS_KEY, "");
+    const key = user ? `${PREFS_KEY}_${user.id}` : PREFS_KEY;
+    const data = await storage.getItem<string>(key, "");
+    const roleDefault = getRoleDefaultPrefs(user?.role);
+    let loaded = roleDefault;
     if (data) {
       try {
-        setPreferences({ ...defaultPrefs, ...JSON.parse(data) });
-      } catch {}
+        loaded = { ...roleDefault, ...JSON.parse(data) };
+      } catch {
+        loaded = roleDefault;
+      }
+    } else {
+      loaded = roleDefault;
     }
+    setPreferences(loaded);
+    console.log("[KITCHEN SOUND] Loaded preference:", loaded.sound_enabled && (loaded.categories.kitchen ?? true));
   };
 
   const updatePreferences = async (newPrefs: Partial<NotificationPreferences>) => {
+    const prev = preferences.sound_enabled && (preferences.categories.kitchen ?? true);
     const updated = { ...preferences, ...newPrefs };
+    const next = updated.sound_enabled && (updated.categories.kitchen ?? true);
+
+    console.log("[KITCHEN SOUND] Toggle clicked");
+    console.log("[KITCHEN SOUND] Previous:", prev);
+    console.log("[KITCHEN SOUND] New:", next);
+
     setPreferences(updated);
-    await storage.setItem(PREFS_KEY, JSON.stringify(updated));
+    const key = user ? `${PREFS_KEY}_${user.id}` : PREFS_KEY;
+    await storage.setItem(key, JSON.stringify(updated));
   };
 
   const fetchNotifications = async () => {
@@ -187,6 +237,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const connectWebSocket = () => {
+    if (!user) return;
     if (ws.current) return;
 
     const base = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000")
@@ -260,13 +311,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const isQuietHours = (): boolean => {
-    if (!preferences.quiet_hours) return false;
+    const currentPrefs = preferencesRef.current;
+    if (!currentPrefs.quiet_hours) return false;
     try {
       const now = new Date();
       const currentMin = now.getHours() * 60 + now.getMinutes();
 
-      const [sh, sm] = preferences.quiet_start.split(":").map(Number);
-      const [eh, em] = preferences.quiet_end.split(":").map(Number);
+      const [sh, sm] = currentPrefs.quiet_start.split(":").map(Number);
+      const [eh, em] = currentPrefs.quiet_end.split(":").map(Number);
 
       const startMin = sh * 60 + sm;
       const endMin = eh * 60 + em;
@@ -283,8 +335,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const handleIncomingNotification = (notif: Notification) => {
+    const currentPrefs = preferencesRef.current;
+    
+    if (notif.category === "kitchen") {
+      console.log("\n[DEVICE ALERT] NEW_ORDER RECEIVED");
+      console.log("[KITCHEN SOUND] Current enabled state:", currentPrefs.sound_enabled && (currentPrefs.categories.kitchen ?? true));
+    }
+
     // 1. Check if category preference is enabled
-    const enabled = preferences.categories[notif.category] ?? true;
+    const enabled = currentPrefs.categories[notif.category] ?? true;
     if (!enabled) return;
 
     // 2. Add to active states
@@ -302,20 +361,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         content: {
           title: notif.title,
           body: notif.message,
-          sound: preferences.sound_enabled ? "default" : undefined,
+          sound: currentPrefs.sound_enabled ? "default" : undefined,
           badge: unreadCount + 1,
           android: {
             channelId: "default",
           },
         },
         trigger: null,
-      }).catch((e) => console.warn("Failed to schedule local notification:", e));
+      }).catch((e: any) => console.warn("Failed to schedule local notification:", e));
     }
 
-    if (preferences.sound_enabled) {
+    if (currentPrefs.sound_enabled) {
       playSound();
     }
-    if (preferences.vibration_enabled) {
+    if (currentPrefs.vibration_enabled) {
       if (Platform.OS === "web") {
         try { window.navigator.vibrate(300); } catch {}
       } else {
@@ -326,20 +385,32 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const playSound = () => {
+    console.log("[KITCHEN SOUND] Attempting playback");
+    console.log("[KITCHEN SOUND] Audio source:", SOUND_URL);
     if (Platform.OS === "web") {
       try {
         const audio = new window.Audio(SOUND_URL);
         audio.volume = 0.8;
         audio.play();
-      } catch (e) {
-        console.warn("Web notification audio failed:", e);
+        console.log("[KITCHEN SOUND] Playback started successfully");
+      } catch (e: any) {
+        console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
+        console.warn("[KITCHEN SOUND] Error:", e);
       }
-    } else if (createAudioPlayer) {
+    } else {
       try {
-        const player = createAudioPlayer(SOUND_URL);
-        player.play();
-      } catch (e) {
-        console.warn("Native notification audio failed:", e);
+        if (!audioPlayer.current && createAudioPlayer) {
+          audioPlayer.current = createAudioPlayer(SOUND_URL);
+        }
+        if (audioPlayer.current) {
+          console.log("[Audio] Playing preloaded notification sound (native)");
+          audioPlayer.current.seekTo(0);
+          audioPlayer.current.play();
+          console.log("[KITCHEN SOUND] Playback started successfully");
+        }
+      } catch (e: any) {
+        console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
+        console.warn("[KITCHEN SOUND] Error:", e);
       }
     }
   };

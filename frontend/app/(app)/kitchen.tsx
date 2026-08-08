@@ -3,7 +3,17 @@ import {
   View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, SafeAreaView, StatusBar, Platform,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { 
+  FadeInDown, 
+  FadeOutLeft, 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring, 
+  withRepeat, 
+  withSequence, 
+  withTiming, 
+  interpolateColor 
+} from "react-native-reanimated";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -69,6 +79,128 @@ const CARD_BORDER: Record<string, string> = {
 
 import { useTheme } from "@/src/context/ThemeContext";
 
+function KdsTicketCard({ 
+  item, 
+  theme, 
+  isDark, 
+  elapsedTime, 
+  onAdvance 
+}: { 
+  item: Order; 
+  theme: any; 
+  isDark: boolean; 
+  elapsedTime: string; 
+  onAdvance: (id: string, status: string) => void 
+}) {
+  const orderNum = item.order_number || item.id.slice(-2);
+  const statusKey = item.status in STATUS_TEXT ? item.status : "placed";
+  const nextStatus = NEXT[item.status];
+  
+  const pulse = useSharedValue(0.1);
+
+  useEffect(() => {
+    if (item.status === "placed") {
+      pulse.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1200 }),
+          withTiming(0.1, { duration: 1200 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      pulse.value = 0.1;
+    }
+  }, [item.status]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    if (item.status !== "placed") {
+      return {
+        borderColor: CARD_BORDER[statusKey] || "#FCA5A5",
+        borderWidth: 1,
+        shadowOpacity: 0.03,
+      };
+    }
+    const borderVal = interpolateColor(
+      pulse.value,
+      [0.1, 1],
+      [CARD_BORDER["placed"], "#EF4444"]
+    );
+    return {
+      borderColor: borderVal,
+      borderWidth: 1.8,
+      shadowColor: "#EF4444",
+      shadowOpacity: pulse.value * 0.35,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+    };
+  });
+
+  return (
+    <Animated.View 
+      entering={FadeInDown.springify()} 
+      exiting={FadeOutLeft.duration(300)}
+      style={[
+        styles.ticketCard, 
+        { backgroundColor: theme.surfaceSecondary },
+        animatedStyle
+      ]} 
+      testID={`ticket-${item.id}`}
+    >
+      {/* Card Header Row */}
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.leftNumBox}>
+          <Text style={[styles.orderNum, { color: theme.onSurface }]}>#{orderNum}</Text>
+          <View style={[styles.statusPill, { backgroundColor: BADGE_BG[statusKey] || "#FEF3C7" }]}>
+            <Text style={[styles.statusText, { color: BADGE_TEXT[statusKey] || "#F59E0B" }]}>
+              {STATUS_TEXT[statusKey] || "PENDING"}
+            </Text>
+          </View>
+        </View>
+
+        {/* Live Timer */}
+        <View style={styles.timerBox}>
+          <Ionicons name="time-outline" size={15} color={theme.onSurfaceSecondary} />
+          <Text style={[styles.timerText, { color: theme.onSurfaceSecondary }]}>{elapsedTime}</Text>
+        </View>
+      </View>
+
+      <Text style={[styles.tableName, { color: theme.onSurfaceSecondary }]}>Table {item.table_number}</Text>
+
+      {/* Items List */}
+      <View style={styles.itemsList}>
+        {item.items.map((it, idx) => (
+          <View key={idx} style={styles.itemRow}>
+            <Text style={styles.itemQty}>{it.quantity}×</Text>
+            <Text style={[styles.itemName, { color: theme.onSurface }]}>{it.name}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Special Cooking Instructions / Notes */}
+      {item.notes ? (
+        <View style={[styles.notesContainer, { backgroundColor: isDark ? "#2B2212" : "#FFFBEB", borderColor: isDark ? "#78350F" : "#FDE68A" }]}>
+          <Ionicons name="document-text-outline" size={15} color={isDark ? "#FBBF24" : "#D97706"} />
+          <Text style={[styles.notesText, { color: isDark ? "#FBBF24" : "#D97706" }]}>
+            Instructions: {item.notes}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Action Button */}
+      {nextStatus && (
+        <Pressable
+          style={[styles.actionBtn, { backgroundColor: BUTTON_BG[statusKey] || colors.brand }]}
+          onPress={() => onAdvance(item.id, item.status)}
+          testID={`ticket-advance-${item.id}`}
+        >
+          <Text style={styles.actionBtnText}>{BUTTON_LABEL[statusKey] || "Advance Order →"}</Text>
+        </Pressable>
+      )}
+    </Animated.View>
+  );
+}
+
 export default function Kitchen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
@@ -78,45 +210,112 @@ export default function Kitchen() {
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   
-  // Kitchen Alert Audio Engine (using official expo-audio hook)
+  // Kitchen Alert Audio Engine
   const [soundEnabled, setSoundEnabled] = useState(true);
   const isRingingRef = useRef(false);
 
-  const player = useAudioPlayer("https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav", {
-    loop: true,
-  });
+  const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+  const KITCHEN_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
+  
+  // Keep separate Audio players for Native vs Web
+  const webAudioRef = useRef<any>(null);
+  const player = useAudioPlayer(Platform.OS !== "web" ? KITCHEN_SOUND_URL : null);
+  if (player) {
+    player.loop = true;
+  }
+
+  // Preload and add listeners on Web mount
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      try {
+        console.log("[KITCHEN SOUND] Preloading audio source:", KITCHEN_SOUND_URL);
+        const audio = new window.Audio(KITCHEN_SOUND_URL);
+        audio.preload = "auto";
+        audio.loop = true;
+        audio.volume = 1.0;
+        webAudioRef.current = audio;
+
+        audio.addEventListener("canplaythrough", () => {
+          console.log("[KITCHEN SOUND] Audio loaded successfully");
+        });
+        audio.addEventListener("error", (e: any) => {
+          console.error("[KITCHEN SOUND] PLAYBACK FAILED", audio.error);
+        });
+      } catch (err) {
+        console.error("[KITCHEN SOUND] Failed to initialize Audio constructor:", err);
+      }
+    }
+  }, []);
 
   // Load sound preference on mount
   useEffect(() => {
     if (Platform.OS === "web") {
       try {
         const val = window.localStorage.getItem("kitchen_sound_pref");
-        if (val !== null) setSoundEnabled(val === "true");
+        if (val !== null) {
+          const enabled = val === "true";
+          setSoundEnabled(enabled);
+          console.log("[KITCHEN SOUND] Loaded preference:", enabled);
+        } else {
+          console.log("[KITCHEN SOUND] Loaded preference (default): true");
+        }
       } catch {}
       return;
     }
     SecureStore.getItemAsync("kitchen_sound_pref").then(val => {
       if (val !== null) {
-        setSoundEnabled(val === "true");
+        const enabled = val === "true";
+        setSoundEnabled(enabled);
+        console.log("[KITCHEN SOUND] Loaded preference:", enabled);
+      } else {
+        console.log("[KITCHEN SOUND] Loaded preference (default): true");
       }
     }).catch(() => {});
   }, []);
 
   const toggleSound = async () => {
+    const prevVal = soundEnabled;
     const nextVal = !soundEnabled;
+
+    console.log("[KITCHEN SOUND] Toggle clicked");
+    console.log("[KITCHEN SOUND] Previous:", prevVal);
+    console.log("[KITCHEN SOUND] New:", nextVal);
+
     setSoundEnabled(nextVal);
     
     if (Platform.OS === "web") {
-      try { window.localStorage.setItem("kitchen_sound_pref", String(nextVal)); } catch {}
+      try { 
+        window.localStorage.setItem("kitchen_sound_pref", String(nextVal)); 
+      } catch {}
+      
+      if (!nextVal && webAudioRef.current) {
+        try {
+          webAudioRef.current.pause();
+          webAudioRef.current.currentTime = 0;
+        } catch {}
+      } else if (nextVal && webAudioRef.current) {
+        // Unlock audio context via user interaction
+        try {
+          webAudioRef.current.load();
+          const p = webAudioRef.current.play();
+          if (p && typeof p.then === "function") {
+            p.then(() => {
+              webAudioRef.current.pause();
+              console.log("[KITCHEN SOUND] Audio context unlocked successfully");
+            }).catch(() => {});
+          } else {
+            webAudioRef.current.pause();
+          }
+        } catch {}
+      }
     } else {
       await SecureStore.setItemAsync("kitchen_sound_pref", String(nextVal));
-    }
-    
-    if (!nextVal && player) {
-      try {
-        player.pause();
-        player.seek(0);
-      } catch {}
+      if (!nextVal && player) {
+        try {
+          player.pause();
+          player.seekTo(0);
+        } catch {}
+      }
     }
   };
 
@@ -124,22 +323,63 @@ export default function Kitchen() {
   useEffect(() => {
     const hasPlaced = orders.some(o => o.status === "placed");
     if (hasPlaced && soundEnabled) {
-      if (!isRingingRef.current && player) {
+      if (!isRingingRef.current) {
         isRingingRef.current = true;
-        try {
-          player.play();
-        } catch (e) {
-          console.warn("Failed to play alert sound:", e);
+        console.log("\n[DEVICE ALERT] NEW_ORDER_RECEIVED");
+        console.log("[KITCHEN SOUND] Current enabled state:", soundEnabled);
+        console.log("[KITCHEN SOUND] Attempting playback");
+        console.log("[KITCHEN SOUND] Audio source:", KITCHEN_SOUND_URL);
+        
+        if (Platform.OS === "web") {
+          if (webAudioRef.current) {
+            webAudioRef.current.currentTime = 0;
+            const p = webAudioRef.current.play();
+            if (p && typeof p.then === "function") {
+              p.then(() => {
+                console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+              }).catch((err: any) => {
+                console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
+                console.warn("[KITCHEN SOUND] Error:", err);
+              });
+            } else {
+              console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+            }
+          }
+        } else {
+          if (player) {
+            try {
+              player.play();
+              console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+            } catch (e: any) {
+              console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
+              console.warn("[KITCHEN SOUND] Error:", e);
+            }
+          }
         }
       }
     } else {
-      if (isRingingRef.current && player) {
+      if (isRingingRef.current) {
         isRingingRef.current = false;
-        try {
-          player.pause();
-          player.seek(0);
-        } catch (e) {
-          console.warn("Failed to stop alert sound:", e);
+        if (Platform.OS === "web") {
+          if (webAudioRef.current) {
+            try {
+              webAudioRef.current.pause();
+              webAudioRef.current.currentTime = 0;
+              console.log("[KITCHEN SOUND] Playback stopped (no placed orders or sound disabled)");
+            } catch (e: any) {
+              console.warn("Failed to stop alert sound:", e);
+            }
+          }
+        } else {
+          if (player) {
+            try {
+              player.pause();
+              player.seekTo(0);
+              console.log("[KITCHEN SOUND] Playback stopped (no placed orders or sound disabled)");
+            } catch (e: any) {
+              console.warn("Failed to stop alert sound:", e);
+            }
+          }
         }
       }
     }
@@ -242,66 +482,15 @@ export default function Kitchen() {
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl tintColor="#635BFF" refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
             renderItem={({ item }) => {
-              const orderNum = item.order_number || item.id.slice(-2);
-              const statusKey = item.status in STATUS_TEXT ? item.status : "placed";
-              const nextStatus = NEXT[item.status];
               const elapsedTime = getElapsedTimeStr(item.created_at);
-
               return (
-                <Animated.View entering={FadeInDown.springify()} style={[styles.ticketCard, { backgroundColor: theme.surfaceSecondary, borderColor: CARD_BORDER[statusKey] || "#FCA5A5" }]} testID={`ticket-${item.id}`}>
-                  
-                  {/* Card Header Row */}
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.leftNumBox}>
-                      <Text style={[styles.orderNum, { color: theme.onSurface }]}>#{orderNum}</Text>
-                      <View style={[styles.statusPill, { backgroundColor: BADGE_BG[statusKey] || "#FEF3C7" }]}>
-                        <Text style={[styles.statusText, { color: BADGE_TEXT[statusKey] || "#F59E0B" }]}>
-                          {STATUS_TEXT[statusKey] || "PENDING"}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Live Timer */}
-                    <View style={styles.timerBox}>
-                      <Ionicons name="time-outline" size={15} color={theme.onSurfaceSecondary} />
-                      <Text style={[styles.timerText, { color: theme.onSurfaceSecondary }]}>{elapsedTime}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={[styles.tableName, { color: theme.onSurfaceSecondary }]}>Table {item.table_number}</Text>
-
-                  {/* Items List */}
-                  <View style={styles.itemsList}>
-                    {item.items.map((it, idx) => (
-                      <View key={idx} style={styles.itemRow}>
-                        <Text style={styles.itemQty}>{it.quantity}×</Text>
-                        <Text style={[styles.itemName, { color: theme.onSurface }]}>{it.name}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  {/* Special Cooking Instructions / Notes */}
-                  {item.notes ? (
-                    <View style={[styles.notesContainer, { backgroundColor: isDark ? "#2B2212" : "#FFFBEB", borderColor: isDark ? "#78350F" : "#FDE68A" }]}>
-                      <Ionicons name="document-text-outline" size={15} color={isDark ? "#FBBF24" : "#D97706"} />
-                      <Text style={[styles.notesText, { color: isDark ? "#FBBF24" : "#D97706" }]}>
-                        Instructions: {item.notes}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {/* Action Button */}
-                  {nextStatus && (
-                    <Pressable
-                      style={[styles.actionBtn, { backgroundColor: BUTTON_BG[statusKey] || colors.brand }]}
-                      onPress={() => advanceOptimistic(item.id, item.status)}
-                      testID={`ticket-advance-${item.id}`}
-                    >
-                      <Text style={styles.actionBtnText}>{BUTTON_LABEL[statusKey] || "Advance Order →"}</Text>
-                    </Pressable>
-                  )}
-
-                </Animated.View>
+                <KdsTicketCard
+                  item={item}
+                  theme={theme}
+                  isDark={isDark}
+                  elapsedTime={elapsedTime}
+                  onAdvance={advanceOptimistic}
+                />
               );
             }}
           />

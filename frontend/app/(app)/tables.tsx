@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   ghostBtnText: { color: colors.onSurface, fontWeight: "600" },
   primaryBtn: { paddingVertical: 14, borderRadius: radius.md, alignItems: "center", backgroundColor: colors.brand },
   primaryText: { color: colors.onBrand, fontWeight: "700" },
-  qrContainer: { padding: spacing.lg, backgroundColor: "#fff", borderRadius: radius.md, marginVertical: spacing.md, alignment: "center" },
+  qrContainer: { padding: spacing.lg, backgroundColor: "#fff", borderRadius: radius.md, marginVertical: spacing.md, alignItems: "center" },
   qrImage: { width: 200, height: 200 },
   qrText: { color: colors.onSurfaceSecondary, textAlign: "center", fontSize: 14, marginHorizontal: spacing.lg, marginBottom: spacing.xl },
 });

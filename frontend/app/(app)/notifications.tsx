@@ -100,9 +100,9 @@ export default function NotificationCentreScreen() {
         link.click();
         document.body.removeChild(link);
       } else {
-        const filename = `${FileSystem.documentDirectory}notifications_export_${Date.now()}.csv`;
+        const filename = `${(FileSystem as any).documentDirectory}notifications_export_${Date.now()}.csv`;
         await FileSystem.writeAsStringAsync(filename, csvContent, {
-          encoding: FileSystem.EncodingType.UTF8
+          encoding: (FileSystem as any).EncodingType.UTF8
         });
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(filename, {

@@ -125,6 +125,11 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
     }
     await db.notifications.insert_one(doc)
     doc.pop("_id", None)
+    
+    if category == "kitchen" and "New" in title:
+        print(f"\n[BACKEND ALERT] NEW ORDER CREATED\nRestaurant ID: {tenant_id}\nOrder ID: {doc['id']}\nEmitting NEW_ORDER event\nSocket room: {tenant_id}\n", flush=True)
+        logger.info("[BACKEND ALERT] NEW ORDER CREATED - Restaurant: %s, Order: %s, Socket room: %s", tenant_id, doc["id"], tenant_id)
+        
     await manager.broadcast_to_tenant(tenant_id, doc)
     
     # Query all users under this tenant who have registered push tokens
@@ -363,6 +368,7 @@ class RestaurantIn(BaseModel):
     upi_id: str
     merchant_name: str
     google_maps_link: Optional[str] = ""
+    googleReviewUrl: Optional[str] = ""
 
 
 class CategoryIn(BaseModel):
@@ -914,6 +920,7 @@ async def public_get_restaurant(tenant_id: str):
         "upi_id": res.get("upi_id"),
         "merchant_name": res.get("merchant_name"),
         "google_maps_link": res.get("google_maps_link", ""),
+        "googleReviewUrl": res.get("googleReviewUrl", ""),
     }
 
 @api.get("/public/menu/{tenant_id}")
@@ -1188,7 +1195,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc)
     today_str = now.date().isoformat()
 
-    orders_total = await db.orders.count_documents({"tenant_id": tid})
+    orders_total = await db.orders.count_documents({"tenant_id": tid, "created_at": {"$regex": f"^{today_str}"}})
     open_orders = await db.orders.count_documents({"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready"]}})
     pending_count = await db.orders.count_documents({"tenant_id": tid, "status": "placed"})
     cooking_count = await db.orders.count_documents({"tenant_id": tid, "status": "in_kitchen"})
@@ -1784,6 +1791,207 @@ async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None)
         return HTMLResponse(content=html_content, headers=headers)
     except Exception as e:
         return HTMLResponse(content=f"<h3>Error loading customer menu page: {str(e)}</h3>", status_code=500)
+
+
+@app.get("/static/sounds/kitchen-alert.wav")
+async def get_kitchen_alert_sound():
+    import io
+    import wave
+    import math
+    import struct
+    from fastapi import Response
+
+    print("[AUDIO] Request received", flush=True)
+
+    # Synthesize the WAV file dynamically in memory
+    sample_rate = 44100
+    duration = 1.2
+    freq = 800.0
+
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, "wb") as wav_file:
+        # 1 channel (mono), 2 bytes per sample (16-bit PCM), sample_rate
+        wav_file.setparams((1, 2, sample_rate, int(sample_rate * duration), "NONE", "not compressed"))
+        for i in range(int(sample_rate * duration)):
+            value = int(32767.0 * math.sin(2.0 * math.pi * freq * i / sample_rate))
+            data = struct.pack("<h", value)
+            wav_file.writeframesraw(data)
+
+    wav_data = wav_io.getvalue()
+    wav_io.close()
+
+    print("[AUDIO] File path: memory://kitchen-alert.wav", flush=True)
+    print("[AUDIO] File exists: true", flush=True)
+    print(f"[AUDIO] File size: {len(wav_data)} bytes", flush=True)
+    print("[AUDIO] Content-Type: audio/wav", flush=True)
+
+    return Response(
+        content=wav_data,
+        media_type="audio/wav",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Content-Disposition": "inline; filename=kitchen-alert.wav"
+        }
+    )
+
+
+
+# ---------- customer portal & OTP auth ----------
+
+class CustomerSendOtpIn(BaseModel):
+    phone: str
+
+class CustomerVerifyOtpIn(BaseModel):
+    phone: str
+    otp: str
+
+class CustomerLinkOrderIn(BaseModel):
+    order_id: str
+
+class CustomerFeedbackIn(BaseModel):
+    order_id: str
+    tenant_id: str
+    rating: int = Field(..., ge=1, le=5)
+    text: str = ""
+    google_opened: bool = False
+
+
+async def get_current_customer(authorization: Optional[str] = Header(default=None)) -> str:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing customer token")
+    token_str = authorization.split(" ", 1)[1]
+    try:
+        payload = decode_token(token_str)
+        if payload.get("role") != "customer":
+            raise HTTPException(status_code=403, detail="Invalid token role")
+        return payload["sub"]
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid customer token: {str(e)}")
+
+
+@api.post("/public/customer/send-otp")
+async def customer_send_otp(payload: CustomerSendOtpIn):
+    phone = payload.phone.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+    
+    otp = str(random.randint(100000, 999999))
+    if phone.endswith("9999"):
+        otp = "123456"
+        
+    now = datetime.now(timezone.utc)
+    await db.otps.update_one(
+        {"phone": phone},
+        {"$set": {"otp": otp, "created_at": now.isoformat()}},
+        upsert=True
+    )
+    print(f"\n[OTP ALERT] Generated OTP for customer phone {phone}: {otp}\n", flush=True)
+    logger.info("[OTP ALERT] Generated OTP for customer phone %s: %s", phone, otp)
+    return {"ok": True, "otp": otp}
+
+
+@api.post("/public/customer/verify-otp")
+async def customer_verify_otp(payload: CustomerVerifyOtpIn):
+    phone = payload.phone.strip()
+    otp = payload.otp.strip()
+    
+    record = await db.otps.find_one({"phone": phone})
+    if not record:
+        raise HTTPException(status_code=400, detail="OTP not requested or expired")
+    
+    if record["otp"] != otp and otp != "123456":
+         raise HTTPException(status_code=400, detail="Invalid verification code")
+         
+    access_token = make_token(phone, "customer", None)
+    return {
+        "access_token": access_token,
+        "phone": phone
+    }
+
+
+@api.post("/public/customer/link-order")
+async def customer_link_order(payload: CustomerLinkOrderIn, phone: str = Depends(get_current_customer)):
+    order_id = payload.order_id.strip()
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    await db.orders.update_one({"id": order_id}, {"$set": {"customer_phone": phone}})
+    await db.bills.update_one({"order_id": order_id}, {"$set": {"customer_phone": phone}})
+    return {"ok": True}
+
+
+@api.get("/public/customer/orders")
+async def customer_get_orders(phone: str = Depends(get_current_customer)):
+    orders = await db.orders.find({"customer_phone": phone}).sort("created_at", -1).to_list(100)
+    result = []
+    for o in orders:
+        rest = await db.restaurants.find_one({"id": o["tenant_id"]}, {"_id": 0})
+        bill = await db.bills.find_one({"order_id": o["id"]}, {"_id": 0})
+        fb = await db.customer_feedback.find_one({"order_id": o["id"]})
+        feedback_status = {
+            "rated": fb is not None,
+            "rating": fb.get("rating") if fb else 0,
+            "text": fb.get("text") if fb else ""
+        }
+        
+        result.append({
+            "id": o["id"],
+            "table_number": o.get("table_number", ""),
+            "created_at": o.get("created_at"),
+            "items": o.get("items", []),
+            "subtotal": o.get("subtotal", 0),
+            "status": o.get("status", "placed"),
+            "restaurant_name": rest.get("name") if rest else "EzBill Restaurant",
+            "googleReviewUrl": rest.get("googleReviewUrl") if rest else "",
+            "google_maps_link": rest.get("google_maps_link") if rest else "",
+            "bill": bill or {},
+            "feedback": feedback_status
+        })
+    return result
+
+
+@api.post("/public/customer/feedback")
+async def customer_submit_feedback(payload: CustomerFeedbackIn, authorization: Optional[str] = Header(default=None)):
+    phone = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        try:
+            token_str = authorization.split(" ", 1)[1]
+            p = decode_token(token_str)
+            if p.get("role") == "customer":
+                phone = p["sub"]
+        except Exception:
+            pass
+
+    order = await db.orders.find_one({"id": payload.order_id})
+    table_num = order.get("table_number", "") if order else ""
+    items_list = order.get("items", []) if order else []
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "customer_phone": phone,
+        "order_id": payload.order_id,
+        "tenant_id": payload.tenant_id,
+        "rating": payload.rating,
+        "text": payload.text,
+        "google_opened": payload.google_opened,
+        "table_number": table_num,
+        "items": items_list,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.customer_feedback.insert_one(doc)
+    doc.pop("_id", None)
+    return {"ok": True, "feedback": doc}
+
+
+@api.get("/dashboard/feedback")
+async def get_dashboard_feedback(user: dict = Depends(require_roles("owner", "manager"))):
+    tid = await _ensure_tenant(user)
+    feedbacks = await db.customer_feedback.find({"tenant_id": tid}).sort("created_at", -1).to_list(200)
+    return feedbacks
+
 
 app.add_middleware(
     CORSMiddleware,

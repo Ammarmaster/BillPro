@@ -214,7 +214,7 @@ export default function TakeawayScreen() {
                   style={({ pressed }) => [
                     styles.itemCard,
                     { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
-                    pressed && styles.cardPressed,
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
                   ]}
                   onPress={() => add(item)}
                 >

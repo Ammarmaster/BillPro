@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
   err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
 
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: "#FFFFFF", padding: spacing.xl, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, gap: spacing.md },
+  modalCard: { backgroundColor: "#FFFFFF", padding: spacing.xl, borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: spacing.md },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#CBD5E1", alignSelf: "center", marginBottom: spacing.xs },
   modalTitle: { color: "#0F172A", fontSize: 20, fontWeight: "900", marginBottom: spacing.xs },
   methodsRow: { flexDirection: "row", gap: spacing.md },

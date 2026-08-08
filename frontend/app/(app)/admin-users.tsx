@@ -235,7 +235,7 @@ export default function AdminUsers() {
                         >
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                             <Ionicons
-                              name={r === "super_admin" ? "shield-checkmark" : r === "admin_employee" ? "badge" : r === "owner" ? "storefront" : "person"}
+                              name={r === "super_admin" ? "shield-checkmark" : r === "admin_employee" ? "ribbon-outline" : r === "owner" ? "storefront" : "person"}
                               size={14}
                               color={isActive ? colors.brand : colors.onSurfaceSecondary}
                             />
@@ -358,7 +358,7 @@ export default function AdminUsers() {
                     >
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                         <Ionicons
-                          name={r === "super_admin" ? "shield-checkmark" : "badge"}
+                          name={r === "super_admin" ? "shield-checkmark" : "ribbon-outline"}
                           size={14}
                           color={isActive ? colors.brand : colors.onSurfaceSecondary}
                         />

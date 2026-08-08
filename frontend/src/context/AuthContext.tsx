@@ -8,7 +8,7 @@ type Ctx = {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   staffLogin: (phone: string, pin: string) => Promise<void>;
-  register: (email: string, password: string, full_name: string, role?: string) => Promise<void>;
+  register: (email: string, password: string, full_name: string, role?: string, terms_accepted?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };

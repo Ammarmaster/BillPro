@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking } from "react-native";
+import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -366,6 +367,7 @@ function OwnerDashboard() {
   const { theme, isDark } = useTheme();
   const [restaurant, setRestaurant] = useState<any>(null);
   const [summary, setSummary] = useState<any>(null);
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -374,7 +376,14 @@ function OwnerDashboard() {
     try {
       const r = await api.getRestaurant();
       setRestaurant(r);
-      if (r) setSummary(await api.dashboardSummary());
+      if (r) {
+        const [sum, fb] = await Promise.all([
+          api.dashboardSummary().catch(() => null),
+          api.getFeedback().catch(() => [])
+        ]);
+        setSummary(sum);
+        setFeedbacks(fb || []);
+      }
     } catch (e: any) { setErr(e.message); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -445,71 +454,86 @@ function OwnerDashboard() {
         ) : (
           <>
             {/* Hero Analytics Gradient Box */}
-            <LinearGradient
-              colors={["#635BFF", "#4F46E5"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroRevenueCard}
-              testID="metric-revenue-today"
-            >
-              <View style={styles.liveBadgeRow}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE SALES TODAY</Text>
-              </View>
+            <Animated.View entering={FadeInDown.delay(100).springify()}>
+              <LinearGradient
+                colors={["#635BFF", "#4F46E5"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroRevenueCard}
+                testID="metric-revenue-today"
+              >
+                <View style={styles.liveBadgeRow}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>LIVE SALES TODAY</Text>
+                </View>
 
-              <Text style={styles.heroRevenueValue}>₹{animatedRevenue.toLocaleString("en-IN")}</Text>
+                <Text style={styles.heroRevenueValue}>₹{animatedRevenue.toLocaleString("en-IN")}</Text>
 
-              <View style={styles.heroFooterRow}>
-                <View style={styles.heroFooterItem}>
-                  <Text style={styles.heroFooterVal} testID="metric-orders-open">{summary?.orders_total ?? summary?.orders_open ?? 0}</Text>
-                  <Text style={styles.heroFooterLbl}>Total Orders</Text>
+                <View style={styles.heroFooterRow}>
+                  <View style={styles.heroFooterItem}>
+                    <Text style={styles.heroFooterVal} testID="metric-orders-open">{summary?.orders_total ?? summary?.orders_open ?? 0}</Text>
+                    <Text style={styles.heroFooterLbl}>Total Orders</Text>
+                  </View>
+                  <View style={styles.heroFooterDivider} />
+                  <View style={styles.heroFooterItem}>
+                    <Text style={styles.heroFooterVal}>₹{(summary?.avg_bill ?? 0).toLocaleString("en-IN")}</Text>
+                    <Text style={styles.heroFooterLbl}>Average ticket</Text>
+                  </View>
+                  <View style={styles.heroFooterDivider} />
+                  <View style={styles.heroFooterItem}>
+                    <Text style={styles.heroFooterVal}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
+                    <Text style={styles.heroFooterLbl}>Web payments</Text>
+                  </View>
                 </View>
-                <View style={styles.heroFooterDivider} />
-                <View style={styles.heroFooterItem}>
-                  <Text style={styles.heroFooterVal}>₹{(summary?.avg_bill ?? 0).toLocaleString("en-IN")}</Text>
-                  <Text style={styles.heroFooterLbl}>Average ticket</Text>
-                </View>
-                <View style={styles.heroFooterDivider} />
-                <View style={styles.heroFooterItem}>
-                  <Text style={styles.heroFooterVal}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
-                  <Text style={styles.heroFooterLbl}>Web payments</Text>
-                </View>
-              </View>
-            </LinearGradient>
+              </LinearGradient>
+            </Animated.View>
 
             {/* Quick Metrics Grid */}
             <View style={styles.statusGrid}>
-              <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Animated.View
+                entering={FadeInDown.delay(200).springify()}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+              >
                 <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#332210" : "#FFFBEB" }]}>
                   <Ionicons name="time" size={22} color="#D97706" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.pending_count ?? summary?.orders_open ?? 0}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Pending</Text>
-              </View>
+              </Animated.View>
 
-              <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Animated.View
+                entering={FadeInDown.delay(250).springify()}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+              >
                 <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#28173B" : "#F5F3FF" }]}>
                   <Ionicons name="flame" size={22} color="#8B5CF6" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.cooking_count ?? 0}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Cooking</Text>
-              </View>
+              </Animated.View>
 
-              <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Animated.View
+                entering={FadeInDown.delay(300).springify()}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+              >
                 <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0F3220" : "#ECFDF5" }]}>
                   <Ionicons name="checkmark-done-circle" size={22} color="#10B981" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.ready_count ?? 0}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Ready</Text>
-              </View>
+              </Animated.View>
 
-              <View style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} testID="metric-menu-count">
+              <Animated.View
+                entering={FadeInDown.delay(350).springify()}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                testID="metric-menu-count"
+              >
                 <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0D2E3E" : "#F0F9FF" }]}>
                   <Ionicons name="grid" size={22} color="#0EA5E9" />
                 </View>
                 <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.tables_free ?? 5}</Text>
                 <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Tables Free</Text>
-              </View>
+              </Animated.View>
             </View>
 
             {/* Hidden fallback testIDs for integration tests */}
@@ -518,32 +542,35 @@ function OwnerDashboard() {
             </View>
 
             {/* Online Web Sales */}
-            <View style={[styles.webPaymentsCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-              <View style={styles.webPaymentsHeader}>
-                <View style={[styles.webPayIconBg, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "rgba(99, 91, 255, 0.08)" }]}>
-                  <Ionicons name="globe" size={18} color={colors.brand} />
+            <Animated.View entering={FadeInDown.delay(400).springify()}>
+              <View style={[styles.webPaymentsCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <View style={styles.webPaymentsHeader}>
+                  <View style={[styles.webPayIconBg, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "rgba(99, 91, 255, 0.08)" }]}>
+                    <Ionicons name="globe" size={18} color={colors.brand} />
+                  </View>
+                  <Text style={[styles.webPaymentsTitle, { color: theme.onSurface }]}>Online Web Sales Summary</Text>
                 </View>
-                <Text style={[styles.webPaymentsTitle, { color: theme.onSurface }]}>Online Web Sales Summary</Text>
+                <View style={styles.webPaymentsRow}>
+                  <View style={styles.webPaymentCol}>
+                    <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
+                    <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Today's Web Revenue</Text>
+                  </View>
+                  <View style={[styles.verticalDivider, { backgroundColor: theme.border }]} />
+                  <View style={styles.webPaymentCol}>
+                    <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{(summary?.revenue_web_total ?? 0).toLocaleString("en-IN")}</Text>
+                    <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Total Web Revenue</Text>
+                  </View>
+                </View>
               </View>
-              <View style={styles.webPaymentsRow}>
-                <View style={styles.webPaymentCol}>
-                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
-                  <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Today's Web Revenue</Text>
-                </View>
-                <View style={[styles.verticalDivider, { backgroundColor: theme.border }]} />
-                <View style={styles.webPaymentCol}>
-                  <Text style={[styles.webPaymentVal, { color: theme.onSurface }]}>₹{(summary?.revenue_web_total ?? 0).toLocaleString("en-IN")}</Text>
-                  <Text style={[styles.webPaymentLbl, { color: theme.onSurfaceSecondary }]}>Total Web Revenue</Text>
-                </View>
-              </View>
-            </View>
+            </Animated.View>
 
             {/* Weekly Analytics Graph */}
-            <View style={[styles.chartSectionCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-              <View style={styles.chartHeader}>
-                <Ionicons name="bar-chart" size={18} color={colors.brand} />
-                <Text style={[styles.sectionHeading, { color: theme.onSurface, marginBottom: 0 }]}>Weekly Revenue Insights</Text>
-              </View>
+            <Animated.View entering={FadeInDown.delay(450).springify()}>
+              <View style={[styles.chartSectionCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <View style={styles.chartHeader}>
+                  <Ionicons name="bar-chart" size={18} color={colors.brand} />
+                  <Text style={[styles.sectionHeading, { color: theme.onSurface, marginBottom: 0 }]}>Weekly Revenue Insights</Text>
+                </View>
               
               <View style={styles.barChartContainer}>
                 {last7Days.map((d: any, idx: number) => {
@@ -568,8 +595,10 @@ function OwnerDashboard() {
                 })}
               </View>
             </View>
+          </Animated.View>
 
-            {/* Top Selling Items */}
+          {/* Top Selling Items */}
+          <Animated.View entering={FadeInDown.delay(500).springify()}>
             <View style={[styles.topSellingCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
               <View style={styles.chartHeader}>
                 <Ionicons name="trophy" size={18} color="#F59E0B" />
@@ -612,7 +641,82 @@ function OwnerDashboard() {
                 </View>
               )}
             </View>
-          </>
+          </Animated.View>
+
+          {/* Customer Feedback section */}
+          <Animated.View entering={FadeInDown.delay(550).springify()}>
+            <View style={[styles.topSellingCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, marginTop: spacing.xl }]}>
+              <View style={styles.chartHeader}>
+                <Ionicons name="chatbubbles" size={18} color={colors.brand} />
+                <Text style={[styles.sectionHeading, { color: theme.onSurface, marginBottom: 0 }]}>Customer Reviews & Feedback</Text>
+              </View>
+              
+              {feedbacks.length > 0 ? (
+                feedbacks.map((item: any, idx: number) => {
+                  const stars = Array(5).fill(0).map((_, i) => i < item.rating);
+                  const isLowRating = item.rating <= 3;
+                  return (
+                    <View 
+                      key={idx} 
+                      style={[
+                        styles.feedbackCard, 
+                        { 
+                          borderBottomColor: theme.border, 
+                          borderBottomWidth: idx === feedbacks.length - 1 ? 0 : 1,
+                          backgroundColor: isLowRating ? (isDark ? "#2A1818" : "#FFF5F5") : "transparent"
+                        }
+                      ]}
+                    >
+                      <View style={styles.feedbackCardHeader}>
+                        <View style={styles.starsRow}>
+                          {stars.map((active, sIdx) => (
+                            <Ionicons 
+                              key={sIdx} 
+                              name={active ? "star" : "star-outline"} 
+                              size={14} 
+                              color={active ? "#F59E0B" : theme.onSurfaceTertiary} 
+                            />
+                          ))}
+                        </View>
+                        <Text style={[styles.feedbackDate, { color: theme.onSurfaceSecondary }]}>
+                          {new Date(item.created_at).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      
+                      {item.text ? (
+                        <Text style={[styles.feedbackText, { color: theme.onSurface }]}>
+                          "{item.text}"
+                        </Text>
+                      ) : (
+                        <Text style={[styles.feedbackText, { color: theme.onSurfaceSecondary, fontStyle: "italic" }]}>
+                          No comment text left.
+                        </Text>
+                      )}
+                      
+                      <View style={styles.feedbackMetaRow}>
+                        <Text style={[styles.feedbackMetaText, { color: theme.onSurfaceSecondary }]}>
+                          Table {item.table_number || "-"} • Order: #{item.order_id?.slice(-6).toUpperCase()}
+                        </Text>
+                        {item.google_opened && (
+                          <View style={styles.googleOpenedPill}>
+                            <Ionicons name="logo-google" size={10} color="#FFFFFF" />
+                            <Text style={styles.googleOpenedPillText}>Maps Opened</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={{ paddingVertical: spacing.xl, alignItems: "center" }}>
+                  <Ionicons name="chatbox-ellipses-outline" size={32} color={theme.onSurfaceTertiary} />
+                  <Text style={[styles.topSellingName, { color: theme.onSurfaceSecondary, marginTop: 8 }]}>No customer feedback yet</Text>
+                  <Text style={[styles.topSellingMeta, { color: theme.onSurfaceTertiary }]}>Reviews from web QR ordering show here</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
+        </>
         )}
 
         {err && <Text style={styles.err} testID="dashboard-error">{err}</Text>}
@@ -705,6 +809,55 @@ const styles = StyleSheet.create({
   onboardTitle: { color: colors.onSurface, fontSize: 15, fontWeight: "800", marginBottom: 2 },
   onboardSub: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, fontWeight: "500" },
   err: { color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.lg, fontWeight: "700", fontSize: 13 },
+  feedbackCard: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    marginVertical: 4,
+  },
+  feedbackCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  starsRow: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  feedbackDate: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  feedbackText: {
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  feedbackMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  feedbackMetaText: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  googleOpenedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#4285F4",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  googleOpenedPillText: {
+    color: "#FFFFFF",
+    fontSize: 8,
+    fontWeight: "800",
+  },
   adminHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginBottom: spacing.md },
   adminAvatar: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center", position: "relative" },
   avatarText: { fontSize: 18, fontWeight: "900" },

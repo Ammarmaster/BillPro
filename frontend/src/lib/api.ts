@@ -210,6 +210,7 @@ export const api = {
   },
   listBills: () => req("/bills"),
   dashboardSummary: () => req("/dashboard/summary"),
+  getFeedback: () => req("/dashboard/feedback"),
   // Super admin
   adminSummary: () => req("/admin/summary"),
   adminListRestaurants: () => req("/admin/restaurants"),

@@ -139,8 +139,8 @@ export default function NotificationPreferencesScreen() {
 
           <View style={styles.switchRow}>
             <View>
-              <Text style={styles.switchLabel}>Kitchen Operations</Text>
-              <Text style={styles.switchDesc}>KOT updates, food preparation alerts</Text>
+              <Text style={styles.switchLabel}>Kitchen Speaker (KOT Alerts)</Text>
+              <Text style={styles.switchDesc}>Loud alert sound on new orders & KOT KDS tickets</Text>
             </View>
             <Switch
               value={preferences.categories.kitchen}

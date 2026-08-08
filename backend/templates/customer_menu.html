@@ -715,8 +715,183 @@
       animation: spin 0.8s linear infinite;
     }
 
-    @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    /* Star rating styles */
+    .star-rating-container {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .star-btn {
+      font-size: 32px;
+      color: var(--on-surface-sec);
+      cursor: pointer;
+      transition: color 0.2s ease, transform 0.2s ease;
+      background: none;
+      border: none;
+      outline: none;
+    }
+    .star-btn.active {
+      color: #FBBF24;
+      transform: scale(1.15);
+    }
+
+    /* Private feedback form */
+    .private-feedback-textarea {
+      width: 100%;
+      height: 80px;
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--on-surface);
+      padding: 10px;
+      font-family: var(--font);
+      font-size: 13px;
+      outline: none;
+      resize: none;
+    }
+    .private-feedback-submit {
+      background: var(--brand-gradient);
+      border: none;
+      color: #fff;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    /* Receipt popup */
+    .receipt-container {
+      border: 1px dashed var(--border);
+      background: rgba(255, 255, 255, 0.015);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      margin-top: 16px;
+      text-align: left;
+      font-size: 13px;
+    }
+    .receipt-header {
+      text-align: center;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+    .receipt-restaurant {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--on-surface);
+    }
+    .receipt-meta {
+      color: var(--on-surface-sec);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .receipt-items {
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .receipt-divider {
+      border-top: 1px dashed var(--border);
+      margin: 8px 0;
+    }
+    .receipt-total {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--brand);
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+    .receipt-status-pill {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10B981;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+      display: inline-block;
+    }
+
+    /* Order History Styles */
+    .orders-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 16px;
+      max-height: 55vh;
+      overflow-y: auto;
+    }
+    .order-history-card {
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      text-align: left;
+    }
+    .order-history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .order-history-rest {
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .order-history-date {
+      font-size: 11px;
+      color: var(--on-surface-sec);
+    }
+    .order-history-total {
+      font-weight: 700;
+      color: var(--brand);
+    }
+    .order-history-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .order-history-btn {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--on-surface);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    /* OTP Auth Dialog UI */
+    .auth-input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .auth-btn {
+      background: var(--brand-gradient);
+      border: none;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -728,10 +903,14 @@
       <div class="logo-container" id="logo-container">
         <!-- JS inserts logo or fallback -->
       </div>
-      <div class="header-info">
+      <div class="header-info" style="flex: 1;">
         <h1 id="restaurant-name">Loading...</h1>
         <p id="table-badge">Table --</p>
       </div>
+      <button id="my-orders-btn" onclick="openOrderHistorySheet()" style="background: none; border: 1px solid var(--border); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--on-surface); font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <svg style="width: 14px; height: 14px; fill: var(--brand);" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+        My Orders
+      </button>
     </header>
 
     <!-- Search -->
@@ -819,52 +998,148 @@
   </div>
 
   <!-- Post-Order Confirmation & Feedback Sheet -->
-  <div class="sheet-overlay" id="checkout-sheet-overlay"></div>
+  <div class="sheet-overlay" id="checkout-sheet-overlay" onclick="closeAllSheets()"></div>
+
   <div class="sheet-card" id="checkout-sheet-card">
-    <div class="confirm-card">
-      <svg class="success-ring" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M8 12l3 3 5-5" />
-      </svg>
-      <h3 class="confirm-title" id="confirm-h3">Order Confirmed!</h3>
-      <p class="confirm-desc" id="confirm-body">Your order has been sent to the kitchen. Please relax while we prepare your fresh meal.</p>
-
-      <!-- Dynamic UPI QR code section -->
-      <div id="upi-qrcode-container" style="display: none;">
-        <div class="upi-panel">
-          <p style="font-size: 13px; font-weight: 700; color: var(--brand); margin-bottom: 12px;">SCAN OR TAP TO PAY UPI</p>
-          <img id="upi-qr" class="upi-qr-img" src="" alt="UPI Code">
-          <a id="upi-deep-link" href="#" class="upi-btn-link">
-            <svg style="width: 16px; height: 16px; fill:#fff;" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 12H9v-2h6v2zm0-4H9V10h6v2z"/></svg>
-            Pay using any UPI App
-          </a>
-        </div>
-      </div>
-
-      <!-- Feedback -->
-      <div class="feedback-title">Rate Your Experience</div>
-      <p style="font-size: 12px; color: var(--on-surface-sec); text-align: left; margin-bottom: 12px;">Choose a preset 5-star review below to copy, then tap review to paste on Google Maps!</p>
-      
-      <div class="feedback-list">
-        <div class="feedback-option" onclick="copyFeedback(this, 1)">
-          <span id="feedback-t1">Loading...</span>
-          <span class="copied-badge">Copied ✓</span>
-        </div>
-        <div class="feedback-option" onclick="copyFeedback(this, 2)">
-          <span id="feedback-t2">Loading...</span>
-          <span class="copied-badge">Copied ✓</span>
-        </div>
-        <div class="feedback-option" onclick="copyFeedback(this, 3)">
-          <span id="feedback-t3">Loading...</span>
-          <span class="copied-badge">Copied ✓</span>
-        </div>
-      </div>
-
-      <button id="google-maps-btn" class="maps-redirect-btn" onclick="openGoogleReviews()">
-        <svg style="width: 18px; height: 18px; fill: #fff;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-        Paste & Write Review on Google Maps
+    <div class="sheet-header">
+      <div class="sheet-title">Order Confirmed!</div>
+      <button class="sheet-close-btn" onclick="closeAllSheets()">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
       </button>
     </div>
+    
+    <div style="text-align: center; margin-bottom: 16px;">
+      <svg class="success-ring" style="width: 48px; height: 48px; margin: 0 auto 10px;" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="#10B981" stroke-width="2"/>
+        <path d="M8 12l3 3 5-5" fill="none" stroke="#10B981" stroke-width="2"/>
+      </svg>
+      <h4 style="font-weight: 700; font-size: 16px; color: #10B981;">✓ Payment Confirmed</h4>
+      <p style="font-size: 13px; color: var(--on-surface-sec); margin-top: 4px;">✓ Order Sent to Kitchen</p>
+    </div>
+
+    <!-- Receipt Details Container -->
+    <div id="checkout-receipt-container"></div>
+
+    <!-- Optional OTP Mobile Login Invite -->
+    <div id="checkout-login-invite" style="margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 16px;">
+      <p style="font-size: 12px; color: var(--on-surface-sec); margin-bottom: 10px; font-weight: 600; text-align: left;">
+        💡 Link this order to your mobile number to view receipt history anytime:
+      </p>
+      <div class="auth-input-row" id="checkout-phone-input-row">
+        <input type="tel" id="checkout-phone-num" class="form-input" style="flex: 1;" placeholder="Enter mobile number">
+        <button class="auth-btn" onclick="sendOtpForCheckout()">Get OTP</button>
+      </div>
+      <div class="auth-input-row" id="checkout-otp-input-row" style="display: none; margin-top: 8px;">
+        <input type="text" id="checkout-otp-val" class="form-input" style="flex: 1;" placeholder="Enter 6-digit OTP">
+        <button class="auth-btn" onclick="verifyOtpForCheckout()">Verify & Link</button>
+      </div>
+      <p id="checkout-auth-success" style="font-size: 12px; color: #10B981; font-weight: 700; margin-top: 6px; display: none; text-align: left;">
+        ✓ Account linked successfully!
+      </p>
+    </div>
+
+    <!-- Star Rating choice and Feedback Form -->
+    <div id="checkout-rating-container" style="margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 16px;">
+      <p style="font-size: 13px; font-weight: 700; color: var(--on-surface); text-align: center; margin-bottom: 8px;">
+        How was your experience?
+      </p>
+      <div class="star-rating-container" id="checkout-stars">
+        <button class="star-btn" onclick="setCheckoutRating(1)">☆</button>
+        <button class="star-btn" onclick="setCheckoutRating(2)">☆</button>
+        <button class="star-btn" onclick="setCheckoutRating(3)">☆</button>
+        <button class="star-btn" onclick="setCheckoutRating(4)">☆</button>
+        <button class="star-btn" onclick="setCheckoutRating(5)">☆</button>
+      </div>
+
+      <!-- Positive review flow -->
+      <div id="checkout-positive-flow" style="display: none;">
+        <p style="font-size: 11px; color: var(--on-surface-sec); text-align: center; margin-bottom: 8px;">
+          ✨ Tap copy and share your review on Google:
+        </p>
+        <div style="background: rgba(99, 102, 241, 0.04); border: 1px dashed rgba(99, 102, 241, 0.2); border-radius: var(--radius-sm); padding: 12px; font-size: 12px; color: var(--on-surface); line-height: 1.4; margin-bottom: 12px; text-align: left; position: relative;">
+          <span id="checkout-ai-review-text">Loading suggested review...</span>
+          <button onclick="copyCheckoutAiReview()" style="position: absolute; right: 8px; bottom: 8px; background: var(--surface-sec); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: var(--brand); cursor: pointer; font-weight: 700;">
+            Copy
+          </button>
+        </div>
+        <button class="maps-redirect-btn" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;" onclick="continueToGoogleMaps()">
+          <svg style="width: 16px; height: 16px; fill: #fff;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+          Continue to Google
+        </button>
+        <p id="checkout-google-opened" style="font-size: 11px; color: var(--on-surface-sec); text-align: center; margin-top: 6px; display: none;">
+          Google opened. Please complete your review there.
+        </p>
+      </div>
+
+      <!-- Negative private feedback flow -->
+      <div id="checkout-negative-flow" style="display: none; text-align: left;">
+        <p style="font-size: 12px; color: var(--on-surface-sec); margin-bottom: 8px;">
+          We're sorry your experience wasn't perfect. Tell us what went wrong:
+        </p>
+        <textarea id="checkout-private-text" class="private-feedback-textarea" placeholder="Write feedback..."></textarea>
+        <button class="private-feedback-submit" style="width: 100%; margin-top: 8px;" onclick="submitCheckoutPrivateFeedback()">
+          Submit Private Feedback
+        </button>
+      </div>
+
+      <p id="checkout-feedback-success" style="font-size: 12px; color: #10B981; font-weight: 700; text-align: center; margin-top: 10px; display: none;">
+        Thanks for your feedback!
+      </p>
+    </div>
+  </div>
+
+  <!-- Order History Sheet -->
+  <div class="sheet-card" id="order-history-sheet-card">
+    <div class="sheet-header">
+      <div class="sheet-title">My Orders</div>
+      <button class="sheet-close-btn" onclick="closeAllSheets()">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+      </button>
+    </div>
+
+    <!-- Login Area (visible if NOT logged in) -->
+    <div id="history-login-container" style="display: none;">
+      <p style="font-size: 13px; color: var(--on-surface-sec); margin-bottom: 12px; text-align: left;">
+        Please log in with your mobile number to view your order history:
+      </p>
+      <div class="auth-input-row" id="history-phone-row">
+        <input type="tel" id="history-phone-num" class="form-input" style="flex: 1;" placeholder="Enter mobile number">
+        <button class="auth-btn" onclick="sendOtpForHistory()">Get OTP</button>
+      </div>
+      <div class="auth-input-row" id="history-otp-row" style="display: none; margin-top: 10px;">
+        <input type="text" id="history-otp-val" class="form-input" style="flex: 1;" placeholder="Enter 6-digit OTP">
+        <button class="auth-btn" onclick="verifyOtpForHistory()">Verify OTP</button>
+      </div>
+    </div>
+
+    <!-- Orders List Area (visible if logged in) -->
+    <div id="history-orders-container" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <p id="logged-in-phone-badge" style="font-size: 13px; color: #10B981; font-weight: 700;"></p>
+        <button onclick="logoutCustomer()" style="background: none; border: none; color: #EF4444; font-size: 11px; font-weight: 700; cursor: pointer; outline: none;">
+          Logout
+        </button>
+      </div>
+      <div class="orders-list" id="history-orders-list">
+        <!-- JS fills cards dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Detailed Receipt Sheet -->
+  <div class="sheet-card" id="receipt-sheet-card">
+    <div class="sheet-header">
+      <div class="sheet-title">Order Receipt</div>
+      <button class="sheet-close-btn" onclick="closeReceiptSheet()">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+      </button>
+    </div>
+    
+    <div id="receipt-details-content"></div>
+    
+    <button class="checkout-btn" style="margin-top: 16px; background: var(--surface-sec); border: 1px solid var(--border); color: var(--on-surface);" onclick="downloadInvoiceDummy()">
+      📥 Download Invoice (PDF)
+    </button>
   </div>
 
   <!-- Loading Mask Overlay -->
@@ -916,11 +1191,6 @@
           document.getElementById("table-number-form-group").style.display = "none";
           setOrderType("take_away");
         }
-
-        // Build preset reviews
-        document.getElementById("feedback-t1").textContent = `Fabulous service and incredible food here at ${restaurantInfo.name}! Strongly recommended.`;
-        document.getElementById("feedback-t2").textContent = `The menu selection at ${restaurantInfo.name} is outstanding. The QR ordering was extremely fast and convenient!`;
-        document.getElementById("feedback-t3").textContent = `Clean atmosphere, prompt KOT, and very hygienic dishes at ${restaurantInfo.name}. Will visit again.`;
 
         // Load Menu Data
         const mRes = await fetch(`/api/public/menu/${tenantId}`);
@@ -1298,33 +1568,410 @@
       return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=320&h=320&fit=crop";
     }
 
-    // Copy Review Feedback
-    let selectedReviewText = "";
-    function copyFeedback(elem, index) {
-      // Clear previous copied styles
-      const options = document.querySelectorAll(".feedback-option");
-      options.forEach(o => o.classList.remove("copied"));
+    // Customer Portal, OTP Login, Feedback, Receipt and History JS engine
+    let currentCheckoutOrder = null;
+    let selectedCheckoutRating = 0;
 
-      // Copy text to clipboard
-      const reviewText = document.getElementById(`feedback-t${index}`).textContent;
-      selectedReviewText = reviewText;
+    function closeAllSheets() {
+      document.getElementById("checkout-sheet-overlay").classList.remove("show");
+      document.getElementById("checkout-sheet-card").classList.remove("show");
+      document.getElementById("order-history-sheet-card").classList.remove("show");
+      document.getElementById("receipt-sheet-card").classList.remove("show");
+    }
 
-      navigator.clipboard.writeText(reviewText).then(() => {
-        elem.classList.add("copied");
-        setTimeout(() => {
-          openGoogleReviews();
-        }, 300);
-      }).catch(err => {
-        console.error("Failed to copy review:", err);
-        openGoogleReviews();
+    function closeReceiptSheet() {
+      document.getElementById("receipt-sheet-card").classList.remove("show");
+    }
+
+    function openOrderHistorySheet() {
+      closeAllSheets();
+      document.getElementById("checkout-sheet-overlay").classList.add("show");
+      document.getElementById("order-history-sheet-card").classList.add("show");
+      
+      const token = localStorage.getItem("customer_token");
+      if (!token) {
+        document.getElementById("history-login-container").style.display = "block";
+        document.getElementById("history-orders-container").style.display = "none";
+      } else {
+        document.getElementById("history-login-container").style.display = "none";
+        document.getElementById("history-orders-container").style.display = "block";
+        const savedPhone = localStorage.getItem("customer_phone") || "Logged In";
+        document.getElementById("logged-in-phone-badge").textContent = "📱 Account: " + savedPhone;
+        loadCustomerOrders();
+      }
+    }
+
+    function logoutCustomer() {
+      localStorage.removeItem("customer_token");
+      localStorage.removeItem("customer_phone");
+      openOrderHistorySheet();
+    }
+
+    async function sendOtpForHistory() {
+      const phone = document.getElementById("history-phone-num").value.trim();
+      if (!phone) return alert("Please enter your mobile number");
+      showLoader(true);
+      try {
+        const res = await fetch("/api/public/customer/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        const data = await res.json();
+        document.getElementById("history-otp-row").style.display = "flex";
+        alert("Verification OTP sent! (OTP is " + data.otp + ")");
+      } catch (e) {
+        alert("Error: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    async function verifyOtpForHistory() {
+      const phone = document.getElementById("history-phone-num").value.trim();
+      const otp = document.getElementById("history-otp-val").value.trim();
+      if (!otp) return alert("Please enter the verification code");
+      showLoader(true);
+      try {
+        const res = await fetch("/api/public/customer/verify-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, otp })
+        });
+        if (!res.ok) throw new Error("Invalid OTP code");
+        const data = await res.json();
+        localStorage.setItem("customer_token", data.access_token);
+        localStorage.setItem("customer_phone", data.phone);
+        openOrderHistorySheet();
+      } catch (e) {
+        alert("Verification failed: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    async function sendOtpForCheckout() {
+      const phone = document.getElementById("checkout-phone-num").value.trim();
+      if (!phone) return alert("Please enter your mobile number");
+      showLoader(true);
+      try {
+        const res = await fetch("/api/public/customer/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        const data = await res.json();
+        document.getElementById("checkout-otp-input-row").style.display = "flex";
+        alert("Verification OTP sent! (OTP is " + data.otp + ")");
+      } catch (e) {
+        alert("Error: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    async function verifyOtpForCheckout() {
+      const phone = document.getElementById("checkout-phone-num").value.trim();
+      const otp = document.getElementById("checkout-otp-val").value.trim();
+      if (!otp) return alert("Please enter the verification code");
+      showLoader(true);
+      try {
+        const res = await fetch("/api/public/customer/verify-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, otp })
+        });
+        if (!res.ok) throw new Error("Invalid OTP");
+        const data = await res.json();
+        localStorage.setItem("customer_token", data.access_token);
+        localStorage.setItem("customer_phone", data.phone);
+        
+        if (currentCheckoutOrder) {
+          await fetch("/api/public/customer/link-order", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + data.access_token
+            },
+            body: JSON.stringify({ order_id: currentCheckoutOrder.id })
+          });
+        }
+        document.getElementById("checkout-phone-input-row").style.display = "none";
+        document.getElementById("checkout-otp-input-row").style.display = "none";
+        document.getElementById("checkout-auth-success").style.display = "block";
+      } catch (e) {
+        alert("Link failed: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    async function loadCustomerOrders() {
+      const listCont = document.getElementById("history-orders-list");
+      listCont.innerHTML = `<p style="text-align: center; color: var(--on-surface-sec);">Loading orders...</p>`;
+      const token = localStorage.getItem("customer_token");
+      try {
+        const res = await fetch("/api/public/customer/orders", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        if (!res.ok) throw new Error("Failed to load orders");
+        const orders = await res.json();
+        if (orders.length === 0) {
+          listCont.innerHTML = `<p style="text-align: center; color: var(--on-surface-sec); margin-top: 20px;">No past orders found for this account.</p>`;
+          return;
+        }
+        listCont.innerHTML = "";
+        orders.forEach(o => {
+          const card = document.createElement("div");
+          card.className = "order-history-card";
+          
+          const formattedDate = new Date(o.created_at).toLocaleString();
+          const itemsSummary = o.items.map(it => `${it.quantity}x ${it.name}`).join(", ");
+          const orderTotal = o.bill?.total || o.subtotal;
+          
+          card.innerHTML = `
+            <div class="order-history-header">
+              <div>
+                <div class="order-history-rest">${o.restaurant_name}</div>
+                <div class="order-history-date">${formattedDate}</div>
+              </div>
+              <div class="order-history-total">₹${orderTotal}</div>
+            </div>
+            <p style="font-size: 12px; color: var(--on-surface-sec); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${itemsSummary}
+            </p>
+            <div style="font-size: 11px; margin-bottom: 10px;">
+              Table: <strong style="color: var(--on-surface);">${o.table_number || 'Takeaway'}</strong> • 
+              Status: <span style="color: var(--brand); font-weight: 700;">${o.status.toUpperCase()}</span>
+            </div>
+            <div class="order-history-actions">
+              <button class="order-history-btn" onclick='viewOrderDetails(${JSON.stringify(o)})'>View Receipt</button>
+              <button class="order-history-btn" style="background: var(--brand-gradient); color: #fff; border: none;" onclick='reorderItems(${JSON.stringify(o.items)})'>Reorder</button>
+            </div>
+          `;
+          listCont.appendChild(card);
+        });
+      } catch (e) {
+        listCont.innerHTML = `<p style="text-align: center; color: #EF4444;">Error loading history: ${e.message}</p>`;
+      }
+    }
+
+    function reorderItems(items) {
+      cart = {};
+      items.forEach(it => {
+        const menuItem = menuData.items.find(mi => mi.id === it.menu_item_id);
+        if (menuItem) {
+          cart[it.menu_item_id] = { item: menuItem, quantity: it.quantity };
+        }
+      });
+      renderMenu();
+      updateCartBar();
+      closeAllSheets();
+      openCartSheet();
+    }
+
+    function viewOrderDetails(order) {
+      document.getElementById("receipt-details-content").innerHTML = renderReceiptHTML(order);
+      document.getElementById("receipt-sheet-card").classList.add("show");
+    }
+
+    function renderReceiptHTML(order) {
+      const restName = order.restaurant_name || restaurantInfo.name;
+      const orderDate = new Date(order.created_at).toLocaleString();
+      const orderId = order.id || "N/A";
+      const tableNum = order.table_number || "Takeaway";
+      const itemsListHTML = order.items.map(it => `
+        <div class="receipt-row">
+          <span>${it.quantity} × ${it.name}</span>
+          <span>₹${(it.price * it.quantity).toFixed(2)}</span>
+        </div>
+      `).join("");
+      
+      const subtotal = order.subtotal || 0;
+      const tax = order.bill?.tax || 0;
+      const discount = order.bill?.discount || 0;
+      const total = order.bill?.total || subtotal;
+      const paymentMethod = order.bill?.payment_method || "Online UPI";
+      
+      return `
+        <div class="receipt-container">
+          <div class="receipt-header">
+            <div class="receipt-restaurant">${restName}</div>
+            <div class="receipt-meta">Order ID: #${orderId.slice(-8).toUpperCase()}</div>
+            <div class="receipt-meta">Date: ${orderDate}</div>
+            <div class="receipt-meta">Table: ${tableNum}</div>
+          </div>
+          
+          <div class="receipt-items">
+            ${itemsListHTML}
+          </div>
+          
+          <div class="receipt-row" style="color: var(--on-surface-sec);">
+            <span>Subtotal</span>
+            <span>₹${subtotal.toFixed(2)}</span>
+          </div>
+          ${tax > 0 ? `
+          <div class="receipt-row" style="color: var(--on-surface-sec);">
+            <span>GST / Taxes</span>
+            <span>₹${tax.toFixed(2)}</span>
+          </div>` : ''}
+          ${discount > 0 ? `
+          <div class="receipt-row" style="color: #10B981;">
+            <span>Discount</span>
+            <span>-₹${discount.toFixed(2)}</span>
+          </div>` : ''}
+          
+          <div class="receipt-divider"></div>
+          
+          <div class="receipt-total">
+            <span>Total Paid</span>
+            <span>₹${total.toFixed(2)}</span>
+          </div>
+          
+          <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span class="receipt-status-pill">✓ Paid via ${paymentMethod}</span>
+            <span style="font-size: 11px; color: #10B981; font-weight: 700;">✓ Kitchen Received</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function showCheckoutConfirmation(order) {
+      currentCheckoutOrder = order;
+      selectedCheckoutRating = 0;
+      
+      document.getElementById("checkout-receipt-container").innerHTML = renderReceiptHTML(order);
+      
+      document.getElementById("checkout-phone-input-row").style.display = "flex";
+      document.getElementById("checkout-otp-input-row").style.display = "none";
+      document.getElementById("checkout-auth-success").style.display = "none";
+      document.getElementById("checkout-positive-flow").style.display = "none";
+      document.getElementById("checkout-negative-flow").style.display = "none";
+      document.getElementById("checkout-feedback-success").style.display = "none";
+      
+      const starBtns = document.querySelectorAll("#checkout-stars .star-btn");
+      starBtns.forEach(btn => btn.classList.remove("active"));
+      
+      const token = localStorage.getItem("customer_token");
+      if (token) {
+        document.getElementById("checkout-login-invite").style.display = "none";
+        fetch("/api/public/customer/link-order", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ order_id: order.id })
+        });
+      } else {
+        document.getElementById("checkout-login-invite").style.display = "block";
+      }
+      
+      document.getElementById("checkout-sheet-overlay").classList.add("show");
+      document.getElementById("checkout-sheet-card").classList.add("show");
+    }
+
+    function setCheckoutRating(rating) {
+      selectedCheckoutRating = rating;
+      const starBtns = document.querySelectorAll("#checkout-stars .star-btn");
+      starBtns.forEach((btn, idx) => {
+        if (idx < rating) btn.classList.add("active");
+        else btn.classList.remove("active");
+      });
+      
+      if (rating >= 4) {
+        document.getElementById("checkout-positive-flow").style.display = "block";
+        document.getElementById("checkout-negative-flow").style.display = "none";
+        
+        const reviews = [
+          `Fabulous food and excellent QR checkout at ${restaurantInfo.name}! 5/5 stars.`,
+          `Very fast service, fresh warm dishes, and very clean hygiene at ${restaurantInfo.name}.`,
+          `We had an amazing time dining here! The UPI payment was seamless and KOT was quick.`
+        ];
+        document.getElementById("checkout-ai-review-text").textContent = reviews[rating === 5 ? 0 : 1];
+      } else {
+        document.getElementById("checkout-positive-flow").style.display = "none";
+        document.getElementById("checkout-negative-flow").style.display = "block";
+      }
+      document.getElementById("checkout-feedback-success").style.display = "none";
+    }
+
+    function copyCheckoutAiReview() {
+      const text = document.getElementById("checkout-ai-review-text").textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        alert("Suggested review copied to clipboard! You can paste it directly on Google Maps.");
       });
     }
 
-    // Launch Google Maps Review Link
-    function openGoogleReviews() {
-      if (restaurantInfo && restaurantInfo.google_maps_link) {
-        window.open(restaurantInfo.google_maps_link, "_blank");
+    async function continueToGoogleMaps() {
+      const mapsUrl = restaurantInfo.googleReviewUrl || restaurantInfo.google_maps_link;
+      if (!mapsUrl) {
+        alert("Google review link is not configured. Please contact the restaurant administrator.");
+        return;
       }
+      
+      window.open(mapsUrl, "_blank");
+      document.getElementById("checkout-google-opened").style.display = "block";
+      
+      const text = document.getElementById("checkout-ai-review-text").textContent;
+      const token = localStorage.getItem("customer_token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = "Bearer " + token;
+      
+      try {
+        await fetch("/api/public/customer/feedback", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            order_id: currentCheckoutOrder.id,
+            tenant_id: tenantId,
+            rating: selectedCheckoutRating,
+            text: text,
+            google_opened: true
+          })
+        });
+      } catch (e) {
+        console.warn("Failed to store maps feedback internally:", e);
+      }
+      
+      setTimeout(() => {
+        document.getElementById("checkout-feedback-success").style.display = "block";
+      }, 1500);
+    }
+
+    async function submitCheckoutPrivateFeedback() {
+      const text = document.getElementById("checkout-private-text").value.trim();
+      if (!text) return alert("Please enter details of your experience");
+      
+      const token = localStorage.getItem("customer_token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = "Bearer " + token;
+      
+      showLoader(true);
+      try {
+        await fetch("/api/public/customer/feedback", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            order_id: currentCheckoutOrder.id,
+            tenant_id: tenantId,
+            rating: selectedCheckoutRating,
+            text: text,
+            google_opened: false
+          })
+        });
+        document.getElementById("checkout-negative-flow").style.display = "none";
+        document.getElementById("checkout-feedback-success").style.display = "block";
+      } catch (e) {
+        alert("Failed to submit feedback: " + e.message);
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    function downloadInvoiceDummy() {
+      alert("Downloading PDF invoice...");
+      window.print();
     }
 
     // Bootstrap
