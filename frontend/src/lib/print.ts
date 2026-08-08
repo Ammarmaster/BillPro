@@ -1,6 +1,6 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { Platform, Alert } from "react-native";
+import { Platform, Alert, PermissionsAndroid } from "react-native";
 import { storage } from "@/src/utils/storage";
 
 let ThermalPrinterModule: any = null;
@@ -48,8 +48,8 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
   } else {
     // Customer Receipt
     const r = data.restaurant_snapshot || {};
-    if (r.logo_base64) {
-      lines.push(`[C]<img>data:image/jpeg;base64,${r.logo_base64}</img>\n`);
+    if (r.logo_url && (r.logo_url.startsWith("http://") || r.logo_url.startsWith("https://"))) {
+      lines.push(`[C]<img>${r.logo_url}</img>\n`);
     }
     lines.push(`[C]<b><font size='big'>${r.name || "Restaurant"}</font></b>\n`);
     if (r.address) lines.push(`[C]${r.address}\n`);
@@ -58,8 +58,8 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
     if (r.fssai) lines.push(`[C]FSSAI: ${r.fssai}\n`);
     lines.push(`[C]${divider}\n`);
 
-    lines.push(`[L]Table: ${data.table_number || "-"}  ·  Bill #${data.id.slice(0, 8).toUpperCase()}\n`);
-    lines.push(`[L]Date: ${new Date(data.created_at).toLocaleString()}\n`);
+    lines.push(`[L]Table: ${data.table_number || "-"}  ·  Bill #${data.id ? data.id.slice(0, 8).toUpperCase() : "BILL"}\n`);
+    lines.push(`[L]Date: ${new Date(data.created_at || Date.now()).toLocaleString()}\n`);
     lines.push(`[C]${divider}\n`);
 
     // Items list
@@ -88,24 +88,27 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
       }
     };
 
-    addRow("Subtotal", data.subtotal);
+    addRow("Subtotal", data.subtotal || 0);
     if (data.gst_enabled) {
-      addRow("CGST", data.cgst);
-      addRow("SGST", data.sgst);
+      addRow("CGST", data.cgst || 0);
+      addRow("SGST", data.sgst || 0);
     }
     if (data.discount) {
       addRow("Discount", -data.discount);
     }
     lines.push(`[C]${divider}\n`);
-    addRow("TOTAL", data.total, true);
+    addRow("TOTAL", data.total || 0, true);
     lines.push(`[C]${divider}\n`);
 
-    // UPI Payment QR code
-    if (data.status === "pending" && r.upi_id) {
+    // Dynamic UPI Payment QR Code
+    if (r.upi_id) {
       const merchant = r.merchant_name || r.name || "Merchant";
-      const upiUrl = `upi://pay?pa=${r.upi_id}&pn=${encodeURIComponent(merchant)}&am=${data.total.toFixed(2)}&cu=INR`;
-      lines.push(`[C]Scan to Pay via UPI\n`);
-      lines.push(`[C]<QRCode version='0' errorCorrectionLevel='3' magnification='5'>${upiUrl}</QRCode>\n`);
+      const totalAmount = Number(data.total || 0).toFixed(2);
+      const upiUrl = `upi://pay?pa=${r.upi_id}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR`;
+      const qrSize = width === 58 ? "16" : "20";
+      
+      lines.push(`[C]Scan to Pay via UPI (₹${totalAmount})\n`);
+      lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
       lines.push(`[C]${divider}\n`);
     }
 
@@ -127,6 +130,29 @@ export async function getPrinterSettings(role: "cashier" | "kitchen"): Promise<P
     return JSON.parse(data);
   } catch {
     return null;
+  }
+}
+
+
+async function requestBluetoothPermissions(): Promise<boolean> {
+  if (Platform.OS !== "android") return true;
+  try {
+    const version = typeof Platform.Version === "number" ? Platform.Version : parseInt(String(Platform.Version), 10);
+    if (version >= 31) {
+      const results = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+      ]);
+      return results[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED;
+    } else {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+  } catch (err) {
+    console.warn("Bluetooth permission request error:", err);
+    return false;
   }
 }
 
@@ -152,23 +178,52 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     if (settings.type === "network") {
       await ThermalPrinterModule.printTcp({
         payload,
-        ip: settings.address,
+        ip: (settings.address || "").trim(),
         port: parseInt(settings.port || "9100"),
         autoCut: true,
       });
       return true;
     } else if (settings.type === "bluetooth") {
-      await ThermalPrinterModule.printBluetooth({
-        payload,
-        macAddress: settings.address,
-      });
-      return true;
+      const cleanAddress = (settings.address || "").trim();
+
+      await requestBluetoothPermissions();
+
+      // Pre-fetch paired device list to initialize internal Java native device connection array
+      try {
+        if (ThermalPrinterModule.getBluetoothDeviceList) {
+          await ThermalPrinterModule.getBluetoothDeviceList();
+        }
+      } catch (devErr) {
+        console.warn("Could not pre-fetch bluetooth device list:", devErr);
+      }
+
+      try {
+        await ThermalPrinterModule.printBluetooth({
+          payload,
+          macAddress: cleanAddress,
+          printerWidthMM: settings.width || 58,
+          printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+          mmFeedPaper: 20,
+        });
+        return true;
+      } catch (directErr) {
+        console.warn("Direct MAC print failed, attempting first paired printer fallback:", directErr);
+        // Fallback: connect to first paired Bluetooth printer
+        await ThermalPrinterModule.printBluetooth({
+          payload,
+          macAddress: "",
+          printerWidthMM: settings.width || 58,
+          printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+          mmFeedPaper: 20,
+        });
+        return true;
+      }
     }
   } catch (e: any) {
     console.warn("Direct thermal printing failed:", e);
     Alert.alert(
       "Printer Offline",
-      `Could not print to ${settings.name}. Fallback to standard print dialog?`,
+      `Could not print to ${settings.name || "Bluetooth Printer"}. Fallback to standard print dialog?`,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Print Dialog", onPress: () => printBillLegacy(data) }

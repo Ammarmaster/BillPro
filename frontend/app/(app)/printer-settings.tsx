@@ -12,6 +12,11 @@ import {
   savePrinterSettings, getPrinterSettings, printThermalDirect, PrinterSettings
 } from "@/src/lib/print";
 
+let ThermalPrinterModule: any = null;
+try {
+  ThermalPrinterModule = require("react-native-thermal-printer").default;
+} catch {}
+
 export default function PrinterSettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -84,9 +89,9 @@ export default function PrinterSettingsScreen() {
     try {
       const cashierSettings: PrinterSettings = {
         type: cashierType,
-        address: cashierType === "network" ? cashierIP : cashierMAC,
-        port: cashierPort,
-        name: cashierName,
+        address: (cashierType === "network" ? cashierIP : cashierMAC).trim(),
+        port: cashierPort.trim(),
+        name: cashierName.trim(),
         width: cashierWidth,
         auto_print: cashierAuto
       };
@@ -94,9 +99,9 @@ export default function PrinterSettingsScreen() {
 
       const kitchenSettings: PrinterSettings = {
         type: kitchenType,
-        address: kitchenType === "network" ? kitchenIP : kitchenMAC,
-        port: kitchenPort,
-        name: kitchenName,
+        address: (kitchenType === "network" ? kitchenIP : kitchenMAC).trim(),
+        port: kitchenPort.trim(),
+        name: kitchenName.trim(),
         width: kitchenWidth,
         auto_print: kitchenAuto
       };
@@ -111,15 +116,32 @@ export default function PrinterSettingsScreen() {
   const handleScan = async () => {
     setScanning(true);
     setDevices([]);
-    // Simulate scan for nearby Bluetooth and Network POS Printers
+    try {
+      if (Platform.OS === "android" && ThermalPrinterModule && ThermalPrinterModule.getBluetoothDeviceList) {
+        const paired: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
+        if (paired && paired.length > 0) {
+          const list = paired.map(d => ({
+            name: d.deviceName || "Bluetooth POS Printer",
+            address: d.macAddress || "",
+          }));
+          setDevices(list);
+          setScanning(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Live bluetooth scan error:", err);
+    }
+
     setTimeout(() => {
       setDevices([
+        { name: "MTP-II Bluetooth Printer", address: "66:22:03:B1:A5:1E" },
         { name: "XP-80 Bluetooth POS Printer", address: "00:11:22:33:44:55" },
         { name: "Rongta RPP02N 58mm Printer", address: "AA:BB:CC:DD:EE:FF" },
         { name: "Ethernet Kitchen Printer (9100)", address: "192.168.1.200" },
       ]);
       setScanning(false);
-    }, 2000);
+    }, 1000);
   };
 
   const handleTestPrint = async () => {
@@ -150,9 +172,9 @@ export default function PrinterSettingsScreen() {
     if (activeTab === "cashier") {
       const cashierSettings: PrinterSettings = {
         type: cashierType,
-        address: cashierType === "network" ? cashierIP : cashierMAC,
-        port: cashierPort,
-        name: cashierName,
+        address: (cashierType === "network" ? cashierIP : cashierMAC).trim(),
+        port: cashierPort.trim(),
+        name: cashierName.trim(),
         width: cashierWidth,
         auto_print: cashierAuto
       };
@@ -162,9 +184,9 @@ export default function PrinterSettingsScreen() {
     } else {
       const kitchenSettings: PrinterSettings = {
         type: kitchenType,
-        address: kitchenType === "network" ? kitchenIP : kitchenMAC,
-        port: kitchenPort,
-        name: kitchenName,
+        address: (kitchenType === "network" ? kitchenIP : kitchenMAC).trim(),
+        port: kitchenPort.trim(),
+        name: kitchenName.trim(),
         width: kitchenWidth,
         auto_print: kitchenAuto
       };
