@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator, SafeAreaView, StatusBar,
+  View, Text, StyleSheet, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator, SafeAreaView, StatusBar, PanResponder, Dimensions, Animated as RNAnimated,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -182,18 +182,6 @@ export default function WaiterScreen() {
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.price * l.quantity, 0), [lines]);
   const totalQty = useMemo(() => lines.reduce((s, l) => s + l.quantity, 0), [lines]);
 
-  const cartAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateY: withSpring(totalQty > 0 ? 0 : 150, {
-          damping: 15,
-          stiffness: 120,
-        }),
-      },
-    ],
-  }));
-
-  useEffect(() => { if (subtotal > 0) { scale.value = withSpring(1.08, { damping: 10 }, () => { scale.value = withSpring(1); }); } }, [subtotal, scale]);
 
   const submitOrder = async () => {
     if (!table.trim()) { setErr("Choose a table."); return; }
@@ -609,18 +597,104 @@ export default function WaiterScreen() {
 
       {err && <Text style={styles.err} testID="waiter-error">{err}</Text>}
 
-      <Animated.View style={[styles.cta, { bottom: insets.bottom + 12 }, cartAnimatedStyle]}>
-        <Pressable 
-          style={{ width: "100%", paddingVertical: 14, alignItems: "center" }} 
-          onPress={submitOrder} 
-          disabled={busy} 
-          testID="waiter-send-btn"
-        >
-          {busy ? <ActivityIndicator color={colors.onBrand} /> : (
-            <Text style={styles.ctaText}>Place Order → · {totalQty} items · ₹{subtotal.toFixed(0)}</Text>
-          )}
-        </Pressable>
-      </Animated.View>
+      {totalQty > 0 && (
+        <View style={[styles.cta, { bottom: insets.bottom + 12 }]}>
+          <SlideToOrder 
+            onSlideComplete={submitOrder} 
+            busy={busy} 
+            totalQty={totalQty} 
+            subtotal={subtotal} 
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function SlideToOrder({ onSlideComplete, busy, totalQty, subtotal }: { onSlideComplete: () => void; busy: boolean; totalQty: number; subtotal: number }) {
+  const onSlideCompleteRef = useRef(onSlideComplete);
+  useEffect(() => {
+    onSlideCompleteRef.current = onSlideComplete;
+  }, [onSlideComplete]);
+
+  const pan = useRef(new RNAnimated.Value(0)).current;
+  const [completed, setCompleted] = useState(false);
+  const [trackWidth, setTrackWidth] = useState(Dimensions.get("window").width - 32);
+
+  const thumbSize = 48;
+  const maxDistance = Math.max(0, trackWidth - thumbSize - 8);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !busy && !completed,
+      onMoveShouldSetPanResponder: () => !busy && !completed,
+      onPanResponderMove: (e, gestureState) => {
+        const x = Math.max(0, Math.min(maxDistance, gestureState.dx));
+        pan.setValue(x);
+      },
+      onPanResponderRelease: (e, gestureState) => {
+        if (gestureState.dx >= maxDistance * 0.75) {
+          setCompleted(true);
+          RNAnimated.spring(pan, {
+            toValue: maxDistance,
+            useNativeDriver: true,
+            bounciness: 0,
+          }).start(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            onSlideCompleteRef.current();
+            setTimeout(() => {
+              RNAnimated.spring(pan, {
+                toValue: 0,
+                useNativeDriver: true,
+              }).start(() => {
+                setCompleted(false);
+              });
+            }, 1000);
+          });
+        } else {
+          RNAnimated.spring(pan, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  const textOpacity = pan.interpolate({
+    inputRange: [0, maxDistance * 0.5],
+    outputRange: [1, 0.1],
+    extrapolate: "clamp",
+  });
+
+  return (
+    <View 
+      style={styles.slideTrack}
+      onLayout={(e) => {
+        const width = e.nativeEvent.layout.width;
+        if (width > 0) setTrackWidth(width);
+      }}
+      testID="waiter-send-btn"
+    >
+      <RNAnimated.Text style={[styles.slideText, { opacity: textOpacity }]}>
+        👉 Slide to Place Order ({totalQty} • ₹{subtotal.toFixed(0)})
+      </RNAnimated.Text>
+
+      <RNAnimated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.slideThumb,
+          {
+            transform: [{ translateX: pan }],
+          },
+        ]}
+      >
+        {busy ? (
+          <ActivityIndicator color="#635BFF" size="small" />
+        ) : (
+          <Ionicons name="chevron-forward" size={24} color="#635BFF" />
+        )}
+      </RNAnimated.View>
     </View>
   );
 }
@@ -740,7 +814,43 @@ const styles = StyleSheet.create({
   menuPrice: { color: colors.brand, fontSize: 15, fontWeight: "700", marginTop: 2 },
   plus: { position: "absolute", right: 8, top: 8, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center" },
-  cta: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: colors.brand, borderRadius: radius.lg, overflow: "hidden" },
+  cta: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: "transparent", overflow: "visible" },
+  slideTrack: {
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#635BFF",
+    paddingHorizontal: 4,
+    justifyContent: "center",
+    position: "relative",
+    overflow: "hidden",
+    width: "100%",
+    shadowColor: "#635BFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  slideText: {
+    position: "absolute",
+    alignSelf: "center",
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  slideThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   ctaText: { color: colors.onBrand, fontWeight: "700", fontSize: 15, letterSpacing: 0.3 },
   err: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: 140, color: colors.onError, backgroundColor: colors.error, padding: spacing.md, borderRadius: radius.md, textAlign: "center" },
   notesContainer: {

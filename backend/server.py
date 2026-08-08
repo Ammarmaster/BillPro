@@ -96,6 +96,8 @@ async def send_expo_push_notifications(push_tokens: list[str], title: str, body:
             "sound": "default",
             "title": title,
             "body": body,
+            "priority": "high",
+            "channelId": "default",
             "data": {
                 "category": category,
                 **(data or {})

@@ -221,7 +221,7 @@ export default function Kitchen() {
   const webAudioRef = useRef<any>(null);
   const player = useAudioPlayer(Platform.OS !== "web" ? KITCHEN_SOUND_URL : null);
   if (player) {
-    player.loop = true;
+    player.loop = false;
   }
 
   // Preload and add listeners on Web mount
@@ -231,9 +231,26 @@ export default function Kitchen() {
         console.log("[KITCHEN SOUND] Preloading audio source:", KITCHEN_SOUND_URL);
         const audio = new window.Audio(KITCHEN_SOUND_URL);
         audio.preload = "auto";
-        audio.loop = true;
+        audio.loop = false;
         audio.volume = 1.0;
         webAudioRef.current = audio;
+
+        let playCount = 0;
+        audio.addEventListener("ended", () => {
+          playCount++;
+          if (playCount < 2) {
+            console.log(`[KITCHEN SOUND] Play count: ${playCount}. Replaying alert...`);
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+          } else {
+            console.log("[KITCHEN SOUND] Played 2 times. Stopping.");
+          }
+        });
+
+        // Add custom reset handle
+        (audio as any).resetPlayCount = () => {
+          playCount = 0;
+        };
 
         audio.addEventListener("canplaythrough", () => {
           console.log("[KITCHEN SOUND] Audio loaded successfully");
@@ -332,6 +349,11 @@ export default function Kitchen() {
         
         if (Platform.OS === "web") {
           if (webAudioRef.current) {
+            try {
+              if (webAudioRef.current.resetPlayCount) {
+                webAudioRef.current.resetPlayCount();
+              }
+            } catch {}
             webAudioRef.current.currentTime = 0;
             const p = webAudioRef.current.play();
             if (p && typeof p.then === "function") {
@@ -414,6 +436,28 @@ export default function Kitchen() {
     if (!next) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
+    // If starting cooking from placed order, stop the sound immediately
+    if (currentStatus === "placed") {
+      isRingingRef.current = false;
+      if (Platform.OS === "web") {
+        if (webAudioRef.current) {
+          try {
+            webAudioRef.current.pause();
+            webAudioRef.current.currentTime = 0;
+            console.log("[KITCHEN SOUND] Playback stopped by clicking start cooking");
+          } catch {}
+        }
+      } else {
+        if (player) {
+          try {
+            player.pause();
+            player.seekTo(0);
+            console.log("[KITCHEN SOUND] Playback stopped by clicking start cooking");
+          } catch {}
+        }
+      }
+    }
 
     // 1. INSTANT 0ms local state update (automatically stops sound if no pending orders remain)
     if (next === "served") {

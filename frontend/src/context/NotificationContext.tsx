@@ -95,7 +95,7 @@ const getRoleDefaultPrefs = (role: string | undefined): NotificationPreferences 
     vibration_enabled: true,
     categories: {
       sales: role ? ["owner", "manager", "cashier"].includes(role) : true,
-      kitchen: role === "kitchen", // default OFF for waiter, cashier, owner; ON for kitchen
+      kitchen: true, // Default ON for all roles (waiter, owner, kitchen, cashier)
       waiter: role ? ["waiter", "manager", "owner"].includes(role) : true,
       cashier: role ? ["cashier", "manager", "owner"].includes(role) : true,
       system: true,
@@ -390,9 +390,29 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (Platform.OS === "web") {
       try {
         const audio = new window.Audio(SOUND_URL);
-        audio.volume = 0.8;
-        audio.play();
-        console.log("[KITCHEN SOUND] Playback started successfully");
+        audio.volume = 1.0;
+        let count = 0;
+        audio.addEventListener("ended", () => {
+          count++;
+          if (count < 2) {
+            console.log(`[KITCHEN SOUND] Play count: ${count}. Replaying alert...`);
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+          } else {
+            console.log("[KITCHEN SOUND] Played 2 times. Stopping.");
+          }
+        });
+        const p = audio.play();
+        if (p && typeof p.then === "function") {
+          p.then(() => {
+            console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+          }).catch((err: any) => {
+            console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
+            console.warn("[KITCHEN SOUND] Error:", err);
+          });
+        } else {
+          console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
+        }
       } catch (e: any) {
         console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
         console.warn("[KITCHEN SOUND] Error:", e);
@@ -406,7 +426,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           console.log("[Audio] Playing preloaded notification sound (native)");
           audioPlayer.current.seekTo(0);
           audioPlayer.current.play();
-          console.log("[KITCHEN SOUND] Playback started successfully");
+          console.log("[KITCHEN SOUND] PLAYBACK SUCCESS");
         }
       } catch (e: any) {
         console.warn("[KITCHEN SOUND] PLAYBACK FAILED");
