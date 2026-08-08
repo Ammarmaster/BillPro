@@ -388,7 +388,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const playSound = (notif?: Notification) => {
     let targetSoundUrl = GENERAL_NOTIFICATION_SOUND_URL;
-    let isKitchenAlert = false;
 
     if (notif) {
       const isNewOrder = notif.category === "kitchen" && (
@@ -403,46 +402,30 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         notif.title.toLowerCase().includes("paid") ||
         notif.data?.status === "paid";
 
-      if (isNewOrder) {
-        targetSoundUrl = KITCHEN_ALERT_SOUND_URL;
-        isKitchenAlert = true;
-      } else if (isPayment) {
+      if (isPayment) {
         targetSoundUrl = PAYMENT_MONEY_SOUND_URL;
+      } else if (isNewOrder) {
+        targetSoundUrl = KITCHEN_ALERT_SOUND_URL;
       } else {
         targetSoundUrl = GENERAL_NOTIFICATION_SOUND_URL;
       }
     }
 
-    console.log(`[ALERT SOUND] Playing sound for category '${notif?.category || "general"}': ${targetSoundUrl}`);
+    console.log(`[ALERT SOUND] Playing single sound for category '${notif?.category || "general"}': ${targetSoundUrl}`);
 
     if (Platform.OS === "web") {
       try {
         const audio = new window.Audio(targetSoundUrl);
         audio.volume = 1.0;
-
-        if (isKitchenAlert) {
-          let count = 0;
-          audio.addEventListener("ended", () => {
-            count++;
-            if (count < 2) {
-              console.log(`[KITCHEN SOUND] Play count: ${count}. Replaying alert...`);
-              audio.currentTime = 0;
-              audio.play().catch(() => {});
-            } else {
-              console.log("[KITCHEN SOUND] Played 2 times. Stopping.");
-            }
-          });
-        }
-
         const p = audio.play();
         if (p && typeof p.then === "function") {
           p.then(() => {
-            console.log("[ALERT SOUND] Playback started successfully");
+            console.log("[ALERT SOUND] Single playback completed successfully");
           }).catch((err: any) => {
             console.warn("[ALERT SOUND] Playback failed:", err);
           });
         } else {
-          console.log("[ALERT SOUND] Playback started successfully");
+          console.log("[ALERT SOUND] Single playback completed successfully");
         }
       } catch (e: any) {
         console.warn("[ALERT SOUND] Error:", e);
@@ -452,7 +435,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (createAudioPlayer) {
           const nativePlayer = createAudioPlayer(targetSoundUrl);
           nativePlayer.play();
-          console.log("[ALERT SOUND] Playback started (native)");
+          console.log("[ALERT SOUND] Single playback started (native)");
         }
       } catch (e: any) {
         console.warn("[ALERT SOUND] Error:", e);

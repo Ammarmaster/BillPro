@@ -1808,57 +1808,64 @@ def _synthesize_wav(sound_type: str) -> bytes:
     import wave
     import math
     import struct
+    import random
 
     sample_rate = 44100
     if sound_type == "payment-money":
-        duration = 0.8
+        # Iconic classic cash register "Cha-Ching!" sound
+        duration = 0.85
         total_samples = int(sample_rate * duration)
         data = bytearray()
+        random.seed(42)
+        noise = [random.uniform(-1.0, 1.0) for _ in range(total_samples)]
+        
         for i in range(total_samples):
             t = i / sample_rate
             val = 0.0
-            if t < 0.4:
-                decay1 = math.exp(-t * 8.0)
-                val += 15000.0 * math.sin(2.0 * math.pi * 1864.0 * t) * decay1
-                val += 12000.0 * math.sin(2.0 * math.pi * 2349.0 * t) * decay1
-                val += 8000.0 * math.sin(2.0 * math.pi * 3729.0 * t) * decay1
-            if t >= 0.15:
-                t2 = t - 0.15
-                decay2 = math.exp(-t2 * 6.0)
-                val += 18000.0 * math.sin(2.0 * math.pi * 2793.0 * t2) * decay2
-                val += 14000.0 * math.sin(2.0 * math.pi * 3520.0 * t2) * decay2
-                val += 9000.0 * math.sin(2.0 * math.pi * 4186.0 * t2) * decay2
-            int_val = max(-32768, min(32767, int(val)))
-            data.extend(struct.pack("<h", int_val))
-    elif sound_type == "notification":
-        duration = 0.6
-        total_samples = int(sample_rate * duration)
-        data = bytearray()
-        for i in range(total_samples):
-            t = i / sample_rate
-            val = 0.0
-            if t < 0.35:
-                decay1 = math.exp(-t * 9.0)
-                val += 16000.0 * math.sin(2.0 * math.pi * 587.33 * t) * decay1
-                val += 6000.0 * math.sin(2.0 * math.pi * 1174.66 * t) * decay1
-            if t >= 0.12:
-                t2 = t - 0.12
-                decay2 = math.exp(-t2 * 7.0)
-                val += 18000.0 * math.sin(2.0 * math.pi * 880.0 * t2) * decay2
-                val += 7000.0 * math.sin(2.0 * math.pi * 1760.0 * t2) * decay2
+            if t < 0.12:
+                decay_click = math.exp(-t * 35.0)
+                click_freq = 1600.0 + 800.0 * math.sin(2.0 * math.pi * 30.0 * t)
+                val += 14000.0 * math.sin(2.0 * math.pi * click_freq * t) * decay_click
+                val += 8000.0 * noise[i] * decay_click
+            if t >= 0.08:
+                t1 = t - 0.08
+                decay1 = math.exp(-t1 * 7.5)
+                val += 18000.0 * math.sin(2.0 * math.pi * 2093.0 * t1) * decay1
+                val += 13000.0 * math.sin(2.0 * math.pi * 3135.9 * t1) * decay1
+                val += 8000.0 * math.sin(2.0 * math.pi * 4186.0 * t1) * decay1
+            if t >= 0.20:
+                t2 = t - 0.20
+                decay2 = math.exp(-t2 * 5.5)
+                val += 20000.0 * math.sin(2.0 * math.pi * 2637.0 * t2) * decay2
+                val += 15000.0 * math.sin(2.0 * math.pi * 3951.0 * t2) * decay2
+                val += 9000.0 * math.sin(2.0 * math.pi * 5274.0 * t2) * decay2
             int_val = max(-32768, min(32767, int(val)))
             data.extend(struct.pack("<h", int_val))
     else:
-        # Default / Kitchen alert
-        duration = 1.2
+        # Modern app crisp Snapchat-style single Pop
+        duration = 0.18
         total_samples = int(sample_rate * duration)
         data = bytearray()
         for i in range(total_samples):
             t = i / sample_rate
-            mod = 0.5 + 0.5 * math.sin(2.0 * math.pi * 8.0 * t)
-            val = int(32000.0 * math.sin(2.0 * math.pi * 800.0 * t) * mod)
-            val = max(-32768, min(32767, val))
-            data.extend(struct.pack("<h", val))
+            if t < 0.025:
+                freq = 400.0 + (700.0 * (t / 0.025))
+            else:
+                freq = 1100.0 * math.exp(-(t - 0.025) * 12.0)
+            decay = math.exp(-t * 26.0)
+            val = 28000.0 * math.sin(2.0 * math.pi * freq * t) * decay
+            val += 9000.0 * math.sin(2.0 * math.pi * (freq * 1.5) * t) * decay
+            int_val = max(-32768, min(32767, int(val)))
+            data.extend(struct.pack("<h", int_val))
+
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, "wb") as wav_file:
+        num_samples = len(data) // 2
+        wav_file.setparams((1, 2, sample_rate, num_samples, "NONE", "not compressed"))
+        wav_file.writeframesraw(bytes(data))
+    res = wav_io.getvalue()
+    wav_io.close()
+    return res
 
     wav_io = io.BytesIO()
     with wave.open(wav_io, "wb") as wav_file:

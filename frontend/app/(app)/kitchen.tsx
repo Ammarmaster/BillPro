@@ -235,23 +235,6 @@ export default function Kitchen() {
         audio.volume = 1.0;
         webAudioRef.current = audio;
 
-        let playCount = 0;
-        audio.addEventListener("ended", () => {
-          playCount++;
-          if (playCount < 2) {
-            console.log(`[KITCHEN SOUND] Play count: ${playCount}. Replaying alert...`);
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
-          } else {
-            console.log("[KITCHEN SOUND] Played 2 times. Stopping.");
-          }
-        });
-
-        // Add custom reset handle
-        (audio as any).resetPlayCount = () => {
-          playCount = 0;
-        };
-
         audio.addEventListener("canplaythrough", () => {
           console.log("[KITCHEN SOUND] Audio loaded successfully");
         });
