@@ -14,6 +14,7 @@ import { api } from "@/src/lib/api";
 import { menuItemImageSource } from "@/src/lib/foodImage";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { getPrinterSettings, printKitchenKOT } from "@/src/lib/print";
 type Cat = { id: string; name: string };
@@ -30,11 +31,11 @@ export default function WaiterScreen() {
   const { theme, isDark } = useTheme();
   const { table: tableParam } = useLocalSearchParams<{ table?: string }>();
 
-  const [cats, setCats] = useState<Cat[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
-  const [tables, setTables] = useState<Table[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [bills, setBills] = useState<any[]>([]);
+  const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
+  const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
+  const [tables, setTables] = useState<Table[]>(() => api.getCachedTables() || []);
+  const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
+  const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
   
   const [selCat, setSelCat] = useState<string | "all">("all");
   const [search, setSearch] = useState("");
@@ -42,7 +43,12 @@ export default function WaiterScreen() {
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => (api.getCachedTables()?.length ? false : true));
+
+  // Guest session tracking for multi-customer tables
+  const [currentGuestName, setCurrentGuestName] = useState("Guest 1");
+  const [currentSessionId, setCurrentSessionId] = useState("");
+  const [showGuestPicker, setShowGuestPicker] = useState(false);
 
   // View state: 'tables' | 'order_details' | 'menu_order'
   const [viewMode, setViewMode] = useState<"tables" | "order_details" | "menu_order">("tables");
@@ -62,11 +68,11 @@ export default function WaiterScreen() {
         api.listOrders().catch(() => []),
         api.listBills().catch(() => []),
       ]);
-      setCats(c || []);
-      setItems(m || []);
-      setTables(t || []);
-      setOrders(o || []);
-      setBills(b || []);
+      if (c?.length) setCats(c);
+      if (m?.length) setItems(m);
+      if (t?.length) setTables(t);
+      if (o) setOrders(o);
+      if (b) setBills(b);
     } catch (e: any) { 
       setErr(e.message); 
     } finally { 
@@ -87,38 +93,48 @@ export default function WaiterScreen() {
         onSelectTable(matched);
       } else {
         setTable(tableParam);
+        setCurrentGuestName("Guest 1");
+        setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
         setViewMode("menu_order");
       }
     }
   }, [tableParam, tables]);
 
-  // Poll backend every 6s for background sync in waiter app
-  useEffect(() => {
-    const iv = setInterval(() => {
-      // Only poll in background if we are not actively creating/editing an order
-      if (viewMode === "tables" || viewMode === "order_details") {
-        Promise.all([api.listOrders(), api.listBills()]).then(([o, b]) => {
-          setOrders(o || []);
-          setBills(b || []);
-        }).catch(err => console.warn("Waiter background sync failed:", err.message));
-      }
-    }, 6000);
-    return () => clearInterval(iv);
-  }, [viewMode]);
+  const { subscribe } = useNotifications();
 
-  // Helper to determine table status & matching order
+  // Event-driven reactive sync via WebSocket (Zero polling overhead)
+  useEffect(() => {
+    return subscribe((notif) => {
+      if (notif.category === "kitchen" || notif.category === "payment" || notif.category === "waiter") {
+        if (viewMode === "tables" || viewMode === "order_details") {
+          Promise.all([api.listOrders().catch(() => []), api.listBills().catch(() => [])]).then(([o, b]) => {
+            if (o) setOrders(o);
+            if (b) setBills(b);
+          }).catch(() => {});
+        }
+      }
+    });
+  }, [subscribe, viewMode]);
+
+  // Helper to determine table status & matching active orders
   const getTableStatusInfo = (tblLabel: string) => {
-    const matchingOrder = orders.find(
+    const matchingOrders = orders.filter(
       (o: any) => String(o.table_number).toLowerCase() === String(tblLabel).toLowerCase() && o.status !== "served" && o.status !== "cancelled"
     );
-    if (!matchingOrder) return { status: "Available", order: null, bill: null, isWeb: false };
+    if (matchingOrders.length === 0) return { status: "Available", orders: [], bill: null, isWeb: false, activeCount: 0 };
 
-    const matchingBill = bills.find((b: any) => b.order_id === matchingOrder.id && b.status !== "paid");
-    if (matchingBill) return { status: "Billed", order: matchingOrder, bill: matchingBill, isWeb: false };
+    const matchingBill = bills.find((b: any) => matchingOrders.some((o: any) => o.id === b.order_id) && b.status !== "paid");
+    if (matchingBill) return { status: "Billed", orders: matchingOrders, bill: matchingBill, isWeb: false, activeCount: matchingOrders.length };
 
-    const isWeb = matchingOrder.created_by === "guest" || bills.some((b: any) => b.order_id === matchingOrder.id && b.status === "paid");
+    const allWeb = matchingOrders.every((o: any) => o.created_by === "guest" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
 
-    return { status: isWeb ? "Web Paid" : "Occupied", order: matchingOrder, bill: null, isWeb };
+    return { 
+      status: allWeb ? "Web Paid" : "Occupied", 
+      orders: matchingOrders, 
+      bill: null, 
+      isWeb: allWeb, 
+      activeCount: matchingOrders.length 
+    };
   };
 
   const counts = tables.reduce(
@@ -137,15 +153,16 @@ export default function WaiterScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setSelectedTableObj(tbl);
     setTable(tbl.label);
-    const { status, order } = getTableStatusInfo(tbl.label);
+    const { status, orders: tblOrders } = getTableStatusInfo(tbl.label);
 
-    if (order) {
-      // Table has an open/pending order -> Show Occupied Order Details screen (matching screenshot!)
-      setActiveOrder(order);
+    if (tblOrders.length > 0) {
+      setActiveOrder(tblOrders[0]);
       setViewMode("order_details");
     } else {
-      // Table is available -> Show menu ordering view directly
       setActiveOrder(null);
+      setCurrentGuestName("Guest 1");
+      setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
+      setLines([]);
       setViewMode("menu_order");
     }
   };
@@ -193,11 +210,15 @@ export default function WaiterScreen() {
       const orderSubtotal = lines.reduce((acc, item) => acc + (item.price * item.quantity), 0);
       const isEdit = !!activeOrder;
       const tempId = activeOrder?.id || "temp-" + Date.now();
+      const guestName = currentGuestName || activeOrder?.customer_name || "Guest 1";
+      const sessId = currentSessionId || activeOrder?.session_id || "tsess_" + Math.random().toString(36).substring(2, 9);
       
       const localOrder = {
         id: tempId,
         order_number: activeOrder?.order_number || String(Math.floor(100 + Math.random() * 900)),
         table_number: table.trim(),
+        session_id: sessId,
+        customer_name: guestName,
         items: lines,
         subtotal: orderSubtotal,
         status: activeOrder?.status || "placed",
@@ -224,7 +245,7 @@ export default function WaiterScreen() {
 
       // Dispatch backend sync in background without blocking UI
       if (isEdit) {
-        api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "" }).then(async realOrder => {
+        api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "", customer_name: guestName }).then(async realOrder => {
           setActiveOrder(realOrder);
           setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
           const settings = await getPrinterSettings("kitchen");
@@ -235,7 +256,7 @@ export default function WaiterScreen() {
           setErr(e.message);
         });
       } else {
-        api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "" }).then(async realOrder => {
+        api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "", session_id: sessId, customer_name: guestName }).then(async realOrder => {
           setActiveOrder(realOrder);
           setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
           const settings = await getPrinterSettings("kitchen");
@@ -250,27 +271,43 @@ export default function WaiterScreen() {
   };
 
   // -------------------------------------------------------------
-  // VIEW 1: OCCUPIED TABLE / PENDING ORDER DETAILS SCREEN (Reference Image)
+  // VIEW 1: OCCUPIED TABLE / MULTI-CUSTOMER ORDER DETAILS SCREEN
   // -------------------------------------------------------------
   if (viewMode === "order_details" && selectedTableObj) {
-    const orderNum = activeOrder?.order_number || activeOrder?.id?.slice(-4) || "46";
-    const statusText = (activeOrder?.status || "PLACED").toUpperCase();
-    const orderItems = activeOrder?.items || [];
-    const orderTotal = activeOrder?.subtotal || orderItems.reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0) || 0;
-    const isWebOrder = activeOrder?.created_by === "guest" || bills.some((b: any) => b.order_id === activeOrder?.id && b.status === "paid");
+    const tableOrders = orders.filter(
+      (o: any) => String(o.table_number).toLowerCase() === String(selectedTableObj.label).toLowerCase() && o.status !== "served" && o.status !== "cancelled"
+    );
 
-    const completeWebOrder = async () => {
-      if (!activeOrder) return;
+    const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+    const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
+    const allWebPaid = tableOrders.length > 0 && tableOrders.every((o: any) => o.created_by === "guest" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
+
+    const completeIndividualOrder = async (orderIdToComplete: string) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setOrders(prev => prev.map(o => o.id === orderIdToComplete ? { ...o, status: "served" } : o));
       
-      // Optimistic 0ms UI update
-      setOrders(prev => prev.map(o => o.id === activeOrder.id ? { ...o, status: "served" } : o));
+      const remaining = tableOrders.filter((o: any) => o.id !== orderIdToComplete);
+      if (remaining.length === 0) {
+        setViewMode("tables");
+      }
+
+      try {
+        await api.updateOrderStatus(orderIdToComplete, "served");
+      } catch (e: any) {
+        console.warn("Failed to complete order:", e);
+        await load();
+      }
+    };
+
+    const completeAllTableOrders = async () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setOrders(prev => prev.map(o => tableOrders.some(to => to.id === o.id) ? { ...o, status: "served" } : o));
       setViewMode("tables");
 
       try {
-        await api.updateOrderStatus(activeOrder.id, "served");
+        await Promise.all(tableOrders.map(o => api.updateOrderStatus(o.id, "served")));
       } catch (e: any) {
-        console.warn("Failed to complete web order:", e);
+        console.warn("Failed to complete all orders:", e);
         await load();
       }
     };
@@ -287,98 +324,150 @@ export default function WaiterScreen() {
             </Pressable>
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
               <Text style={styles.detailsTitle}>Table {selectedTableObj.label}</Text>
-              <Text style={styles.detailsSub}>Main • {selectedTableObj.seats} seats • {isWebOrder ? "1 web order (Paid)" : "1 open order"}</Text>
+              <Text style={styles.detailsSub}>
+                Main • {selectedTableObj.seats} seats • {tableOrders.length} {tableOrders.length === 1 ? "Order" : "Orders"} ({uniqueGuests.length} {uniqueGuests.length === 1 ? "Customer" : "Customers"})
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, fontWeight: "600" }}>ACTIVE TOTAL</Text>
+              <Text style={{ fontSize: 17, fontWeight: "800", color: "#635BFF" }}>₹{totalTableAmount}</Text>
             </View>
           </View>
 
-          {/* Pending Order Card */}
-          <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-            <View style={styles.orderCard}>
-              <View style={styles.orderCardHeader}>
-                <Text style={styles.orderCardNum}>#{orderNum}</Text>
-                <View style={[styles.statusPill, isWebOrder && { backgroundColor: isDark ? "#065F46" : "#DCFCE7" }]}>
-                  <Text style={[styles.statusPillText, isWebOrder && { color: isDark ? "#34D399" : "#16A34A" }]}>
-                    {isWebOrder ? "PAID ONLINE (WEB)" : statusText}
-                  </Text>
-                </View>
+          {/* Orders Scrollable List */}
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }}>
+            {tableOrders.length === 0 ? (
+              <View style={[styles.center, { paddingVertical: 60 }]}>
+                <Ionicons name="checkmark-circle" size={48} color="#10B981" />
+                <Text style={{ fontSize: 16, fontWeight: "700", color: theme.onSurface, marginTop: 12 }}>All orders completed!</Text>
+                <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, marginTop: 4 }}>This table is ready for new guests.</Text>
+                <Pressable
+                  style={[styles.addOrderBtn, { marginTop: 20, width: "60%" }]}
+                  onPress={() => setViewMode("tables")}
+                >
+                  <Text style={styles.addOrderBtnText}>Back to Tables</Text>
+                </Pressable>
               </View>
+            ) : (
+              tableOrders.map((order: any, idx: number) => {
+                const orderNum = order.order_number || order.id?.slice(-4) || `${idx + 1}`;
+                const statusText = (order.status || "PLACED").toUpperCase();
+                const isWebOrder = order.created_by === "guest" || bills.some((b: any) => b.order_id === order.id && b.status === "paid");
+                const custName = order.customer_name || `Guest ${idx + 1}`;
+                const orderTotal = order.subtotal || (order.items || []).reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0);
 
-              {/* Items List */}
-              <View style={{ marginVertical: spacing.md }}>
-                {orderItems.length === 0 ? (
-                  <View style={styles.itemRow}>
-                    <Text style={styles.itemQty}>1×</Text>
-                    <Text style={styles.itemTitle}>Chicken thali</Text>
-                    <Text style={styles.itemAmt}>₹180</Text>
-                  </View>
-                ) : (
-                  orderItems.map((it: any, idx: number) => (
-                    <View key={idx} style={styles.itemRow}>
-                      <Text style={styles.itemQty}>{it.quantity}×</Text>
-                      <Text style={styles.itemTitle}>{it.name}</Text>
-                      <Text style={styles.itemAmt}>₹{it.price * it.quantity}</Text>
+                return (
+                  <View key={order.id || idx} style={[styles.orderCard, { marginBottom: spacing.md }]}>
+                    <View style={styles.orderCardHeader}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={[styles.orderCardNum, { color: "#635BFF", fontSize: 15 }]}>👤 {custName}</Text>
+                        <Text style={[styles.orderCardNum, { fontSize: 13, color: theme.onSurfaceSecondary }]}>#{orderNum}</Text>
+                      </View>
+                      <View style={[styles.statusPill, isWebOrder && { backgroundColor: isDark ? "#065F46" : "#DCFCE7" }]}>
+                        <Text style={[styles.statusPillText, isWebOrder && { color: isDark ? "#34D399" : "#16A34A" }]}>
+                          {isWebOrder ? "PAID ONLINE" : statusText}
+                        </Text>
+                      </View>
                     </View>
-                  ))
-                )}
-              </View>
 
-              {/* Special Cooking Instructions / Notes */}
-              {activeOrder?.notes ? (
-                <View style={[
-                  styles.notesContainer, 
-                  { 
-                    backgroundColor: isDark ? "#2B2212" : "#FFFBEB", 
-                    borderColor: isDark ? "#78350F" : "#FDE68A",
-                    marginVertical: spacing.md
-                  }
-                ]}>
-                  <Ionicons name="document-text-outline" size={15} color={isDark ? "#FBBF24" : "#D97706"} />
-                  <Text style={[styles.notesText, { color: isDark ? "#FBBF24" : "#D97706" }]}>
-                    Instructions: {activeOrder.notes}
-                  </Text>
-                </View>
-              ) : null}
+                    {/* Items List */}
+                    <View style={{ marginVertical: spacing.sm }}>
+                      {(order.items || []).map((it: any, iIdx: number) => (
+                        <View key={iIdx} style={styles.itemRow}>
+                          <Text style={styles.itemQty}>{it.quantity}×</Text>
+                          <Text style={styles.itemTitle}>{it.name}</Text>
+                          <Text style={styles.itemAmt}>₹{it.price * it.quantity}</Text>
+                        </View>
+                      ))}
+                    </View>
 
-              {/* Subtotal Footer */}
-              <View style={styles.subtotalRow}>
-                <Text style={styles.subtotalLbl}>Subtotal incl. tax</Text>
-                <Text style={styles.subtotalVal}>₹{orderTotal}</Text>
-              </View>
-            </View>
+                    {/* Special Cooking Instructions / Notes */}
+                    {order.notes ? (
+                      <View style={[
+                        styles.notesContainer, 
+                        { 
+                          backgroundColor: isDark ? "#2B2212" : "#FFFBEB", 
+                          borderColor: isDark ? "#78350F" : "#FDE68A",
+                          marginVertical: spacing.xs
+                        }
+                      ]}>
+                        <Ionicons name="document-text-outline" size={14} color={isDark ? "#FBBF24" : "#D97706"} />
+                        <Text style={[styles.notesText, { color: isDark ? "#FBBF24" : "#D97706", fontSize: 12 }]}>
+                          {order.notes}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Subtotal Footer */}
+                    <View style={[styles.subtotalRow, { marginTop: spacing.xs, paddingTop: spacing.xs }]}>
+                      <Text style={styles.subtotalLbl}>Order Amount</Text>
+                      <Text style={styles.subtotalVal}>₹{orderTotal}</Text>
+                    </View>
+
+                    {/* Per-Order Actions */}
+                    <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                      <Pressable
+                        style={[styles.guestActionBtn, { borderColor: theme.border }]}
+                        onPress={() => {
+                          setActiveOrder(order);
+                          setCurrentGuestName(custName);
+                          setCurrentSessionId(order.session_id || "");
+                          const mapped: Line[] = (order.items || []).map((it: any) => ({
+                            menu_item_id: it.menu_item_id,
+                            name: it.name,
+                            price: it.price,
+                            quantity: it.quantity,
+                            notes: it.notes || "",
+                          }));
+                          setLines(mapped);
+                          setViewMode("menu_order");
+                        }}
+                      >
+                        <Ionicons name="create-outline" size={14} color="#635BFF" />
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginLeft: 4 }}>Edit</Text>
+                      </Pressable>
+
+                      {isWebOrder ? (
+                        <Pressable
+                          style={[styles.guestActionBtn, { backgroundColor: "#10B981", borderColor: "#10B981" }]}
+                          onPress={() => completeIndividualOrder(order.id)}
+                        >
+                          <Ionicons name="checkmark-circle-outline" size={14} color="#FFF" />
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Mark Served</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          style={[styles.guestActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
+                          onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id } })}
+                        >
+                          <Ionicons name="receipt-outline" size={14} color="#FFF" />
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
           </ScrollView>
 
-          {/* Bottom Action Buttons */}
+          {/* Bottom Action Bar */}
           <View style={[styles.bottomActionBar, { paddingBottom: insets.bottom + spacing.md }]}>
             <Pressable
               style={styles.addOrderBtn}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                if (activeOrder) {
-                  const mapped: Line[] = (activeOrder.items || []).map((it: any) => ({
-                    menu_item_id: it.menu_item_id,
-                    name: it.name,
-                    price: it.price,
-                    quantity: it.quantity,
-                    notes: it.notes || "",
-                  }));
-                  setLines(mapped);
-                } else {
-                  setLines([]);
-                }
-                setViewMode("menu_order");
-              }}
+              onPress={() => setShowGuestPicker(true)}
             >
-              <Ionicons name="create-outline" size={20} color="#635BFF" />
-              <Text style={styles.addOrderBtnText}>Edit Order</Text>
+              <Ionicons name="person-add-outline" size={18} color="#635BFF" />
+              <Text style={styles.addOrderBtnText}>+ Add Order</Text>
             </Pressable>
 
-            {isWebOrder ? (
+            {allWebPaid ? (
               <Pressable
                 style={[styles.genBillBtn, { backgroundColor: "#10B981", shadowColor: "#10B981" }]}
-                onPress={completeWebOrder}
+                onPress={completeAllTableOrders}
               >
                 <View>
-                  <Text style={styles.genBillAmt}>Paid Online</Text>
+                  <Text style={styles.genBillAmt}>All Paid Online</Text>
                   <Text style={styles.genBillSub}>Complete & Free Table</Text>
                 </View>
                 <Ionicons name="checkmark-done-circle" size={24} color="#FFFFFF" />
@@ -387,19 +476,65 @@ export default function WaiterScreen() {
               <Pressable
                 style={styles.genBillBtn}
                 onPress={() => {
-                  if (activeOrder) {
-                    router.push({ pathname: "/(app)/billing", params: { orderId: activeOrder.id } });
-                  }
+                  router.push({ pathname: "/(app)/billing", params: { tableNumber: selectedTableObj.label } });
                 }}
               >
                 <View>
-                  <Text style={styles.genBillAmt}>₹{orderTotal}</Text>
-                  <Text style={styles.genBillSub}>Generate Bill</Text>
+                  <Text style={styles.genBillAmt}>₹{totalTableAmount}</Text>
+                  <Text style={styles.genBillSub}>Settle Entire Table</Text>
                 </View>
                 <Ionicons name="receipt-outline" size={22} color="#FFFFFF" />
               </Pressable>
             )}
           </View>
+
+          {/* Guest Selector Modal */}
+          {showGuestPicker && (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end", zIndex: 999 }]}>
+              <View style={[styles.guestPickerSheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 20 }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <Text style={[styles.guestPickerTitle, { color: theme.onSurface }]}>Select Customer for Table {selectedTableObj.label}</Text>
+                  <Pressable onPress={() => setShowGuestPicker(false)} hitSlop={12}>
+                    <Ionicons name="close" size={22} color={theme.onSurfaceSecondary} />
+                  </Pressable>
+                </View>
+
+                {uniqueGuests.map((gName, gIdx) => (
+                  <Pressable
+                    key={gIdx}
+                    style={[styles.guestPickerOption, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                    onPress={() => {
+                      setShowGuestPicker(false);
+                      setActiveOrder(null);
+                      setCurrentGuestName(gName);
+                      setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
+                      setLines([]);
+                      setViewMode("menu_order");
+                    }}
+                  >
+                    <Ionicons name="person" size={18} color="#635BFF" />
+                    <Text style={[styles.guestPickerOptionText, { color: theme.onSurface }]}>Add items for {gName}</Text>
+                  </Pressable>
+                ))}
+
+                <Pressable
+                  style={[styles.guestPickerOption, { borderColor: "#635BFF", backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF" }]}
+                  onPress={() => {
+                    setShowGuestPicker(false);
+                    setActiveOrder(null);
+                    const newGuestLabel = `Guest ${uniqueGuests.length + 1}`;
+                    setCurrentGuestName(newGuestLabel);
+                    setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
+                    setLines([]);
+                    setViewMode("menu_order");
+                  }}
+                >
+                  <Ionicons name="add-circle" size={20} color="#635BFF" />
+                  <Text style={[styles.guestPickerOptionText, { color: "#635BFF", fontWeight: "700" }]}>+ New Customer (Guest {uniqueGuests.length + 1})</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
 
         </View>
       </SafeAreaView>
@@ -537,7 +672,10 @@ export default function WaiterScreen() {
         <Pressable onPress={() => setViewMode("tables")} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.menuHeaderTitle}>Table {table || "Selection"}</Text>
+        <View style={{ alignItems: "center" }}>
+          <Text style={styles.menuHeaderTitle}>Table {table || "Selection"}</Text>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginTop: 2 }}>👤 {currentGuestName || "Guest 1"}</Text>
+        </View>
         <View style={{ width: 40 }} />
       </View>
 
@@ -904,5 +1042,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     flex: 1,
+  },
+  guestActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  guestPickerSheet: {
+    padding: spacing.xl,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+  },
+  guestPickerTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  guestPickerOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  guestPickerOptionText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

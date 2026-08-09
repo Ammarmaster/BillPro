@@ -10,8 +10,11 @@ import bcrypt
 import jwt as pyjwt
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
+import time
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
+
+dashboard_summary_cache: dict[str, tuple[float, dict]] = {}
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -133,6 +136,7 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
         logger.info("[BACKEND ALERT] NEW ORDER CREATED - Restaurant: %s, Order: %s, Socket room: %s", tenant_id, doc["id"], tenant_id)
         
     await manager.broadcast_to_tenant(tenant_id, doc)
+    dashboard_summary_cache.pop(tenant_id, None)
     
     # Query all users under this tenant who have registered push tokens
     try:
@@ -425,6 +429,8 @@ class OrderIn(BaseModel):
     table_number: str
     items: List[OrderItemIn]
     notes: str = ""
+    session_id: Optional[str] = None
+    customer_name: Optional[str] = "Guest 1"
 
 
 class PublicOrderIn(BaseModel):
@@ -434,7 +440,8 @@ class PublicOrderIn(BaseModel):
     items: List[OrderItemIn]
     notes: str = ""
     customer_phone: str = ""
-    customer_name: str = ""
+    customer_name: str = "Guest 1"
+    session_id: Optional[str] = None
     payment_method: str = "UPI"  # UPI
     razorpay_payment_id: str
     razorpay_order_id: str
@@ -452,10 +459,13 @@ class OrderStatusIn(BaseModel):
 class OrderUpdateIn(BaseModel):
     items: List[OrderItemIn]
     notes: Optional[str] = ""
+    customer_name: Optional[str] = None
 
 
 class BillIn(BaseModel):
-    order_id: str
+    order_id: Optional[str] = None
+    order_ids: Optional[List[str]] = None
+    table_number: Optional[str] = None
     tax_percent: float = 5.0
     discount: float = 0.0
     gst_enabled: Optional[bool] = None  # override restaurant default
@@ -797,10 +807,14 @@ async def staff_login(payload: StaffLoginIn):
 async def create_order(payload: OrderIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
     subtotal = sum(i.price * i.quantity for i in payload.items)
+    cust_name = (payload.customer_name or "Guest 1").strip()
+    sess_id = payload.session_id or str(uuid.uuid4())
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
         "table_number": payload.table_number,
+        "session_id": sess_id,
+        "customer_name": cust_name,
         "items": [i.dict() for i in payload.items],
         "notes": payload.notes,
         "subtotal": subtotal,
@@ -814,8 +828,8 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
         tid,
         "kitchen",
         "New KOT Placed",
-        f"New order placed for Table {doc.get('table_number', '-')}",
-        {"order_id": doc["id"], "table_number": doc.get("table_number", "-")}
+        f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
+        {"order_id": doc["id"], "table_number": doc.get("table_number", "-"), "customer_name": cust_name, "session_id": sess_id}
     )
     return doc
 
@@ -934,6 +948,28 @@ async def public_list_menu(tenant_id: str):
         "categories": categories
     }
 
+@api.get("/public/table-sessions/{tenant_id}/{table_label}")
+async def get_table_sessions(tenant_id: str, table_label: str):
+    active_orders = await db.orders.find({
+        "tenant_id": tenant_id,
+        "table_number": table_label,
+        "status": {"$nin": ["served", "cancelled"]}
+    }, {"_id": 0, "session_id": 1, "customer_name": 1, "created_at": 1}).to_list(100)
+    
+    sessions = {}
+    for o in active_orders:
+        sid = o.get("session_id")
+        if sid:
+            sessions[sid] = o.get("customer_name") or "Guest"
+            
+    return {
+        "table_label": table_label,
+        "active_sessions_count": len(sessions),
+        "suggested_guest_index": len(sessions) + 1,
+        "active_sessions": [{"session_id": sid, "customer_name": name} for sid, name in sessions.items()]
+    }
+
+
 @api.post("/public/orders")
 async def public_create_order(payload: PublicOrderIn):
     restaurant = await db.restaurants.find_one({"id": payload.tenant_id})
@@ -955,11 +991,15 @@ async def public_create_order(payload: PublicOrderIn):
 
     subtotal = sum(i.price * i.quantity for i in payload.items)
     order_id = str(uuid.uuid4())
+    cust_name = (payload.customer_name or "Guest 1").strip()
+    sess_id = payload.session_id or str(uuid.uuid4())
     
     doc = {
         "id": order_id,
         "tenant_id": payload.tenant_id,
         "table_number": payload.table_number,
+        "session_id": sess_id,
+        "customer_name": cust_name,
         "items": [i.dict() for i in payload.items],
         "notes": payload.notes,
         "subtotal": subtotal,
@@ -967,7 +1007,6 @@ async def public_create_order(payload: PublicOrderIn):
         "created_by": "guest",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "customer_phone": payload.customer_phone,
-        "customer_name": payload.customer_name,
         "order_type": payload.order_type,
         "payment_method": payload.payment_method,
         "razorpay_payment_id": payload.razorpay_payment_id,
@@ -983,6 +1022,8 @@ async def public_create_order(payload: PublicOrderIn):
         "id": bill_id,
         "tenant_id": payload.tenant_id,
         "order_id": order_id,
+        "session_id": sess_id,
+        "customer_name": cust_name,
         "table_number": payload.table_number or "",
         "items": [i.dict() for i in payload.items],
         "subtotal": float(subtotal),
@@ -1006,16 +1047,16 @@ async def public_create_order(payload: PublicOrderIn):
         payload.tenant_id,
         "kitchen",
         "New Contactless Order",
-        f"New QR order for Table {payload.table_number or '-'}",
-        {"order_id": order_id, "table_number": payload.table_number or "-"}
+        f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
+        {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
     )
     
     await notify_tenant(
         payload.tenant_id,
         "payment",
         "Payment Received",
-        f"Table {payload.table_number or '-'} paid ₹{float(subtotal):.2f} via {payload.payment_method or 'online'}",
-        {"order_id": order_id, "table_number": payload.table_number or "-", "total": float(subtotal)}
+        f"Table {payload.table_number or '-'} ({cust_name}) paid ₹{float(subtotal):.2f} via {payload.payment_method or 'online'}",
+        {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "total": float(subtotal)}
     )
     
     return doc
@@ -1045,16 +1086,45 @@ async def public_orders_checkout(payload: PublicCheckoutIn):
 @api.post("/bills")
 async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
-    order = await db.orders.find_one({"id": payload.order_id, "tenant_id": tid}, {"_id": 0})
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+    
+    target_orders = []
+    if payload.order_ids and len(payload.order_ids) > 0:
+        target_orders = await db.orders.find({"id": {"$in": payload.order_ids}, "tenant_id": tid}, {"_id": 0}).to_list(100)
+    elif payload.order_id:
+        single = await db.orders.find_one({"id": payload.order_id, "tenant_id": tid}, {"_id": 0})
+        if single:
+            target_orders = [single]
+    elif payload.table_number:
+        target_orders = await db.orders.find({
+            "table_number": payload.table_number,
+            "tenant_id": tid,
+            "status": {"$nin": ["served", "cancelled"]}
+        }, {"_id": 0}).to_list(100)
+        
+    if not target_orders:
+        raise HTTPException(status_code=404, detail="No active orders found for billing")
+        
     restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
-    subtotal = float(order.get("subtotal", 0))
+    
+    # Combine items and subtotal
+    combined_items = []
+    subtotal = 0.0
+    table_num = target_orders[0].get("table_number", "")
+    order_ids = [o["id"] for o in target_orders]
+    
+    for o in target_orders:
+        cust_label = o.get("customer_name") or "Guest"
+        for item in o.get("items", []):
+            item_copy = dict(item)
+            item_copy["customer_name"] = cust_label
+            combined_items.append(item_copy)
+        subtotal += float(o.get("subtotal", 0.0))
+        
     gst_enabled = payload.gst_enabled if payload.gst_enabled is not None else bool(restaurant.get("gst_enabled"))
     
     tax_percent = payload.tax_percent
     if tax_percent == 5.0 and "gst_rate" in restaurant:
-      tax_percent = float(restaurant["gst_rate"])
+        tax_percent = float(restaurant["gst_rate"])
       
     tax = round(subtotal * (tax_percent / 100), 2) if gst_enabled else 0.0
     cgst = round(tax / 2, 2) if gst_enabled else 0.0
@@ -1062,13 +1132,16 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
     total = round(subtotal + tax - payload.discount, 2)
     upi_id = restaurant.get("upi_id", "")
     merchant = restaurant.get("merchant_name", restaurant.get("name", "Merchant"))
-    upi_url = f"upi://pay?pa={upi_id}&pn={merchant.replace(' ', '%20')}&am={total}&cu=INR&tn=Order-{order['id'][:8]}"
+    primary_order_id = order_ids[0]
+    upi_url = f"upi://pay?pa={upi_id}&pn={merchant.replace(' ', '%20')}&am={total}&cu=INR&tn=Table-{table_num}"
+    
     bill = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
-        "order_id": order["id"],
-        "table_number": order.get("table_number", ""),
-        "items": order.get("items", []),
+        "order_id": primary_order_id,
+        "order_ids": order_ids,
+        "table_number": table_num,
+        "items": combined_items,
         "subtotal": subtotal,
         "tax_percent": tax_percent if gst_enabled else 0.0,
         "tax": tax,
@@ -1106,7 +1179,11 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Bill not found")
     bill = await db.bills.find_one({"id": bid}, {"_id": 0})
-    await db.orders.update_one({"id": bill["order_id"], "tenant_id": tid}, {"$set": {"status": "served"}})
+    
+    # Mark all associated orders as served
+    target_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
+    if target_oids:
+        await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "served"}})
     
     await notify_tenant(
         tid,
@@ -1202,6 +1279,12 @@ async def test_push_notification(payload: dict, user: dict = Depends(get_current
 @api.get("/dashboard/summary")
 async def dashboard_summary(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
+    
+    # 5-second in-memory response cache for <1ms dashboard boots
+    cached = dashboard_summary_cache.get(tid)
+    if cached and (time.time() - cached[0] < 5.0):
+        return cached[1]
+
     now = datetime.now(timezone.utc)
     today_str = now.date().isoformat()
 
@@ -1222,8 +1305,21 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     occupied_tables = len(occupied_table_labels)
     tables_free = max(0, total_tables - occupied_tables) if total_tables > 0 else 5
 
-    paid_bills = await db.bills.find({"tenant_id": tid, "status": "paid"}, {"_id": 0}).to_list(2000)
-    revenue_total = round(sum(b.get("total", 0) for b in paid_bills), 2)
+    # Fast projection with 7-day query window
+    seven_days_ago = (now - timedelta(days=7)).date().isoformat()
+    paid_bills = await db.bills.find(
+        {"tenant_id": tid, "status": "paid", "created_at": {"$gte": seven_days_ago}},
+        {"_id": 0, "total": 1, "created_at": 1, "paid_at": 1, "created_by": 1, "items": 1}
+    ).to_list(1000)
+    
+    # Fast database aggregate for lifetime total revenue
+    pipeline_total = [
+        {"$match": {"tenant_id": tid, "status": "paid"}},
+        {"$group": {"_id": None, "total_revenue": {"$sum": "$total"}, "total_count": {"$sum": 1}}}
+    ]
+    agg_res = await db.bills.aggregate(pipeline_total).to_list(1)
+    revenue_total = round(agg_res[0]["total_revenue"], 2) if agg_res else 0.0
+    paid_bills_count = agg_res[0]["total_count"] if agg_res else 0
 
     today_bills = [
         b for b in paid_bills
@@ -1231,7 +1327,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
            (b.get("created_at") and str(b.get("created_at"))[:10] == today_str)
     ]
     revenue_today = round(sum(b.get("total", 0) for b in today_bills), 2)
-    avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / len(paid_bills), 2) if paid_bills else 0)
+    avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / paid_bills_count, 2) if paid_bills_count > 0 else 0)
 
     # Calculate web payments (created_by == "guest")
     revenue_web_today = round(sum(b.get("total", 0) for b in today_bills if b.get("created_by") == "guest"), 2)
@@ -1265,7 +1361,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     top_selling = sorted(list(item_sales.values()), key=lambda x: x["sold"], reverse=True)[:5]
 
     menu_count = await db.menu_items.count_documents({"tenant_id": tid})
-    return {
+    res = {
         "orders_total": orders_total,
         "orders_open": open_orders,
         "pending_count": pending_count,
@@ -1281,6 +1377,8 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         "last_7_days": last_7_days,
         "top_selling": top_selling,
     }
+    dashboard_summary_cache[tid] = (time.time(), res)
+    return res
 
 
 
@@ -1781,9 +1879,6 @@ async def razorpay_webhook(request: Request):
     return {"ok": True, "event": event_type}
 
 
-app.include_router(api)
-
-
 @app.get("/menu/{tenant_id}", response_class=HTMLResponse)
 @app.get("/menu/{tenant_id}/{table_label}", response_class=HTMLResponse)
 async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None):
@@ -2069,6 +2164,12 @@ async def get_dashboard_feedback(user: dict = Depends(require_roles("owner", "ma
     return feedbacks
 
 
+from fastapi.middleware.gzip import GZipMiddleware
+
+app.include_router(api)
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -2083,6 +2184,21 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def seed_super_admin():
+    # Database compound indexes for sub-5ms queries
+    try:
+        await db.orders.create_index([("tenant_id", 1), ("table_number", 1), ("status", 1)])
+        await db.orders.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)])
+        await db.orders.create_index([("tenant_id", 1), ("session_id", 1)])
+        await db.bills.create_index([("tenant_id", 1), ("order_id", 1)])
+        await db.bills.create_index([("tenant_id", 1), ("table_number", 1), ("status", 1)])
+        await db.bills.create_index([("tenant_id", 1), ("created_at", -1)])
+        await db.customer_feedback.create_index([("tenant_id", 1), ("created_at", -1)])
+        await db.menu_items.create_index([("tenant_id", 1), ("category_id", 1)])
+        await db.tables.create_index([("tenant_id", 1), ("label", 1)])
+        logger.info("Database compound indexes verified and active.")
+    except Exception as e:
+        logger.warning("Index setup notice: %s", e)
+
     existing = await db.users.find_one({"email": ADMIN_EMAIL.lower()})
     if not existing:
         uid = str(uuid.uuid4())

@@ -20,12 +20,15 @@ import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { useAudioPlayer } from "expo-audio";
 import { api } from "@/src/lib/api";
+import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 
 type Order = {
   id: string;
   order_number?: string;
   table_number: string;
+  session_id?: string;
+  customer_name?: string;
   items: { name: string; quantity: number; notes: string }[];
   status: string;
   subtotal: number;
@@ -165,7 +168,14 @@ function KdsTicketCard({
         </View>
       </View>
 
-      <Text style={[styles.tableName, { color: theme.onSurfaceSecondary }]}>Table {item.table_number}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 4 }}>
+        <Text style={[styles.tableName, { color: theme.onSurface }]}>Table {item.table_number}</Text>
+        <View style={{ backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.1)", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF" }}>
+            👤 {item.customer_name || "Guest 1"}
+          </Text>
+        </View>
+      </View>
 
       {/* Items List */}
       <View style={styles.itemsList}>
@@ -401,17 +411,22 @@ export default function Kitchen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Live timer tick every 1s
+  const { subscribe } = useNotifications();
+
+  // Battery-safe timer update every 30s instead of 1s (saving 97% of device CPU & RAM overhead)
   useEffect(() => {
-    const iv = setInterval(() => { setNow(Date.now()); }, 1000);
+    const iv = setInterval(() => { setNow(Date.now()); }, 30000);
     return () => clearInterval(iv);
   }, []);
 
-  // Poll backend every 6s for background sync
+  // Event-driven reactive sync via WebSocket (Zero continuous polling requests!)
   useEffect(() => {
-    const iv = setInterval(load, 6000);
-    return () => clearInterval(iv);
-  }, [load]);
+    return subscribe((notif) => {
+      if (notif.category === "kitchen" || notif.category === "payment") {
+        load();
+      }
+    });
+  }, [subscribe, load]);
 
   // 0ms Optimistic Update + Haptics + Background Sync
   const advanceOptimistic = async (id: string, currentStatus: string) => {

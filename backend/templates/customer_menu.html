@@ -905,7 +905,12 @@
       </div>
       <div class="header-info" style="flex: 1;">
         <h1 id="restaurant-name">Loading...</h1>
-        <p id="table-badge">Table --</p>
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+          <p id="table-badge">Table --</p>
+          <p id="guest-badge" onclick="editGuestName()" style="background: rgba(99, 91, 255, 0.15); color: #635BFF; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; cursor: pointer; border: 1px solid rgba(99, 91, 255, 0.3);">
+            👤 <span id="guest-name-text">Guest 1</span> ✏️
+          </p>
+        </div>
       </div>
       <button id="my-orders-btn" onclick="openOrderHistorySheet()" style="background: none; border: 1px solid var(--border); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--on-surface); font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
         <svg style="width: 14px; height: 14px; fill: var(--brand);" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
@@ -1153,6 +1158,35 @@
     const tenantId = "{{TENANT_ID}}";
     const initialTableLabel = "{{TABLE_LABEL}}";
 
+    const sessionKey = `table_session_${tenantId}_${initialTableLabel || "takeaway"}`;
+    const guestNameKey = `guest_name_${tenantId}_${initialTableLabel || "takeaway"}`;
+
+    let customerSessionId = localStorage.getItem(sessionKey);
+    if (!customerSessionId) {
+      customerSessionId = "tsess_" + Math.random().toString(36).substring(2, 9) + "_" + Date.now().toString(36);
+      localStorage.setItem(sessionKey, customerSessionId);
+    }
+
+    let customerGuestName = localStorage.getItem(guestNameKey) || "";
+
+    function updateGuestUI() {
+      const guestText = document.getElementById("guest-name-text");
+      if (guestText) guestText.textContent = customerGuestName || "Guest 1";
+      const nameInput = document.getElementById("customer-name");
+      if (nameInput && !nameInput.value) {
+        nameInput.value = customerGuestName || "";
+      }
+    }
+
+    function editGuestName() {
+      const newName = prompt("Enter your name so staff can easily serve your order (e.g. Rahul, Priya):", customerGuestName || "");
+      if (newName !== null) {
+        customerGuestName = newName.trim() || "Guest 1";
+        localStorage.setItem(guestNameKey, customerGuestName);
+        updateGuestUI();
+      }
+    }
+
     let restaurantInfo = null;
     let menuData = { items: [], categories: [] };
     let selectedCategory = null;
@@ -1186,11 +1220,25 @@
         if (initialTableLabel) {
           badge.textContent = `Table ${initialTableLabel}`;
           tblInput.value = initialTableLabel;
+
+          // Fetch suggested guest index if not set
+          if (!customerGuestName) {
+            try {
+              const sRes = await fetch(`/api/public/table-sessions/${tenantId}/${initialTableLabel}`);
+              if (sRes.ok) {
+                const sData = await sRes.json();
+                customerGuestName = "Guest " + (sData.suggested_guest_index || 1);
+                localStorage.setItem(guestNameKey, customerGuestName);
+              }
+            } catch (e) {}
+          }
         } else {
           badge.textContent = `Contactless Menu`;
           document.getElementById("table-number-form-group").style.display = "none";
           setOrderType("take_away");
         }
+
+        updateGuestUI();
 
         // Load Menu Data
         const mRes = await fetch(`/api/public/menu/${tenantId}`);
@@ -1457,10 +1505,11 @@
                 tenant_id: tenantId,
                 table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
                 order_type: orderType,
+                session_id: customerSessionId,
+                customer_name: customerGuestName || name || "Guest 1",
                 items: orderItems,
                 notes: notes,
                 customer_phone: phone,
-                customer_name: name,
                 payment_method: "UPI",
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_order_id: response.razorpay_order_id,

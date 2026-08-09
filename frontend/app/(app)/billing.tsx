@@ -47,41 +47,83 @@ export default function Billing() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const { orderId, tableNumber } = useLocalSearchParams<{ orderId?: string; tableNumber?: string }>();
 
   // Synchronous cache lookup for 0ms visual render boots without any spinner delay
   const [order, setOrder] = useState<any>(() => {
-    const targetOrderId = api.resolveTempId(orderId);
-    const oList = api.getCachedOrders();
-    return oList?.find((x: any) => x.id === targetOrderId) || null;
+    const oList = api.getCachedOrders() || [];
+    if (orderId) {
+      const targetOrderId = api.resolveTempId(orderId);
+      return oList.find((x: any) => x.id === targetOrderId) || null;
+    }
+    if (tableNumber) {
+      const tOrders = oList.filter((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status !== "served" && x.status !== "cancelled");
+      if (tOrders.length > 0) {
+        return {
+          table_number: tableNumber,
+          items: tOrders.flatMap((o: any) => o.items || []),
+          subtotal: tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0),
+          id: tOrders[0].id
+        };
+      }
+    }
+    return null;
   });
-  const [restaurant, setRestaurant] = useState<any>(() => {
-    return api.getCachedRestaurant() || null;
-  });
+
+  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
+
   const [bill, setBill] = useState<any>(() => {
-    const targetOrderId = api.resolveTempId(orderId);
-    const bList = api.getCachedBills();
-    const existing = bList?.find((x: any) => x.order_id === targetOrderId);
-    if (existing) return existing;
-    
-    // Optimistic local generation on very first render frame
-    const oList = api.getCachedOrders();
-    const o = oList?.find((x: any) => x.id === targetOrderId);
+    const bList = api.getCachedBills() || [];
     const r = api.getCachedRestaurant();
-    if (o) {
-      const subtotal = Number(o.subtotal || 0);
-      const gst = r?.gst_enabled;
-      const gstRate = Number(r?.gst_rate ?? 5);
-      const tax = gst ? Math.round(subtotal * (gstRate / 100) * 100) / 100 : 0;
+    const gst = r?.gst_enabled;
+    const gstRate = Number(r?.gst_rate ?? 5);
+
+    if (orderId) {
+      const targetOrderId = api.resolveTempId(orderId);
+      const existing = bList.find((x: any) => x.order_id === targetOrderId && x.status !== "paid");
+      if (existing) return existing;
+    }
+    if (tableNumber) {
+      const existingTableBill = bList.find((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status === "pending");
+      if (existingTableBill) return existingTableBill;
+    }
+
+    // Instant optimistic bill calculation from cached orders
+    const oList = api.getCachedOrders() || [];
+    let itemsToBill: any[] = [];
+    let subtotalToBill = 0;
+    let tableNum = tableNumber || "";
+    let primaryOrderId = "";
+
+    if (orderId) {
+      const targetOrderId = api.resolveTempId(orderId);
+      const o = oList.find((x: any) => x.id === targetOrderId);
+      if (o) {
+        itemsToBill = o.items || [];
+        subtotalToBill = Number(o.subtotal || 0);
+        tableNum = o.table_number || "";
+        primaryOrderId = o.id;
+      }
+    } else if (tableNumber) {
+      const tOrders = oList.filter((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status !== "served" && x.status !== "cancelled");
+      if (tOrders.length > 0) {
+        itemsToBill = tOrders.flatMap((o: any) => o.items || []),
+        subtotalToBill = tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+        primaryOrderId = tOrders[0].id;
+      }
+    }
+
+    if (itemsToBill.length > 0) {
+      const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
       const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
       const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
-      const total = Math.round((subtotal + tax) * 100) / 100;
+      const total = Math.round((subtotalToBill + tax) * 100) / 100;
       return {
         id: "temp-" + Date.now(),
-        order_id: o.id,
-        table_number: o.table_number,
-        items: o.items,
-        subtotal: subtotal,
+        order_id: primaryOrderId,
+        table_number: tableNum,
+        items: itemsToBill,
+        subtotal: subtotalToBill,
         tax_percent: gst ? gstRate : 0,
         tax: tax,
         cgst: cgst,
@@ -108,141 +150,54 @@ export default function Billing() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [orders, bills, r] = await Promise.all([api.listOrders(), api.listBills(), api.getRestaurant()]);
-      setRestaurant(r);
+      const [orders, bills, r] = await Promise.all([
+        api.listOrders().catch(() => []),
+        api.listBills().catch(() => []),
+        api.getRestaurant().catch(() => null)
+      ]);
+      if (r) setRestaurant(r);
       
-      const targetOrderId = api.resolveTempId(orderId);
-      const o = orders.find((x: any) => x.id === targetOrderId);
-      setOrder(o || null);
+      const targetOrderId = orderId ? api.resolveTempId(orderId) : "";
       
-      let b = bills.find((x: any) => x.order_id === targetOrderId);
-      if (!b && o) {
-        // Auto-create local bill object instantly (0ms UI wait)
-        const subtotal = Number(o.subtotal || 0);
-        const gst = r?.gst_enabled;
-        const gstRate = Number(r?.gst_rate ?? 5);
-        const tax = gst ? Math.round(subtotal * (gstRate / 100) * 100) / 100 : 0;
-        const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
-        const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
-        const total = Math.round((subtotal + tax) * 100) / 100;
-        
-        const localBill = {
-          id: "temp-" + Date.now(),
-          order_id: o.id,
-          table_number: o.table_number,
-          items: o.items,
-          subtotal: subtotal,
-          tax_percent: gst ? gstRate : 0,
-          tax: tax,
-          cgst: cgst,
-          sgst: sgst,
-          gst_enabled: !!gst,
-          discount: 0,
-          total: total,
-          status: "pending",
-          restaurant_snapshot: r,
-          created_at: new Date().toISOString(),
-        };
-        setBill(localBill);
-        setSyncing(true);
-        
-        // Sync with backend database in the background
-        api.createBill({ order_id: o.id, tax_percent: gstRate, discount: 0 }).then(realBill => {
-          setBill(realBill);
-          setSyncing(false);
-        }).catch(err => {
-          setErr(err.message);
-          setSyncing(false);
-        });
-      } else {
-        setBill(b || null);
-        setSyncing(false);
-      }
-    } catch (e: any) { setErr(e.message); }
-  }, [orderId]);
-
-  useEffect(() => {
-    if (orderId) {
-      const targetOrderId = api.resolveTempId(orderId);
-      // Instantly load new values from cache (0ms transition lag)
-      const oList = api.getCachedOrders();
-      const o = oList?.find((x: any) => x.id === targetOrderId) || null;
-      setOrder(o);
-      
-      const r = api.getCachedRestaurant();
-      setRestaurant(r);
-      
-      const bList = api.getCachedBills();
-      const existing = bList?.find((x: any) => x.order_id === targetOrderId);
-      if (existing) {
-        setBill(existing);
-        setSyncing(false);
-      } else if (o) {
-        const subtotal = Number(o.subtotal || 0);
-        const gst = r?.gst_enabled;
-        const gstRate = Number(r?.gst_rate ?? 5);
-        const tax = gst ? Math.round(subtotal * (gstRate / 100) * 100) / 100 : 0;
-        const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
-        const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
-        const total = Math.round((subtotal + tax) * 100) / 100;
-        const localBillId = "temp-" + Date.now();
-        
-        const localBill = {
-          id: localBillId,
-          order_id: o.id,
-          table_number: o.table_number,
-          items: o.items,
-          subtotal: subtotal,
-          tax_percent: gst ? gstRate : 0,
-          tax: tax,
-          cgst: cgst,
-          sgst: sgst,
-          gst_enabled: !!gst,
-          discount: 0,
-          total: total,
-          status: "pending",
-          restaurant_snapshot: r,
-          created_at: new Date().toISOString(),
-        };
-        setBill(localBill);
-        
-        // If it is a temporary client order, sync it to the backend now!
-        if (orderId.startsWith("temp-")) {
-          setSyncing(true);
-          api.createOrder({ table_number: "Takeaway", items: o.items, notes: "Takeaway" })
-            .then(realOrder => {
-              api.setTempIdMapping(orderId, realOrder.id);
-              api.updateCachedOrder(orderId, realOrder);
-              setOrder(realOrder);
-              
-              api.createBill({ order_id: realOrder.id, tax_percent: gstRate, discount: 0 })
-                .then(realBill => {
-                  api.setTempIdMapping(localBillId, realBill.id);
-                  api.updateCachedBill(localBillId, realBill);
-                  setBill(realBill);
-                  setSyncing(false);
-                })
-                .catch(err => {
-                  setErr(err.message);
-                  setSyncing(false);
-                });
-            })
-            .catch(err => {
-              setErr(err.message);
-              setSyncing(false);
-            });
+      if (tableNumber) {
+        // Combined table billing
+        const tableOrders = (orders || []).filter((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status !== "served" && x.status !== "cancelled");
+        let b = (bills || []).find((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status === "pending");
+        if (!b && tableOrders.length > 0) {
+          b = await api.createBill({ table_number: tableNumber }).catch(() => null);
+        }
+        if (b) {
+          setBill(b);
+          setOrder({ table_number: tableNumber, items: b.items || [], subtotal: b.subtotal || 0, id: b.order_id || targetOrderId });
+        } else if (tableOrders.length > 0) {
+          const subtotal = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+          setOrder({ table_number: tableNumber, items: tableOrders.flatMap((o: any) => o.items || []), subtotal, id: tableOrders[0].id });
         } else {
-          setSyncing(false);
+          setErr(`No active orders found on Table ${tableNumber}`);
+        }
+      } else if (targetOrderId) {
+        const o = (orders || []).find((x: any) => x.id === targetOrderId);
+        setOrder(o || null);
+        let b = (bills || []).find((x: any) => x.order_id === targetOrderId);
+        if (!b && o) {
+          b = await api.createBill({ order_id: targetOrderId }).catch(() => null);
+        }
+        if (b) {
+          setBill(b);
+        } else if (!o) {
+          setErr("Order not found or already settled.");
         }
       } else {
-        setBill(null);
-        setSyncing(false);
+        setErr("No table or order specified for billing.");
       }
-      
-      // Also fetch latest revalidation from server in the background
-      load();
+    } catch (e: any) { 
+      setErr(e.message || "Failed to load bill details."); 
     }
-  }, [orderId, load]);
+  }, [orderId, tableNumber]);
+
+  useEffect(() => {
+    load();
+  }, [orderId, tableNumber, load]);
 
   const handleMarkPaidWithMethod = async (method: string) => {
     if (!bill) return;

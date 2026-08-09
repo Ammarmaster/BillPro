@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { Platform, Vibration, Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/context/AuthContext";
-import { api } from "@/src/lib/api";
+import { api, clearCachePrefix } from "@/src/lib/api";
 
 let Notifications: any = null;
 if (Platform.OS !== "web") {
@@ -64,6 +64,7 @@ interface NotificationContextProps {
   deleteNotif: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
+  subscribe: (listener: (notif: Notification) => void) => () => void;
 }
 
 const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
@@ -124,6 +125,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const ws = useRef<WebSocket | null>(null);
   const audioPlayer = useRef<any>(null);
   const reconnectTimer = useRef<any>(null);
+  const listeners = useRef<Set<(notif: Notification) => void>>(new Set());
+
+  const subscribe = useCallback((listener: (notif: Notification) => void) => {
+    listeners.current.add(listener);
+    return () => {
+      listeners.current.delete(listener);
+    };
+  }, []);
 
   useEffect(() => {
     loadPreferences();
@@ -339,6 +348,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const handleIncomingNotification = (notif: Notification) => {
     const currentPrefs = preferencesRef.current;
     
+    // Invalidate stale in-memory cache so next read gets fresh data
+    clearCachePrefix("/orders");
+    clearCachePrefix("/tables");
+    clearCachePrefix("/dashboard/summary");
+    clearCachePrefix("/bills");
+
+    // Notify all active screen subscribers immediately
+    listeners.current.forEach(fn => {
+      try { fn(notif); } catch (e) { console.warn("Listener notification error:", e); }
+    });
+
     if (notif.category === "kitchen") {
       console.log("\n[DEVICE ALERT] NEW_ORDER RECEIVED");
       console.log("[KITCHEN SOUND] Current enabled state:", currentPrefs.sound_enabled && (currentPrefs.categories.kitchen ?? true));
@@ -378,7 +398,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
     if (currentPrefs.vibration_enabled) {
       if (Platform.OS === "web") {
-        try { window.navigator.vibrate(300); } catch {}
+        try {
+          if (typeof window !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
+            // Only trigger if user has interacted with document
+            if ((window.navigator as any).userActivation ? (window.navigator as any).userActivation.hasBeenActive : true) {
+              window.navigator.vibrate(300);
+            }
+          }
+        } catch {}
       } else {
         Vibration.vibrate(300);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -411,8 +438,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     }
 
-    console.log(`[ALERT SOUND] Playing single sound for category '${notif?.category || "general"}': ${targetSoundUrl}`);
-
     if (Platform.OS === "web") {
       try {
         const audio = new window.Audio(targetSoundUrl);
@@ -422,13 +447,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           p.then(() => {
             console.log("[ALERT SOUND] Single playback completed successfully");
           }).catch((err: any) => {
-            console.warn("[ALERT SOUND] Playback failed:", err);
+            if (err?.name === "NotAllowedError") {
+              console.log("[ALERT SOUND] Autoplay paused until first user touch/click interaction on page.");
+            } else {
+              console.warn("[ALERT SOUND] Playback issue:", err);
+            }
           });
         } else {
-          console.log("[ALERT SOUND] Single playback completed successfully");
+          console.log("[ALERT SOUND] Single playback started");
         }
       } catch (e: any) {
-        console.warn("[ALERT SOUND] Error:", e);
+        console.warn("[ALERT SOUND] Audio error:", e);
       }
     } else {
       try {
@@ -494,7 +523,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         markAllRead,
         deleteNotif,
         clearAll,
-        fetchNotifications
+        fetchNotifications,
+        subscribe
       }}
     >
       {children}

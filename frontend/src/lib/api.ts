@@ -8,13 +8,35 @@ const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
 // In-memory cache for ultra-fast instant UI rendering
 const memoryCache: Record<string, any> = {};
 
+// Synchronous disk hydration on Web and startup
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  try {
+    const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants"];
+    for (const k of keys) {
+      const v = window.localStorage.getItem("disk_cache_" + k);
+      if (v) memoryCache[k] = JSON.parse(v);
+    }
+  } catch {}
+} else if (Platform.OS !== "web") {
+  // Asynchronous pre-hydration on Native
+  const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants"];
+  for (const k of keys) {
+    SecureStore.getItemAsync("disk_cache_" + k).then(v => {
+      if (v) {
+        try { memoryCache[k] = JSON.parse(v); } catch {}
+      }
+    }).catch(() => {});
+  }
+}
+
 // Temporary client-side ID mapping for instant optimistic transitions
 const tempIdMap: Record<string, string> = {};
 
-function clearCachePrefix(prefix: string) {
+export function clearCachePrefix(prefix: string) {
   for (const k in memoryCache) {
     if (k.startsWith(prefix)) {
       memoryCache[k] = null;
+      delItem("disk_cache_" + k).catch(() => {});
     }
   }
 }
@@ -59,44 +81,58 @@ export async function clearTokens() {
 export async function getAccess() { return getItem(KEYS.access); }
 export async function getRefresh() { return getItem(KEYS.refresh); }
 
+const inFlightRequests: Record<string, Promise<any> | undefined> = {};
+
 async function req(path: string, opts: RequestInit = {}, auth = true): Promise<any> {
   const isGet = !opts.method || opts.method.toUpperCase() === "GET";
   
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...((opts.headers as any) || {}),
+  if (isGet) {
+    const existing = inFlightRequests[path];
+    if (existing !== undefined) {
+      return existing;
+    }
+  }
+
+  const execute = async () => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...((opts.headers as any) || {}),
+    };
+    if (auth) {
+      const t = await getAccess();
+      if (t) headers["Authorization"] = `Bearer ${t}`;
+    }
+
+    // Fast cache check for GET requests
+    if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
+      return memoryCache[path];
+    }
+
+    const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+    const text = await res.text();
+    const data = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
+      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    }
+
+    if (isGet) {
+      memoryCache[path] = data;
+      if (data) {
+        setItem("disk_cache_" + path, JSON.stringify(data)).catch(() => {});
+      }
+    }
+    return data;
   };
-  if (auth) {
-    const t = await getAccess();
-    if (t) headers["Authorization"] = `Bearer ${t}`;
-  }
-
-  // Fast cache check for GET requests
-  if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
-    // Return cached immediately, trigger background refresh
-    fetch(`${BASE}/api${path}`, { ...opts, headers })
-      .then(res => res.text())
-      .then(text => {
-        if (text) {
-          try { memoryCache[path] = JSON.parse(text); } catch {}
-        }
-      })
-      .catch(() => {});
-    return memoryCache[path];
-  }
-
-  const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
-  const text = await res.text();
-  const data = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-  }
 
   if (isGet) {
-    memoryCache[path] = data;
+    inFlightRequests[path] = execute().finally(() => {
+      delete inFlightRequests[path];
+    });
+    return inFlightRequests[path];
   }
-  return data;
+
+  return execute();
 }
 
 export const api = {
@@ -281,6 +317,11 @@ export const api = {
   getCachedRestaurant: () => memoryCache['/restaurant'] || null,
   getCachedCategories: () => memoryCache['/categories'] || null,
   getCachedMenu: () => memoryCache['/menu-items'] || null,
+  getCachedTables: () => memoryCache['/tables'] || null,
+  getCachedSummary: () => memoryCache['/dashboard/summary'] || null,
+  getCachedFeedback: () => memoryCache['/dashboard/feedback'] || null,
+  getCachedAdminSummary: () => memoryCache['/admin/summary'] || null,
+  getCachedAdminRestaurants: () => memoryCache['/admin/restaurants'] || null,
   
   // Client-side temp ID resolution
   resolveTempId: (id: string) => tempIdMap[id] || id,

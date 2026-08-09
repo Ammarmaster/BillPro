@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 
 const formatAmount = (num: number, detailed: boolean = false) => {
@@ -30,8 +31,8 @@ function AdminConsole() {
   const router = useRouter();
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
-  const [summary, setSummary] = useState<any>(null);
-  const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(() => api.getCachedAdminSummary() || null);
+  const [restaurants, setRestaurants] = useState<any[]>(() => api.getCachedAdminRestaurants() || []);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -40,12 +41,12 @@ function AdminConsole() {
   const [detailedARR, setDetailedARR] = useState(false);
 
   // Animated values state
-  const [animatedMRR, setAnimatedMRR] = useState(0);
-  const [animatedARR, setAnimatedARR] = useState(0);
-  const [animatedRests, setAnimatedRests] = useState(0);
-  const [animatedUsers, setAnimatedUsers] = useState(0);
-  const [animatedOwners, setAnimatedOwners] = useState(0);
-  const [animatedSubs, setAnimatedSubs] = useState(0);
+  const [animatedMRR, setAnimatedMRR] = useState(() => summary?.mrr || 0);
+  const [animatedARR, setAnimatedARR] = useState(() => summary?.arr || 0);
+  const [animatedRests, setAnimatedRests] = useState(() => summary?.total_restaurants || 0);
+  const [animatedUsers, setAnimatedUsers] = useState(() => summary?.total_users || 0);
+  const [animatedOwners, setAnimatedOwners] = useState(() => summary?.total_owners || 0);
+  const [animatedSubs, setAnimatedSubs] = useState(() => summary?.active_subscriptions || 0);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -54,8 +55,8 @@ function AdminConsole() {
         api.adminSummary().catch(() => null),
         api.adminListRestaurants().catch(() => []),
       ]);
-      setSummary(sum);
-      setRestaurants(rests || []);
+      if (sum) setSummary(sum);
+      if (rests) setRestaurants(rests);
     } catch (e: any) { setErr(e.message); }
   }, []);
 
@@ -365,9 +366,9 @@ function OwnerDashboard() {
   const { user } = useAuth();
   const router = useRouter();
   const { theme, isDark } = useTheme();
-  const [restaurant, setRestaurant] = useState<any>(null);
-  const [summary, setSummary] = useState<any>(null);
-  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
+  const [summary, setSummary] = useState<any>(() => api.getCachedSummary() || null);
+  const [feedbacks, setFeedbacks] = useState<any[]>(() => api.getCachedFeedback() || []);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -375,20 +376,31 @@ function OwnerDashboard() {
     setErr(null);
     try {
       const r = await api.getRestaurant().catch(() => null);
-      setRestaurant(r);
+      if (r) setRestaurant(r);
       const [sum, fb] = await Promise.all([
         api.dashboardSummary().catch(() => null),
         api.getFeedback().catch(() => [])
       ]);
-      setSummary(sum);
-      setFeedbacks(fb || []);
+      if (sum) setSummary(sum);
+      if (fb) setFeedbacks(fb);
     } catch (e: any) { 
       setErr(e.message); 
     }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const [animatedRevenue, setAnimatedRevenue] = useState(0);
+  const { subscribe } = useNotifications();
+
+  // Event-driven reactive dashboard metrics refresh (Zero polling requests!)
+  useEffect(() => {
+    return subscribe((notif) => {
+      if (notif.category === "sales" || notif.category === "payment" || notif.category === "kitchen") {
+        load();
+      }
+    });
+  }, [subscribe, load]);
+
+  const [animatedRevenue, setAnimatedRevenue] = useState(() => summary?.revenue_today || 0);
 
   useEffect(() => {
     if (summary?.revenue_today !== undefined) {
