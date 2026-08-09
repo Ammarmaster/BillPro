@@ -374,17 +374,17 @@ function OwnerDashboard() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const r = await api.getRestaurant();
+      const r = await api.getRestaurant().catch(() => null);
       setRestaurant(r);
-      if (r) {
-        const [sum, fb] = await Promise.all([
-          api.dashboardSummary().catch(() => null),
-          api.getFeedback().catch(() => [])
-        ]);
-        setSummary(sum);
-        setFeedbacks(fb || []);
-      }
-    } catch (e: any) { setErr(e.message); }
+      const [sum, fb] = await Promise.all([
+        api.dashboardSummary().catch(() => null),
+        api.getFeedback().catch(() => [])
+      ]);
+      setSummary(sum);
+      setFeedbacks(fb || []);
+    } catch (e: any) { 
+      setErr(e.message); 
+    }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

@@ -53,26 +53,26 @@ export default function WaiterScreen() {
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const load = useCallback(async () => {
-    if (cats.length === 0 || tables.length === 0) {
-      setLoading(true);
-    }
     setErr(null);
     try {
       const [c, m, t, o, b] = await Promise.all([
-        api.listCategories(),
-        api.listMenu(),
-        api.listTables(),
-        api.listOrders(),
-        api.listBills(),
+        api.listCategories().catch(() => []),
+        api.listMenu().catch(() => []),
+        api.listTables().catch(() => []),
+        api.listOrders().catch(() => []),
+        api.listBills().catch(() => []),
       ]);
       setCats(c || []);
       setItems(m || []);
       setTables(t || []);
       setOrders(o || []);
       setBills(b || []);
-    } catch (e: any) { setErr(e.message); }
-    finally { setLoading(false); }
-  }, [cats.length, tables.length]);
+    } catch (e: any) { 
+      setErr(e.message); 
+    } finally { 
+      setLoading(false); 
+    }
+  }, []);
 
   useFocusEffect(useCallback(() => {
     load();
@@ -111,19 +111,21 @@ export default function WaiterScreen() {
     const matchingOrder = orders.find(
       (o: any) => String(o.table_number).toLowerCase() === String(tblLabel).toLowerCase() && o.status !== "served" && o.status !== "cancelled"
     );
-    if (!matchingOrder) return { status: "Available", order: null, bill: null };
+    if (!matchingOrder) return { status: "Available", order: null, bill: null, isWeb: false };
 
     const matchingBill = bills.find((b: any) => b.order_id === matchingOrder.id && b.status !== "paid");
-    if (matchingBill) return { status: "Billed", order: matchingOrder, bill: matchingBill };
+    if (matchingBill) return { status: "Billed", order: matchingOrder, bill: matchingBill, isWeb: false };
 
-    return { status: "Occupied", order: matchingOrder, bill: null };
+    const isWeb = matchingOrder.created_by === "guest" || bills.some((b: any) => b.order_id === matchingOrder.id && b.status === "paid");
+
+    return { status: isWeb ? "Web Paid" : "Occupied", order: matchingOrder, bill: null, isWeb };
   };
 
   const counts = tables.reduce(
     (acc, t) => {
       const { status } = getTableStatusInfo(t.label);
       if (status === "Available") acc.available += 1;
-      else if (status === "Occupied") acc.occupied += 1;
+      else if (status === "Occupied" || status === "Web Paid") acc.occupied += 1;
       else if (status === "Billed") acc.billed += 1;
       else if (status === "Reserved") acc.reserved += 1;
       return acc;
@@ -252,9 +254,26 @@ export default function WaiterScreen() {
   // -------------------------------------------------------------
   if (viewMode === "order_details" && selectedTableObj) {
     const orderNum = activeOrder?.order_number || activeOrder?.id?.slice(-4) || "46";
-    const statusText = (activeOrder?.status || "SERVED").toUpperCase();
+    const statusText = (activeOrder?.status || "PLACED").toUpperCase();
     const orderItems = activeOrder?.items || [];
-    const orderTotal = activeOrder?.subtotal || orderItems.reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0) || 180;
+    const orderTotal = activeOrder?.subtotal || orderItems.reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0) || 0;
+    const isWebOrder = activeOrder?.created_by === "guest" || bills.some((b: any) => b.order_id === activeOrder?.id && b.status === "paid");
+
+    const completeWebOrder = async () => {
+      if (!activeOrder) return;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      
+      // Optimistic 0ms UI update
+      setOrders(prev => prev.map(o => o.id === activeOrder.id ? { ...o, status: "served" } : o));
+      setViewMode("tables");
+
+      try {
+        await api.updateOrderStatus(activeOrder.id, "served");
+      } catch (e: any) {
+        console.warn("Failed to complete web order:", e);
+        await load();
+      }
+    };
 
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -268,7 +287,7 @@ export default function WaiterScreen() {
             </Pressable>
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
               <Text style={styles.detailsTitle}>Table {selectedTableObj.label}</Text>
-              <Text style={styles.detailsSub}>Main • {selectedTableObj.seats} seats • 1 open order</Text>
+              <Text style={styles.detailsSub}>Main • {selectedTableObj.seats} seats • {isWebOrder ? "1 web order (Paid)" : "1 open order"}</Text>
             </View>
           </View>
 
@@ -277,8 +296,10 @@ export default function WaiterScreen() {
             <View style={styles.orderCard}>
               <View style={styles.orderCardHeader}>
                 <Text style={styles.orderCardNum}>#{orderNum}</Text>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusPillText}>{statusText}</Text>
+                <View style={[styles.statusPill, isWebOrder && { backgroundColor: isDark ? "#065F46" : "#DCFCE7" }]}>
+                  <Text style={[styles.statusPillText, isWebOrder && { color: isDark ? "#34D399" : "#16A34A" }]}>
+                    {isWebOrder ? "PAID ONLINE (WEB)" : statusText}
+                  </Text>
                 </View>
               </View>
 
@@ -351,20 +372,33 @@ export default function WaiterScreen() {
               <Text style={styles.addOrderBtnText}>Edit Order</Text>
             </Pressable>
 
-            <Pressable
-              style={styles.genBillBtn}
-              onPress={() => {
-                if (activeOrder) {
-                  router.push({ pathname: "/(app)/billing", params: { orderId: activeOrder.id } });
-                }
-              }}
-            >
-              <View>
-                <Text style={styles.genBillAmt}>₹{orderTotal}</Text>
-                <Text style={styles.genBillSub}>Generate Bill</Text>
-              </View>
-              <Ionicons name="receipt-outline" size={22} color="#FFFFFF" />
-            </Pressable>
+            {isWebOrder ? (
+              <Pressable
+                style={[styles.genBillBtn, { backgroundColor: "#10B981", shadowColor: "#10B981" }]}
+                onPress={completeWebOrder}
+              >
+                <View>
+                  <Text style={styles.genBillAmt}>Paid Online</Text>
+                  <Text style={styles.genBillSub}>Complete & Free Table</Text>
+                </View>
+                <Ionicons name="checkmark-done-circle" size={24} color="#FFFFFF" />
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.genBillBtn}
+                onPress={() => {
+                  if (activeOrder) {
+                    router.push({ pathname: "/(app)/billing", params: { orderId: activeOrder.id } });
+                  }
+                }}
+              >
+                <View>
+                  <Text style={styles.genBillAmt}>₹{orderTotal}</Text>
+                  <Text style={styles.genBillSub}>Generate Bill</Text>
+                </View>
+                <Ionicons name="receipt-outline" size={22} color="#FFFFFF" />
+              </Pressable>
+            )}
           </View>
 
         </View>
@@ -440,7 +474,12 @@ export default function WaiterScreen() {
                 let textColor = isDark ? "#34D399" : "#10B981";
                 let iconName: any = "checkmark-circle-outline";
 
-                if (status === "Billed") {
+                if (status === "Web Paid") {
+                  bgColor = isDark ? "#13232C" : "#F0FDF4";
+                  borderColor = isDark ? "#065F46" : "#86EFAC";
+                  textColor = isDark ? "#34D399" : "#10B981";
+                  iconName = "globe-outline";
+                } else if (status === "Billed") {
                   bgColor = isDark ? "#161C2E" : "#FEF2F2";
                   borderColor = isDark ? "#7F1D1D" : "#FECACA";
                   textColor = isDark ? "#F87171" : "#EF4444";
