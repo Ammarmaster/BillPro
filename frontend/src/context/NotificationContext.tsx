@@ -122,6 +122,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     preferencesRef.current = preferences;
   }, [preferences]);
 
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   const ws = useRef<WebSocket | null>(null);
   const audioPlayer = useRef<any>(null);
   const reconnectTimer = useRef<any>(null);
@@ -296,7 +301,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log("[WS] Connection closed");
       cleanup();
       ws.current = null;
-      if (user?.tenant_id) {
+      if (userRef.current?.tenant_id) {
         reconnectTimer.current = setTimeout(connectWebSocket, 5000);
       }
     };

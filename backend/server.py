@@ -31,7 +31,14 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 
-client = AsyncIOMotorClient(MONGO_URL)
+# Limit MongoDB connection pool to save RAM on 512MB instances
+client = AsyncIOMotorClient(
+    MONGO_URL,
+    maxPoolSize=10,
+    minPoolSize=1,
+    maxIdleTimeMS=30000,
+    waitQueueTimeoutMS=5000
+)
 db = client[DB_NAME]
 
 # Razorpay client (lazy)
@@ -44,28 +51,35 @@ api = APIRouter(prefix="/api")
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: dict[str, list[WebSocket]] = {}
+        self.active_connections: dict[str, set[WebSocket]] = {}
 
     async def connect(self, tenant_id: str, websocket: WebSocket):
         await websocket.accept()
         if tenant_id not in self.active_connections:
-            self.active_connections[tenant_id] = []
-        self.active_connections[tenant_id].append(websocket)
+            self.active_connections[tenant_id] = set()
+        self.active_connections[tenant_id].add(websocket)
 
     def disconnect(self, tenant_id: str, websocket: WebSocket):
         if tenant_id in self.active_connections:
-            if websocket in self.active_connections[tenant_id]:
-                self.active_connections[tenant_id].remove(websocket)
+            self.active_connections[tenant_id].discard(websocket)
             if not self.active_connections[tenant_id]:
-                del self.active_connections[tenant_id]
+                self.active_connections.pop(tenant_id, None)
 
     async def broadcast_to_tenant(self, tenant_id: str, message: dict):
         if tenant_id in self.active_connections:
-            for connection in self.active_connections[tenant_id]:
+            dead_sockets = []
+            for connection in list(self.active_connections[tenant_id]):
                 try:
                     await connection.send_json(message)
                 except Exception:
-                    pass
+                    dead_sockets.append(connection)
+            for dead in dead_sockets:
+                self.active_connections[tenant_id].discard(dead)
+            if not self.active_connections[tenant_id]:
+                self.active_connections.pop(tenant_id, None)
+
+    def active_count(self) -> int:
+        return sum(len(sockets) for sockets in self.active_connections.values())
 
 manager = ConnectionManager()
 
@@ -158,6 +172,8 @@ async def websocket_endpoint(websocket: WebSocket, tenant_id: str):
             if data == "ping":
                 await websocket.send_text("pong")
     except Exception:
+        pass
+    finally:
         manager.disconnect(tenant_id, websocket)
 
 
@@ -840,7 +856,7 @@ async def list_orders(status_filter: Optional[str] = None, user: dict = Depends(
     q = {"tenant_id": tid}
     if status_filter:
         q["status"] = status_filter
-    orders = await db.orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    orders = await db.orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
     return orders
 
 
@@ -1198,7 +1214,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
 @api.get("/bills")
 async def list_bills(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return bills
 
 
@@ -1209,7 +1225,7 @@ async def list_notifications(category: Optional[str] = None, user: dict = Depend
     q = {"tenant_id": tid}
     if category:
         q["category"] = category
-    notifs = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
+    notifs = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(50)
     return notifs
 
 
@@ -1473,8 +1489,11 @@ async def admin_restaurant_detail(tid: str, user: dict = Depends(require_roles("
     if not r:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     orders_total = await db.orders.count_documents({"tenant_id": tid})
-    paid = await db.bills.find({"tenant_id": tid, "status": "paid"}, {"_id": 0}).to_list(5000)
-    revenue = round(sum(b.get("total", 0) for b in paid), 2)
+    agg = await db.bills.aggregate([
+        {"$match": {"tenant_id": tid, "status": "paid"}},
+        {"$group": {"_id": None, "total": {"$sum": "$total"}}}
+    ]).to_list(1)
+    revenue = round(agg[0]["total"], 2) if agg else 0.0
     sub = await db.subscriptions.find_one({"tenant_id": tid}, {"_id": 0}, sort=[("created_at", -1)])
     return {**r, "orders_total": orders_total, "revenue_total": revenue, "subscription": sub}
 
@@ -1962,41 +1981,33 @@ def _synthesize_wav(sound_type: str) -> bytes:
     wav_io.close()
     return res
 
-    wav_io = io.BytesIO()
-    with wave.open(wav_io, "wb") as wav_file:
-        num_samples = len(data) // 2
-        wav_file.setparams((1, 2, sample_rate, num_samples, "NONE", "not compressed"))
-        wav_file.writeframesraw(bytes(data))
-    res = wav_io.getvalue()
-    wav_io.close()
-    return res
+
+STATIC_SOUND_CACHE: dict[str, bytes] = {}
+
+def get_cached_sound_bytes(sound_filename: str) -> bytes:
+    if sound_filename not in STATIC_SOUND_CACHE:
+        paths_to_check = [
+            Path(__file__).parent / "static" / "sounds" / sound_filename,
+            Path(__file__).parent / "templates" / sound_filename,
+        ]
+        for p in paths_to_check:
+            if p.exists():
+                try:
+                    with open(p, "rb") as f:
+                        STATIC_SOUND_CACHE[sound_filename] = f.read()
+                        break
+                except Exception:
+                    pass
+        if sound_filename not in STATIC_SOUND_CACHE:
+            sound_type = sound_filename.replace(".wav", "")
+            STATIC_SOUND_CACHE[sound_filename] = _synthesize_wav(sound_type)
+    return STATIC_SOUND_CACHE[sound_filename]
 
 
 @app.get("/static/sounds/{sound_filename}")
 async def get_sound_file(sound_filename: str):
     from fastapi import Response
-    
-    # 1. Try serving from filesystem if available
-    paths_to_check = [
-        Path(__file__).parent / "static" / "sounds" / sound_filename,
-        Path(__file__).parent / "templates" / sound_filename,
-    ]
-    for p in paths_to_check:
-        if p.exists():
-            with open(p, "rb") as f:
-                return Response(
-                    content=f.read(),
-                    media_type="audio/wav",
-                    headers={
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "GET, OPTIONS",
-                        "Access-Control-Allow-Headers": "*",
-                    }
-                )
-    
-    # 2. Dynamic in-memory synthesis fallback
-    sound_type = sound_filename.replace(".wav", "")
-    wav_bytes = _synthesize_wav(sound_type)
+    wav_bytes = get_cached_sound_bytes(sound_filename)
     return Response(
         content=wav_bytes,
         media_type="audio/wav",
@@ -2004,6 +2015,7 @@ async def get_sound_file(sound_filename: str):
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "*",
+            "Cache-Control": "public, max-age=31536000, immutable",
         }
     )
 
@@ -2230,7 +2242,46 @@ async def seed_super_admin():
                 "id": str(uuid.uuid4()), **p, "is_active": True,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
-            logger.info("Seeded plan: %s / %s", p["name"], p["interval"])
+@api.get("/health/memory")
+async def health_memory():
+    import os, psutil
+    rss_mb = 0.0
+    vms_mb = 0.0
+    try:
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+        rss_mb = round(mem_info.rss / (1024 * 1024), 2)
+        vms_mb = round(mem_info.vms / (1024 * 1024), 2)
+    except Exception:
+        pass
+
+    return {
+        "status": "healthy",
+        "rss_mb": rss_mb,
+        "vms_mb": vms_mb,
+        "active_websockets": manager.active_count(),
+        "summary_cache_size": len(dashboard_summary_cache),
+        "sound_cache_size": len(STATIC_SOUND_CACHE),
+    }
+
+
+def trim_system_memory():
+    import gc, ctypes
+    gc.collect()
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+async def start_memory_trim_worker():
+    async def _worker():
+        while True:
+            await asyncio.sleep(60)
+            trim_system_memory()
+    asyncio.create_task(_worker())
 
 
 @app.on_event("shutdown")
