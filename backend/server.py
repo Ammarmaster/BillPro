@@ -1160,6 +1160,11 @@ async def public_orders_checkout(payload: PublicCheckoutIn):
 async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
     
+    if payload.order_id:
+        existing_b = await db.bills.find_one({"order_id": payload.order_id, "tenant_id": tid}, {"_id": 0})
+        if existing_b:
+            return existing_b
+
     target_orders = []
     if payload.order_ids and len(payload.order_ids) > 0:
         target_orders = await db.orders.find({"id": {"$in": payload.order_ids}, "tenant_id": tid}, {"_id": 0}).to_list(100)

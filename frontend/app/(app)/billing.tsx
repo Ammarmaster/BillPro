@@ -62,96 +62,98 @@ export default function Billing() {
   const { theme, isDark } = useTheme();
   const { orderId, tableNumber } = useLocalSearchParams<{ orderId?: string; tableNumber?: string }>();
 
-  // Synchronous cache lookup for 0ms visual render boots without any spinner delay
-  const [order, setOrder] = useState<any>(() => {
+  // Synchronous cache lookup helper
+  const computeInitialState = () => {
     const oList = api.getCachedOrders() || [];
-    if (orderId) {
-      const targetOrderId = api.resolveTempId(orderId);
-      return oList.find((x: any) => x.id === targetOrderId) || null;
-    }
-    if (tableNumber) {
-      const tOrders = oList.filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
-      if (tOrders.length > 0) {
-        return {
-          table_number: tableNumber,
-          items: tOrders.flatMap((o: any) => o.items || []),
-          subtotal: tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0),
-          id: tOrders[0].id
-        };
-      }
-    }
-    return null;
-  });
-
-  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
-
-  const [bill, setBill] = useState<any>(() => {
     const bList = api.getCachedBills() || [];
     const r = api.getCachedRestaurant();
     const gst = r?.gst_enabled;
     const gstRate = Number(r?.gst_rate ?? 5);
 
-    if (orderId) {
-      const targetOrderId = api.resolveTempId(orderId);
-      const existing = bList.find((x: any) => x.order_id === targetOrderId && x.status !== "paid");
-      if (existing) return existing;
-    }
-    if (tableNumber) {
-      const existingTableBill = bList.find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
-      if (existingTableBill) return existingTableBill;
-    }
-
-    // Instant optimistic bill calculation from cached orders
-    const oList = api.getCachedOrders() || [];
-    let itemsToBill: any[] = [];
-    let subtotalToBill = 0;
-    let tableNum = tableNumber || "";
-    let primaryOrderId = "";
+    let initialOrder = null;
+    let initialBill = null;
 
     if (orderId) {
       const targetOrderId = api.resolveTempId(orderId);
       const o = oList.find((x: any) => x.id === targetOrderId);
-      if (o) {
-        itemsToBill = o.items || [];
-        subtotalToBill = Number(o.subtotal || 0);
-        tableNum = o.table_number || "";
-        primaryOrderId = o.id;
+      initialOrder = o || null;
+      const existing = bList.find((x: any) => x.order_id === targetOrderId);
+      if (existing) {
+        initialBill = existing;
+      } else if (o) {
+        const itemsToBill = o.items || [];
+        const subtotalToBill = Number(o.subtotal || 0);
+        const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
+        const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
+        const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
+        const total = Math.round((subtotalToBill + tax) * 100) / 100;
+        initialBill = {
+          id: "temp-" + Date.now(),
+          order_id: targetOrderId,
+          table_number: o.table_number || "",
+          customer_name: o.customer_name || "Guest",
+          items: itemsToBill,
+          subtotal: subtotalToBill,
+          tax_percent: gst ? gstRate : 0,
+          tax: tax,
+          cgst: cgst,
+          sgst: sgst,
+          gst_enabled: !!gst,
+          discount: 0,
+          total: total,
+          status: o.status === "served" ? "paid" : "pending",
+          restaurant_snapshot: r,
+          created_at: o.created_at || new Date().toISOString(),
+        };
       }
     } else if (tableNumber) {
       const tOrders = oList.filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
       if (tOrders.length > 0) {
-        itemsToBill = tOrders.flatMap((o: any) => o.items || []);
-        subtotalToBill = tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
-        primaryOrderId = tOrders[0].id;
+        const itemsToBill = tOrders.flatMap((o: any) => o.items || []);
+        const subtotalToBill = tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+        initialOrder = {
+          table_number: tableNumber,
+          items: itemsToBill,
+          subtotal: subtotalToBill,
+          id: tOrders[0].id
+        };
+        const existingTableBill = bList.find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
+        if (existingTableBill) {
+          initialBill = existingTableBill;
+        } else {
+          const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
+          const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
+          const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
+          const total = Math.round((subtotalToBill + tax) * 100) / 100;
+          initialBill = {
+            id: "temp-" + Date.now(),
+            order_id: tOrders[0].id,
+            order_ids: tOrders.map((o: any) => o.id),
+            table_number: tableNumber,
+            items: itemsToBill,
+            subtotal: subtotalToBill,
+            tax_percent: gst ? gstRate : 0,
+            tax: tax,
+            cgst: cgst,
+            sgst: sgst,
+            gst_enabled: !!gst,
+            discount: 0,
+            total: total,
+            status: "pending",
+            restaurant_snapshot: r,
+            created_at: new Date().toISOString(),
+          };
+        }
       }
     }
 
-    if (itemsToBill.length > 0 || subtotalToBill > 0) {
-      const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
-      const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
-      const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
-      const total = Math.round((subtotalToBill + tax) * 100) / 100;
-      return {
-        id: "temp-" + Date.now(),
-        order_id: primaryOrderId,
-        table_number: tableNum,
-        items: itemsToBill,
-        subtotal: subtotalToBill,
-        tax_percent: gst ? gstRate : 0,
-        tax: tax,
-        cgst: cgst,
-        sgst: sgst,
-        gst_enabled: !!gst,
-        discount: 0,
-        total: total,
-        status: "pending",
-        restaurant_snapshot: r,
-        created_at: new Date().toISOString(),
-      };
-    }
-    return null;
-  });
+    return { initialOrder, initialBill };
+  };
 
+  const initial = computeInitialState();
+  const [order, setOrder] = useState<any>(initial.initialOrder);
+  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
+  const [bill, setBill] = useState<any>(initial.initialBill);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [qrUri, setQrUri] = useState<string | null>(null);
@@ -159,6 +161,13 @@ export default function Billing() {
   
   // Payment Modal state
   const [payModal, setPayModal] = useState(false);
+
+  // 1. Immediately reset state on route param changes (Eliminates old bill flashing completely)
+  useEffect(() => {
+    const { initialOrder, initialBill } = computeInitialState();
+    setOrder(initialOrder);
+    setBill(initialBill);
+  }, [orderId, tableNumber]);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -172,7 +181,20 @@ export default function Billing() {
       
       const targetOrderId = orderId ? api.resolveTempId(orderId) : "";
       
-      if (tableNumber) {
+      if (orderId && targetOrderId) {
+        // Individual order billing - STAGED ONLY TO THIS SPECIFIC ORDER
+        const o = (orders || []).find((x: any) => x.id === targetOrderId);
+        if (o) setOrder(o);
+        let b = (bills || []).find((x: any) => x.order_id === targetOrderId);
+        if (!b && o) {
+          b = await api.createBill({ order_id: targetOrderId }).catch(() => null);
+        }
+        if (b) {
+          setBill(b);
+        } else if (!o) {
+          setErr("Order not found or already settled.");
+        }
+      } else if (tableNumber) {
         // Combined table billing for Settle Entire Table
         const tableOrders = (orders || []).filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
         let b = (bills || []).find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
@@ -187,19 +209,6 @@ export default function Billing() {
           setOrder({ table_number: tableNumber, items: tableOrders.flatMap((o: any) => o.items || []), subtotal, id: tableOrders[0].id });
         } else {
           setErr(`No active orders found on Table ${tableNumber}`);
-        }
-      } else if (targetOrderId) {
-        // Individual order billing
-        const o = (orders || []).find((x: any) => x.id === targetOrderId);
-        setOrder(o || null);
-        let b = (bills || []).find((x: any) => x.order_id === targetOrderId);
-        if (!b && o) {
-          b = await api.createBill({ order_id: targetOrderId }).catch(() => null);
-        }
-        if (b) {
-          setBill(b);
-        } else if (!o) {
-          setErr("Order not found or already settled.");
         }
       } else {
         setErr("No table or order specified for billing.");
