@@ -9,11 +9,14 @@ import { api } from "@/src/lib/api";
 import { printBill, sharePdf } from "@/src/lib/print";
 import { colors, spacing, radius } from "@/src/theme";
 
+import { useTheme } from "@/src/context/ThemeContext";
+
 export default function BillsHistory() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [bills, setBills] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { theme, isDark } = useTheme();
+  const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selBill, setSelBill] = useState<any>(null);
 
@@ -21,7 +24,7 @@ export default function BillsHistory() {
     setErr(null);
     try {
       const data = await api.listBills();
-      setBills(data || []);
+      if (data) setBills(data);
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);

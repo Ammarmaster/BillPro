@@ -127,14 +127,10 @@ export default function WaiterScreen() {
       const { order_id, status, table_number, event } = data;
 
       // 0ms instant table state update on payment / order completion
-      if (event === "ORDER_SERVED" || event === "ORDER_PAID" || event === "TABLE_SETTLED" || status === "served") {
-        setOrders(prev => prev.map(o => {
-          if (order_id && o.id === order_id) return { ...o, status: "served" };
-          if (table_number && isSameTable(o.table_number, table_number) && (!order_id || o.id === order_id)) {
-            return { ...o, status: "served" };
-          }
-          return o;
-        }));
+      if (event === "TABLE_SETTLED") {
+        setOrders(prev => prev.map(o => (table_number && isSameTable(o.table_number, table_number)) ? { ...o, status: "served" } : o));
+      } else if (order_id && (event === "ORDER_SERVED" || event === "ORDER_PAID" || status === "served" || status === "paid")) {
+        setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status: "served" } : o));
       } else if (order_id && status) {
         setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status } : o));
       }

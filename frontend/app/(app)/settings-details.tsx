@@ -20,7 +20,7 @@ export default function SettingsDetails() {
   const { theme, isDark } = useTheme();
 
   const [form, setForm] = useState({
-    name: "", owner_name: "", bio: "", address: "", phone: "",
+    name: "", owner_name: "", bio: "", address: "", phone: "", phone2: "",
     gst: "", gst_enabled: false, gst_rate: "5", fssai: "", upi_id: "", merchant_name: "",
     logo_base64: "", google_maps_link: "", googleReviewUrl: "",
   });
@@ -42,7 +42,7 @@ export default function SettingsDetails() {
       if (r) {
         setForm({
           name: r.name || "", owner_name: r.owner_name || "", bio: r.bio || "",
-          address: r.address || "", phone: r.phone || "",
+          address: r.address || "", phone: r.phone || "", phone2: r.phone2 || "",
           gst: r.gst || "", gst_enabled: !!r.gst_enabled, gst_rate: String(r.gst_rate ?? "5"), fssai: r.fssai || "",
           upi_id: r.upi_id || "", merchant_name: r.merchant_name || "",
           logo_base64: r.logo_base64 || "", google_maps_link: r.google_maps_link || "",
@@ -162,7 +162,8 @@ export default function SettingsDetails() {
 
                 {field("name", "Restaurant Name *", "Master Cheff")}
                 {field("owner_name", "Owner Name *", "Owner name")}
-                {field("phone", "Phone", "Phone number", { keyboardType: "phone-pad" })}
+                {field("phone", "Phone Number 1", "+91 XXXXX XXXXX", { keyboardType: "phone-pad" })}
+                {field("phone2", "Phone Number 2 (Optional)", "+91 XXXXX XXXXX", { keyboardType: "phone-pad" })}
                 {field("address", "Address", "Full address", { multiline: true })}
                 {field("upi_id", "UPI ID (for payments) *", "8152075375-2@ybl")}
                 {field("gst", "GSTIN", "22AAAAA0000A1Z5")}

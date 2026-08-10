@@ -383,6 +383,7 @@ class RestaurantIn(BaseModel):
     logo_base64: Optional[str] = ""
     address: str = ""
     phone: str = ""
+    phone2: Optional[str] = ""
     gst: Optional[str] = ""
     gst_enabled: bool = False
     gst_rate: float = 5.0
@@ -1452,7 +1453,50 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
 @api.get("/bills")
 async def list_bills(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    
+    # Auto-reconcile any served orders in db.orders without an explicit bill doc
+    existing_order_ids = {b.get("order_id") for b in bills if b.get("order_id")}
+    for b in bills:
+        for oid in b.get("order_ids", []):
+            existing_order_ids.add(oid)
+
+    served_orders = await db.orders.find({
+        "tenant_id": tid,
+        "status": "served",
+        "id": {"$nin": list(existing_order_ids)}
+    }, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+    for so in served_orders:
+        bill_id = str(uuid.uuid4())
+        b_doc = {
+            "id": bill_id,
+            "tenant_id": tid,
+            "order_id": so["id"],
+            "session_id": so.get("session_id", ""),
+            "customer_name": so.get("customer_name", "Guest"),
+            "table_number": so.get("table_number", "-"),
+            "items": so.get("items", []),
+            "subtotal": float(so.get("subtotal", 0.0)),
+            "tax_percent": 0.0,
+            "tax": 0.0,
+            "cgst": 0.0,
+            "sgst": 0.0,
+            "gst_enabled": False,
+            "discount": 0.0,
+            "total": float(so.get("subtotal", 0.0)),
+            "upi_url": "",
+            "status": "paid",
+            "payment_method": so.get("payment_method") or "UPI",
+            "created_by": so.get("created_by", "staff"),
+            "created_at": so.get("created_at", datetime.now(timezone.utc).isoformat()),
+            "paid_at": so.get("created_at", datetime.now(timezone.utc).isoformat()),
+        }
+        await db.bills.insert_one(b_doc)
+        b_doc.pop("_id", None)
+        bills.append(b_doc)
+
+    bills.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return bills
 
 

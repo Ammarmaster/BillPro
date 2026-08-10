@@ -296,6 +296,9 @@ export default function Billing() {
   const dateStr = bill?.created_at ? new Date(bill.created_at).toLocaleString() : new Date().toLocaleString();
   const isPaid = bill?.status === "paid";
   const restaurantName = (bill?.restaurant_snapshot?.name) || restaurant?.name || "Master cheff";
+  const restaurantAddress = (bill?.restaurant_snapshot?.address) || restaurant?.address || "";
+  const restaurantPhone = (bill?.restaurant_snapshot?.phone) || restaurant?.phone || "";
+  const restaurantPhone2 = (bill?.restaurant_snapshot?.phone2) || restaurant?.phone2 || "";
   const upiId = restaurant?.upi_id || "8152075375-2@ybl";
   const totalAmt = bill?.total || order?.subtotal || 760;
   const itemsList = bill?.items || order?.items || [];
@@ -359,6 +362,14 @@ export default function Billing() {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
           <View style={[styles.billCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
             <Text style={[styles.restaurantHeaderTitle, { color: theme.onSurface }]}>{restaurantName}</Text>
+            {!!restaurantAddress && (
+              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>{restaurantAddress}</Text>
+            )}
+            {(restaurantPhone && restaurantPhone2) ? (
+              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>Phone: {restaurantPhone} / {restaurantPhone2}</Text>
+            ) : (restaurantPhone || restaurantPhone2) ? (
+              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>Phone: {restaurantPhone || restaurantPhone2}</Text>
+            ) : null}
             
             {/* Items List */}
             <View style={{ marginVertical: spacing.md, gap: 8 }}>
@@ -485,7 +496,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  restaurantHeaderTitle: { color: "#0F172A", fontSize: 22, fontWeight: "900", textAlign: "center", marginBottom: spacing.md },
+  restaurantHeaderTitle: { color: "#0F172A", fontSize: 22, fontWeight: "900", textAlign: "center", marginBottom: 2 },
+  restaurantSubText: { color: "#64748B", fontSize: 13, textAlign: "center", marginBottom: 2, fontWeight: "500" },
   itemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 2 },
   itemQty: { color: "#635BFF", fontSize: 15, fontWeight: "800", width: 32 },
   itemName: { color: "#0F172A", fontSize: 15, fontWeight: "600", flex: 1 },

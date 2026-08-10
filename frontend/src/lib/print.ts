@@ -53,7 +53,14 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
     }
     lines.push(`[C]<b><font size='big'>${r.name || "Restaurant"}</font></b>\n`);
     if (r.address) lines.push(`[C]${r.address}\n`);
-    if (r.phone) lines.push(`[C]Ph: ${r.phone}\n`);
+    if (r.phone && r.phone2) {
+      lines.push(`[C]Phone: ${r.phone}\n`);
+      lines.push(`[C]       ${r.phone2}\n`);
+    } else if (r.phone) {
+      lines.push(`[C]Phone: ${r.phone}\n`);
+    } else if (r.phone2) {
+      lines.push(`[C]Phone: ${r.phone2}\n`);
+    }
     if (r.gst) lines.push(`[C]GSTIN: ${r.gst}\n`);
     if (r.fssai) lines.push(`[C]FSSAI: ${r.fssai}\n`);
     lines.push(`[C]${divider}\n`);
@@ -288,7 +295,7 @@ function billHtml(bill: any): string {
       <div class="center">${logoBlock}</div>
       <h1 class="center">${escapeHtml(r.name || "Restaurant")}</h1>
       ${r.address ? `<p class="small center">${escapeHtml(r.address)}</p>` : ""}
-      ${r.phone ? `<p class="small center">Ph: ${escapeHtml(r.phone)}</p>` : ""}
+      ${(r.phone && r.phone2) ? `<p class="small center">Phone: ${escapeHtml(r.phone)}<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${escapeHtml(r.phone2)}</p>` : (r.phone ? `<p class="small center">Phone: ${escapeHtml(r.phone)}</p>` : (r.phone2 ? `<p class="small center">Phone: ${escapeHtml(r.phone2)}</p>` : ""))}
       ${r.gst ? `<p class="small center">GSTIN: ${escapeHtml(r.gst)}</p>` : ""}
       ${r.fssai ? `<p class="small center">FSSAI: ${escapeHtml(r.fssai)}</p>` : ""}
       <hr />

@@ -228,10 +228,10 @@ export const api = {
     const bList = memoryCache["/bills"] || [];
     memoryCache["/bills"] = bList.map((b: any) => (b.id === resolvedId || b.id === id) ? { ...b, ...res, status: "paid" } : b);
     
-    // Also mark the corresponding order status as served in the cached orders!
+    // Also mark ONLY the target order(s) as served in the cached orders
     const oList = memoryCache["/orders"] || [];
     memoryCache["/orders"] = oList.map((o: any) => {
-      if (o.id === res.order_id || (res.order_ids && res.order_ids.includes(o.id)) || (res.table_number && String(o.table_number).toLowerCase() === String(res.table_number).toLowerCase())) {
+      if (o.id === res.order_id || (res.order_ids && res.order_ids.includes(o.id))) {
         return { ...o, status: "served" };
       }
       return o;
