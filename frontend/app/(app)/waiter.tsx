@@ -335,7 +335,7 @@ export default function WaiterScreen() {
           </View>
 
           {/* Orders Scrollable List */}
-          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 180 + insets.bottom }} showsVerticalScrollIndicator={false}>
             {tableOrders.length === 0 ? (
               <View style={[styles.center, { paddingVertical: 60 }]}>
                 <Ionicons name="checkmark-circle" size={48} color="#10B981" />
@@ -352,19 +352,19 @@ export default function WaiterScreen() {
               tableOrders.map((order: any, idx: number) => {
                 const orderNum = order.order_number || order.id?.slice(-4) || `${idx + 1}`;
                 const statusText = (order.status || "PLACED").toUpperCase();
-                const isWebOrder = order.created_by === "guest" || bills.some((b: any) => b.order_id === order.id && b.status === "paid");
+                const isWebOrder = order.created_by === "guest" || order.notes?.includes("Web Order") || order.session_id || bills.some((b: any) => b.order_id === order.id && b.status === "paid");
                 const custName = order.customer_name || `Guest ${idx + 1}`;
                 const orderTotal = order.subtotal || (order.items || []).reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0);
 
                 return (
-                  <View key={order.id || idx} style={[styles.orderCard, { marginBottom: spacing.md }]}>
+                  <View key={order.id || idx} style={[styles.orderCard, { marginBottom: spacing.md, backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
                     <View style={styles.orderCardHeader}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                         <Text style={[styles.orderCardNum, { color: "#635BFF", fontSize: 15 }]}>👤 {custName}</Text>
                         <Text style={[styles.orderCardNum, { fontSize: 13, color: theme.onSurfaceSecondary }]}>#{orderNum}</Text>
                       </View>
-                      <View style={[styles.statusPill, isWebOrder && { backgroundColor: isDark ? "#065F46" : "#DCFCE7" }]}>
-                        <Text style={[styles.statusPillText, isWebOrder && { color: isDark ? "#34D399" : "#16A34A" }]}>
+                      <View style={[styles.statusPill, { backgroundColor: isWebOrder ? (isDark ? "#065F46" : "#DCFCE7") : (order.status === "placed" ? "#EEF2FF" : "#ECFDF5") }]}>
+                        <Text style={[styles.statusPillText, { color: isWebOrder ? (isDark ? "#34D399" : "#16A34A") : (order.status === "placed" ? "#635BFF" : "#10B981") }]}>
                           {isWebOrder ? "PAID ONLINE" : statusText}
                         </Text>
                       </View>
@@ -375,8 +375,8 @@ export default function WaiterScreen() {
                       {(order.items || []).map((it: any, iIdx: number) => (
                         <View key={iIdx} style={styles.itemRow}>
                           <Text style={styles.itemQty}>{it.quantity}×</Text>
-                          <Text style={styles.itemTitle}>{it.name}</Text>
-                          <Text style={styles.itemAmt}>₹{it.price * it.quantity}</Text>
+                          <Text style={[styles.itemTitle, { color: theme.onSurface }]}>{it.name}</Text>
+                          <Text style={[styles.itemAmt, { color: theme.onSurface }]}>₹{it.price * it.quantity}</Text>
                         </View>
                       ))}
                     </View>
@@ -398,52 +398,53 @@ export default function WaiterScreen() {
                       </View>
                     ) : null}
 
-                    {/* Subtotal Footer */}
-                    <View style={[styles.subtotalRow, { marginTop: spacing.xs, paddingTop: spacing.xs }]}>
-                      <Text style={styles.subtotalLbl}>Order Amount</Text>
-                      <Text style={styles.subtotalVal}>₹{orderTotal}</Text>
-                    </View>
+                    {/* Footer / Subtotal + Actions */}
+                    <View style={[styles.subtotalRow, { borderTopColor: theme.border }]}>
+                      <View>
+                        <Text style={[styles.subtotalLbl, { color: theme.onSurfaceSecondary }]}>Order Amount</Text>
+                        <Text style={[styles.subtotalVal, { color: theme.onSurface }]}>₹{orderTotal}</Text>
+                      </View>
 
-                    {/* Per-Order Actions */}
-                    <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-                      <Pressable
-                        style={[styles.guestActionBtn, { borderColor: theme.border }]}
-                        onPress={() => {
-                          setActiveOrder(order);
-                          setCurrentGuestName(custName);
-                          setCurrentSessionId(order.session_id || "");
-                          const mapped: Line[] = (order.items || []).map((it: any) => ({
-                            menu_item_id: it.menu_item_id,
-                            name: it.name,
-                            price: it.price,
-                            quantity: it.quantity,
-                            notes: it.notes || "",
-                          }));
-                          setLines(mapped);
-                          setViewMode("menu_order");
-                        }}
-                      >
-                        <Ionicons name="create-outline" size={14} color="#635BFF" />
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginLeft: 4 }}>Edit</Text>
-                      </Pressable>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <Pressable
+                          style={[styles.guestActionBtn, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}
+                          onPress={() => {
+                            setActiveOrder(order);
+                            setCurrentGuestName(custName);
+                            setCurrentSessionId(order.session_id || "");
+                            const mapped: Line[] = (order.items || []).map((it: any) => ({
+                              menu_item_id: it.menu_item_id || it.id || "",
+                              name: it.name,
+                              price: it.price,
+                              quantity: it.quantity,
+                              notes: it.notes || "",
+                            }));
+                            setLines(mapped);
+                            setViewMode("menu_order");
+                          }}
+                        >
+                          <Ionicons name="create-outline" size={14} color="#635BFF" />
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginLeft: 4 }}>Edit</Text>
+                        </Pressable>
 
-                      {isWebOrder ? (
-                        <Pressable
-                          style={[styles.guestActionBtn, { backgroundColor: "#10B981", borderColor: "#10B981" }]}
-                          onPress={() => completeIndividualOrder(order.id)}
-                        >
-                          <Ionicons name="checkmark-circle-outline" size={14} color="#FFF" />
-                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Mark Served</Text>
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          style={[styles.guestActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
-                          onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id } })}
-                        >
-                          <Ionicons name="receipt-outline" size={14} color="#FFF" />
-                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
-                        </Pressable>
-                      )}
+                        {isWebOrder ? (
+                          <Pressable
+                            style={[styles.guestActionBtn, { backgroundColor: "#10B981", borderColor: "#10B981" }]}
+                            onPress={() => completeIndividualOrder(order.id)}
+                          >
+                            <Ionicons name="checkmark-circle-outline" size={14} color="#FFF" />
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Mark Served</Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            style={[styles.guestActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
+                            onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id } })}
+                          >
+                            <Ionicons name="receipt-outline" size={14} color="#FFF" />
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
+                          </Pressable>
+                        )}
+                      </View>
                     </View>
                   </View>
                 );
@@ -452,7 +453,7 @@ export default function WaiterScreen() {
           </ScrollView>
 
           {/* Bottom Action Bar */}
-          <View style={[styles.bottomActionBar, { paddingBottom: insets.bottom + spacing.md }]}>
+          <View style={[styles.bottomActionBar, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 16) + spacing.md }]}>
             <Pressable
               style={styles.addOrderBtn}
               onPress={() => setShowGuestPicker(true)}

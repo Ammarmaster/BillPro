@@ -222,26 +222,37 @@ export const api = {
     return res;
   },
   markBillPaid: async (id: string, paymentMethod = "UPI") => {
-    let resolvedId = tempIdMap[id];
-    if (!resolvedId && id.startsWith("temp-")) {
-      for (let i = 0; i < 40; i++) {
-        await new Promise(r => setTimeout(r, 100));
-        resolvedId = tempIdMap[id];
-        if (resolvedId) break;
-      }
-    }
-    if (!resolvedId) resolvedId = id;
+    let resolvedId = tempIdMap[id] || id;
 
     const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
     const bList = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = bList.map((b: any) => b.id === resolvedId ? res : b);
+    memoryCache["/bills"] = bList.map((b: any) => (b.id === resolvedId || b.id === id) ? { ...b, ...res, status: "paid" } : b);
     
     // Also mark the corresponding order status as served in the cached orders!
     const oList = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = oList.map((o: any) => o.id === res.order_id ? { ...o, status: "served" } : o);
+    memoryCache["/orders"] = oList.map((o: any) => {
+      if (o.id === res.order_id || (res.order_ids && res.order_ids.includes(o.id)) || (res.table_number && String(o.table_number).toLowerCase() === String(res.table_number).toLowerCase())) {
+        return { ...o, status: "served" };
+      }
+      return o;
+    });
     
     clearCachePrefix("/tables");
     clearCachePrefix("/dashboard/summary");
+    return res;
+  },
+  settleTable: async (tableNumber: string, paymentMethod = "UPI") => {
+    const res = await req("/bills/settle-table", { method: "POST", body: JSON.stringify({ table_number: tableNumber, payment_method: paymentMethod }) });
+    const oList = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = oList.map((o: any) => {
+      if (String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase()) {
+        return { ...o, status: "served" };
+      }
+      return o;
+    });
+    clearCachePrefix("/tables");
+    clearCachePrefix("/dashboard/summary");
+    clearCachePrefix("/bills");
     return res;
   },
   listBills: () => req("/bills"),

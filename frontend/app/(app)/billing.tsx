@@ -205,6 +205,8 @@ export default function Billing() {
     // Play haptic success immediately (0ms user feedback)
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     
+    const targetTbl = bill.table_number || order?.table_number || tableNumber;
+
     // Optimistic UI updates
     const updatedLocalBill = { ...bill, status: "paid", payment_method: method };
     setBill(updatedLocalBill);
@@ -212,11 +214,12 @@ export default function Billing() {
     
     // Update local cache so that navigating back to waiter/tables is updated instantly
     api.updateCachedBill(bill.id, updatedLocalBill);
-    const oList = api.getCachedOrders();
-    const updatedOrder = oList?.find((o: any) => o.id === bill.order_id);
-    if (updatedOrder) {
-      api.updateCachedOrder(bill.order_id, { ...updatedOrder, status: "served" });
-    }
+    const oList = api.getCachedOrders() || [];
+    oList.forEach((o: any) => {
+      if ((targetTbl && String(o.table_number).toLowerCase() === String(targetTbl).toLowerCase()) || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
+        api.updateCachedOrder(o.id, { ...o, status: "served" });
+      }
+    });
 
     // Auto-print receipt optimistically if cashier printer is configured for auto-print
     getPrinterSettings("cashier").then(async settings => {
@@ -225,10 +228,18 @@ export default function Billing() {
       }
     }).catch(() => {});
     
-    // Perform background sync silently
-    api.markBillPaid(bill.id, method).catch((e: any) => {
-      console.warn("Background markBillPaid sync failed:", e.message);
-    });
+    // Perform background sync with table settlement guarantee
+    if (targetTbl && targetTbl !== "Takeaway") {
+      api.settleTable(targetTbl, method).catch(() => {
+        if (bill.id && !bill.id.startsWith("temp-")) {
+          api.markBillPaid(bill.id, method).catch(() => {});
+        }
+      });
+    } else if (bill.id && !bill.id.startsWith("temp-")) {
+      api.markBillPaid(bill.id, method).catch((e: any) => {
+        console.warn("Background markBillPaid sync failed:", e.message);
+      });
+    }
   };
 
   const doPrint = async () => {

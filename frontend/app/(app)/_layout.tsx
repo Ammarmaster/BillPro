@@ -1,13 +1,15 @@
 import { useEffect } from "react";
 import { Tabs, useRouter, usePathname } from "expo-router";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/lib/api";
 import { colors } from "@/src/theme";
 
 export default function AppLayout() {
+  const insets = useSafeAreaInsets();
   const { user, loading } = useAuth();
   const { theme, isDark } = useTheme();
   const router = useRouter();
@@ -47,6 +49,8 @@ export default function AppLayout() {
   const isKitchen = user.role === "kitchen";
   const isStaff = isWaiter || isKitchen;
 
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 14 : 10);
+
   return (
     <Tabs
       screenOptions={{
@@ -57,8 +61,8 @@ export default function AppLayout() {
           backgroundColor: theme.tabBarBg,
           borderTopColor: theme.border,
           borderTopWidth: 1,
-          height: 72,
-          paddingBottom: 10,
+          height: 60 + bottomInset,
+          paddingBottom: bottomInset,
           paddingTop: 8,
           elevation: 0,
         },

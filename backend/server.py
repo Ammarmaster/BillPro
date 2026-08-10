@@ -1111,8 +1111,13 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
         if single:
             target_orders = [single]
     elif payload.table_number:
+        tbl_raw = str(payload.table_number).strip()
+        tbl_num = tbl_raw.replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
+        tbl_patterns = [tbl_raw]
+        if tbl_num:
+            tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
         target_orders = await db.orders.find({
-            "table_number": payload.table_number,
+            "table_number": {"$in": tbl_patterns},
             "tenant_id": tid,
             "status": {"$nin": ["served", "cancelled"]}
         }, {"_id": 0}).to_list(100)
@@ -1187,19 +1192,87 @@ class PayIn(BaseModel):
     payment_method: str = "UPI"
 
 
+class SettleTableIn(BaseModel):
+    table_number: str
+    payment_method: str = "UPI"
+
+
+@api.post("/bills/settle-table")
+async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+    tid = await _ensure_tenant(user)
+    pm = payload.payment_method or "UPI"
+    tbl_raw = str(payload.table_number).strip()
+    tbl_num = tbl_raw.replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
+    tbl_patterns = [tbl_raw]
+    if tbl_num:
+        tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
+
+    # 1. Settle all pending bills for this table
+    await db.bills.update_many({
+        "tenant_id": tid,
+        "table_number": {"$in": tbl_patterns},
+        "status": "pending"
+    }, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+
+    # 2. Mark all active orders for this table as served
+    res = await db.orders.update_many({
+        "tenant_id": tid,
+        "table_number": {"$in": tbl_patterns},
+        "status": {"$nin": ["served", "cancelled"]}
+    }, {"$set": {"status": "served"}})
+
+    await notify_tenant(
+        tid,
+        "payment",
+        "Table Settled",
+        f"Table {payload.table_number} marked paid and cleared ({pm})",
+        {"table_number": payload.table_number, "status": "served"}
+    )
+    return {"ok": True, "table_number": payload.table_number, "settled_count": res.modified_count}
+
+
 @api.patch("/bills/{bid}/pay")
 async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
     pm = (payload and payload.payment_method) or "UPI"
+    
+    # 1. Update bill by ID
     res = await db.bills.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Bill not found")
-    bill = await db.bills.find_one({"id": bid}, {"_id": 0})
+    bill = await db.bills.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
+    
+    if not bill:
+        # Fallback: check if bid is an order_id
+        bill = await db.bills.find_one({"order_id": bid, "tenant_id": tid}, {"_id": 0})
+        if bill:
+            await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+            bill["status"] = "paid"
+            bill["payment_method"] = pm
+        else:
+            # Check if bid is an order directly and mark it served
+            o = await db.orders.find_one({"id": bid, "tenant_id": tid})
+            if o:
+                await db.orders.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "served"}})
+                return {"id": bid, "status": "paid", "table_number": o.get("table_number", "-")}
+            raise HTTPException(status_code=404, detail="Bill not found")
     
     # Mark all associated orders as served
     target_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
     if target_oids:
         await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "served"}})
+    
+    # Also if table_number is present on the bill, mark all active orders on that table as served!
+    tbl_num = bill.get("table_number")
+    if tbl_num:
+        tbl_raw = str(tbl_num).strip()
+        tbl_clean = tbl_raw.replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
+        tbl_patterns = [tbl_raw]
+        if tbl_clean:
+            tbl_patterns.extend([tbl_clean, f"T - {tbl_clean}", f"T-{tbl_clean}", f"Table {tbl_clean}"])
+        await db.orders.update_many({
+            "tenant_id": tid,
+            "table_number": {"$in": tbl_patterns},
+            "status": {"$nin": ["served", "cancelled"]}
+        }, {"$set": {"status": "served"}})
     
     await notify_tenant(
         tid,
