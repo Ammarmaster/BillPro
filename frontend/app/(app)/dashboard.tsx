@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking } from "react-native";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
@@ -390,15 +390,43 @@ function OwnerDashboard() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const { subscribe } = useNotifications();
+  const processedSaleIds = useRef<Set<string>>(new Set());
 
-  // Event-driven reactive dashboard metrics refresh (Zero polling requests!)
+  // Event-driven reactive dashboard metrics refresh (0ms Instant Optimistic Sales Sync)
   useEffect(() => {
-    return subscribe((notif) => {
-      if (notif.category === "sales" || notif.category === "payment" || notif.category === "kitchen") {
-        load();
+    return subscribe((notif: any) => {
+      const data = notif.data;
+      if (notif.category === "payment" || data?.event === "ORDER_PAID" || data?.event === "TABLE_SETTLED" || data?.event === "ORDER_SERVED") {
+        const saleAmt = Number(data?.total || data?.amount || 0);
+        const saleKey = data?.bill_id || data?.order_id || (data?.table_number ? `table_${data.table_number}_${saleAmt}` : null);
+
+        if (saleAmt > 0 && saleKey && !processedSaleIds.current.has(saleKey)) {
+          processedSaleIds.current.add(saleKey);
+          // 0ms Instant Optimistic Total Sales Increment
+          setSummary((prev: any) => {
+            if (!prev) return prev;
+            const updated = {
+              ...prev,
+              revenue_today: Math.round((Number(prev.revenue_today || 0) + saleAmt) * 100) / 100,
+              revenue_total: Math.round((Number(prev.revenue_total || 0) + saleAmt) * 100) / 100,
+              orders_today: Number(prev.orders_today || 0) + 1,
+              orders_total: Number(prev.orders_total || 0) + 1,
+            };
+            api.setCachedSummary(updated);
+            return updated;
+          });
+        }
+        // Background authoritative reconciliation
+        api.dashboardSummary().then(sum => {
+          if (sum) setSummary(sum);
+        }).catch(() => {});
+      } else if (notif.category === "sales" || notif.category === "kitchen") {
+        api.dashboardSummary().then(sum => {
+          if (sum) setSummary(sum);
+        }).catch(() => {});
       }
     });
-  }, [subscribe, load]);
+  }, [subscribe]);
 
   const [animatedRevenue, setAnimatedRevenue] = useState(() => summary?.revenue_today || 0);
 

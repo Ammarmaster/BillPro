@@ -355,4 +355,10 @@ export const api = {
     const list = memoryCache["/bills"] || [];
     memoryCache["/bills"] = list.map((b: any) => b.id === id ? realBill : b);
   },
+  setCachedOrders: (orders: any[]) => {
+    memoryCache["/orders"] = orders;
+  },
+  setCachedSummary: (summary: any) => {
+    memoryCache["/dashboard/summary"] = summary;
+  },
 };

@@ -33,7 +33,18 @@ export default function WaiterScreen() {
 
   const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
-  const [tables, setTables] = useState<Table[]>(() => api.getCachedTables() || []);
+  const [tables, setTables] = useState<Table[]>(() => {
+    const cached = api.getCachedTables();
+    if (cached && cached.length > 0) return cached;
+    return [
+      { id: "tbl-1", label: "1", seats: 4 },
+      { id: "tbl-2", label: "2", seats: 4 },
+      { id: "tbl-3", label: "3", seats: 6 },
+      { id: "tbl-4", label: "4", seats: 2 },
+      { id: "tbl-5", label: "5", seats: 4 },
+      { id: "tbl-6", label: "6", seats: 4 },
+    ];
+  });
   const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
   
@@ -43,7 +54,7 @@ export default function WaiterScreen() {
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(() => (api.getCachedTables()?.length ? false : true));
+  const [loading, setLoading] = useState(false); // 0ms Instant table display
 
   // Guest session tracking for multi-customer tables
   const [currentGuestName, setCurrentGuestName] = useState("Guest 1");
@@ -58,29 +69,34 @@ export default function WaiterScreen() {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
+  // Priority 1: Fast table & order synchronization
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [c, m, t, o, b] = await Promise.all([
-        api.listCategories().catch(() => []),
-        api.listMenu().catch(() => []),
-        api.listTables().catch(() => []),
-        api.listOrders().catch(() => []),
-        api.listBills().catch(() => []),
+      // Sync tables & active orders with highest priority
+      const [t, o] = await Promise.all([
+        api.listTables().catch(() => null),
+        api.listOrders().catch(() => null),
       ]);
-      if (c?.length) setCats(c);
-      if (m?.length) setItems(m);
-      if (t?.length) setTables(t);
+      if (t && t.length > 0) setTables(t);
       if (o) setOrders(o);
-      if (b) setBills(b);
+
+      // Background lazy sync for menu and bills without blocking tables UI
+      api.listMenu().then(m => { if (m?.length) setItems(m); }).catch(() => {});
+      api.listCategories().then(c => { if (c?.length) setCats(c); }).catch(() => {});
+      api.listBills().then(b => { if (b) setBills(b); }).catch(() => {});
     } catch (e: any) { 
       setErr(e.message); 
-    } finally { 
-      setLoading(false); 
     }
   }, []);
 
   useFocusEffect(useCallback(() => {
+    // Re-hydrate local state from cache immediately on tab focus
+    const cachedOrders = api.getCachedOrders();
+    if (cachedOrders) setOrders(cachedOrders);
+    const cachedBills = api.getCachedBills();
+    if (cachedBills) setBills(cachedBills);
+
     load();
     setViewMode("tables");
   }, [load]));
@@ -88,7 +104,7 @@ export default function WaiterScreen() {
   // Auto-handle table route param if passed
   useEffect(() => {
     if (tableParam && tables.length > 0) {
-      const matched = tables.find(t => t.label === tableParam);
+      const matched = tables.find(t => isSameTable(t.label, tableParam));
       if (matched) {
         onSelectTable(matched);
       } else {
@@ -102,19 +118,33 @@ export default function WaiterScreen() {
 
   const { subscribe } = useNotifications();
 
-  // Event-driven reactive sync via WebSocket (Zero polling overhead)
+  // Instant 0ms WebSocket State Reconciliation
   useEffect(() => {
     return subscribe((notif) => {
-      if (notif.category === "kitchen" || notif.category === "payment" || notif.category === "waiter") {
-        if (viewMode === "tables" || viewMode === "order_details") {
-          Promise.all([api.listOrders().catch(() => []), api.listBills().catch(() => [])]).then(([o, b]) => {
-            if (o) setOrders(o);
-            if (b) setBills(b);
-          }).catch(() => {});
-        }
+      const data = notif.data;
+      if (!data) return;
+
+      const { order_id, status, table_number, event } = data;
+
+      // 0ms instant table state update on payment / order completion
+      if (event === "ORDER_SERVED" || event === "ORDER_PAID" || event === "TABLE_SETTLED" || status === "served") {
+        setOrders(prev => prev.map(o => {
+          if (order_id && o.id === order_id) return { ...o, status: "served" };
+          if (table_number && isSameTable(o.table_number, table_number) && (!order_id || o.id === order_id)) {
+            return { ...o, status: "served" };
+          }
+          return o;
+        }));
+      } else if (order_id && status) {
+        setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status } : o));
+      }
+
+      // If new order placed, silently update orders
+      if (notif.category === "kitchen" && order_id) {
+        api.listOrders().then(fresh => { if (fresh) setOrders(fresh); }).catch(() => {});
       }
     });
-  }, [subscribe, viewMode]);
+  }, [subscribe]);
 
 // Table number matching normalizer to guarantee table orders are never lost
 const normalizeTable = (val: string | undefined | null) => {

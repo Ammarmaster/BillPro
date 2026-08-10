@@ -43,6 +43,19 @@ function base64Encode(str: string): string {
   return out;
 }
 
+const normalizeTable = (val: string | undefined | null) => {
+  if (!val) return "";
+  return String(val).toLowerCase().replace("table", "").replace("t", "").replace("-", "").trim();
+};
+
+const isSameTable = (a: string | undefined | null, b: string | undefined | null) => {
+  if (!a || !b) return false;
+  if (String(a).toLowerCase().trim() === String(b).toLowerCase().trim()) return true;
+  const na = normalizeTable(a);
+  const nb = normalizeTable(b);
+  return na.length > 0 && na === nb;
+};
+
 export default function Billing() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -57,7 +70,7 @@ export default function Billing() {
       return oList.find((x: any) => x.id === targetOrderId) || null;
     }
     if (tableNumber) {
-      const tOrders = oList.filter((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status !== "served" && x.status !== "cancelled");
+      const tOrders = oList.filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
       if (tOrders.length > 0) {
         return {
           table_number: tableNumber,
@@ -215,11 +228,13 @@ export default function Billing() {
     // Update local cache so that navigating back to waiter/tables is updated instantly
     api.updateCachedBill(bill.id, updatedLocalBill);
     const oList = api.getCachedOrders() || [];
-    oList.forEach((o: any) => {
-      if ((targetTbl && String(o.table_number).toLowerCase() === String(targetTbl).toLowerCase()) || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
-        api.updateCachedOrder(o.id, { ...o, status: "served" });
+    const updatedOrders = oList.map((o: any) => {
+      if ((targetTbl && isSameTable(o.table_number, targetTbl)) || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
+        return { ...o, status: "served" };
       }
+      return o;
     });
+    api.setCachedOrders(updatedOrders);
 
     // Auto-print receipt optimistically if cashier printer is configured for auto-print
     getPrinterSettings("cashier").then(async settings => {

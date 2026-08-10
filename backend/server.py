@@ -871,6 +871,7 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
         raise HTTPException(status_code=404, detail="Order not found")
     order = await db.orders.find_one({"id": oid}, {"_id": 0})
     tid = order["tenant_id"]
+    tbl_num = order.get("table_number", "-")
 
     # If QR order is marked served, ensure sales are accounted for idempotently in db.bills
     if payload.status == "served" and (order.get("created_by") == "guest" or order.get("order_source") == "qr_web"):
@@ -883,7 +884,7 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
                 "order_id": oid,
                 "session_id": order.get("session_id", ""),
                 "customer_name": order.get("customer_name", "Guest"),
-                "table_number": order.get("table_number", ""),
+                "table_number": tbl_num,
                 "items": order.get("items", []),
                 "subtotal": float(order.get("subtotal", 0.0)),
                 "tax_percent": 0.0,
@@ -904,19 +905,34 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
 
     dashboard_summary_cache.pop(tid, None)
 
+    # Calculate remaining active orders on this table
+    remaining = await db.orders.count_documents({
+        "tenant_id": tid,
+        "table_number": tbl_num,
+        "status": {"$nin": ["served", "cancelled"]}
+    })
+    tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
+
     await notify_tenant(
         tid,
-        "waiter" if payload.status in ("in_kitchen", "ready") else ("kitchen" if payload.status == "placed" else "payment"),
+        "payment" if payload.status == "served" else "waiter",
         "Order Status Updated",
-        f"Order for Table {order.get('table_number', '-')} is now {payload.status.replace('_', ' ').upper()}",
+        f"Order for Table {tbl_num} is now {payload.status.replace('_', ' ').upper()}",
         {
             "order_id": oid,
             "status": payload.status,
-            "table_number": order.get("table_number", "-"),
+            "table_number": tbl_num,
+            "active_orders_remaining": remaining,
+            "table_status": tbl_status,
+            "total": float(order.get("subtotal", 0.0)),
             "event": "ORDER_SERVED" if payload.status == "served" else "ORDER_UPDATED"
         }
     )
-    return order
+    return {
+        **order,
+        "active_orders_remaining": remaining,
+        "table_status": tbl_status
+    }
 
 
 @api.patch("/orders/{oid}")
@@ -1248,6 +1264,14 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
     if tbl_num:
         tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
 
+    # Calculate total of active orders being settled
+    active_orders = await db.orders.find({
+        "tenant_id": tid,
+        "table_number": {"$in": tbl_patterns},
+        "status": {"$nin": ["served", "cancelled"]}
+    }, {"_id": 0, "subtotal": 1, "id": 1}).to_list(100)
+    total_settled = sum(float(o.get("subtotal", 0.0)) for o in active_orders)
+
     # 1. Settle all pending bills for this table
     await db.bills.update_many({
         "tenant_id": tid,
@@ -1262,14 +1286,30 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
         "status": {"$nin": ["served", "cancelled"]}
     }, {"$set": {"status": "served"}})
 
+    dashboard_summary_cache.pop(tid, None)
+
     await notify_tenant(
         tid,
         "payment",
         "Table Settled",
         f"Table {payload.table_number} marked paid and cleared ({pm})",
-        {"table_number": payload.table_number, "status": "served"}
+        {
+            "table_number": payload.table_number,
+            "status": "served",
+            "table_status": "AVAILABLE",
+            "active_orders_remaining": 0,
+            "total": float(total_settled),
+            "event": "TABLE_SETTLED"
+        }
     )
-    return {"ok": True, "table_number": payload.table_number, "settled_count": res.modified_count}
+    return {
+        "ok": True,
+        "table_number": payload.table_number,
+        "table_status": "AVAILABLE",
+        "active_orders_remaining": 0,
+        "settled_count": res.modified_count,
+        "total": float(total_settled)
+    }
 
 
 @api.patch("/bills/{bid}/pay")
@@ -1293,7 +1333,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             o = await db.orders.find_one({"id": bid, "tenant_id": tid})
             if o:
                 await db.orders.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "served"}})
-                return {"id": bid, "status": "paid", "table_number": o.get("table_number", "-")}
+                return {"id": bid, "status": "paid", "table_number": o.get("table_number", "-"), "table_status": "AVAILABLE", "active_orders_remaining": 0}
             raise HTTPException(status_code=404, detail="Bill not found")
     
     # Mark all associated orders as served
@@ -1315,14 +1355,28 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             "status": {"$nin": ["served", "cancelled"]}
         }, {"$set": {"status": "served"}})
     
+    dashboard_summary_cache.pop(tid, None)
+
     await notify_tenant(
         tid,
         "payment",
         "Payment Received",
         f"Table {bill.get('table_number', '-')} paid ₹{bill.get('total', 0.0):.2f} via {pm}",
-        {"bill_id": bid, "total": bill.get("total", 0.0), "table_number": bill.get("table_number", "-")}
+        {
+            "bill_id": bid,
+            "order_id": bill.get("order_id"),
+            "total": float(bill.get("total", 0.0)),
+            "table_number": bill.get("table_number", "-"),
+            "table_status": "AVAILABLE",
+            "active_orders_remaining": 0,
+            "event": "ORDER_PAID"
+        }
     )
-    return bill
+    return {
+        **bill,
+        "table_status": "AVAILABLE",
+        "active_orders_remaining": 0
+    }
 
 
 @api.get("/bills")
