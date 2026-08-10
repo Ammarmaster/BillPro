@@ -116,30 +116,44 @@ export default function WaiterScreen() {
     });
   }, [subscribe, viewMode]);
 
-  // Helper to determine table status & matching active orders
-  const getTableStatusInfo = (tblLabel: string) => {
-    const matchingOrders = orders.filter(
-      (o: any) => String(o.table_number).toLowerCase() === String(tblLabel).toLowerCase() && o.status !== "served" && o.status !== "cancelled"
-    );
-    if (matchingOrders.length === 0) return { status: "Available", orders: [], bill: null, isWeb: false, activeCount: 0 };
+// Table number matching normalizer to guarantee table orders are never lost
+const normalizeTable = (val: string | undefined | null) => {
+  if (!val) return "";
+  return String(val).toLowerCase().replace("table", "").replace("t", "").replace("-", "").trim();
+};
 
-    const matchingBill = bills.find((b: any) => matchingOrders.some((o: any) => o.id === b.order_id) && b.status !== "paid");
-    if (matchingBill) return { status: "Billed", orders: matchingOrders, bill: matchingBill, isWeb: false, activeCount: matchingOrders.length };
+const isSameTable = (a: string | undefined | null, b: string | undefined | null) => {
+  if (!a || !b) return false;
+  if (String(a).toLowerCase().trim() === String(b).toLowerCase().trim()) return true;
+  const na = normalizeTable(a);
+  const nb = normalizeTable(b);
+  return na.length > 0 && na === nb;
+};
 
-    const allWeb = matchingOrders.every((o: any) => o.created_by === "guest" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
+// Helper to determine table status & matching active orders
+const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[]) => {
+  const matchingOrders = ordersList.filter(
+    (o: any) => isSameTable(o.table_number, tblLabel) && o.status !== "served" && o.status !== "cancelled"
+  );
+  if (matchingOrders.length === 0) return { status: "Available", orders: [], bill: null, isWeb: false, activeCount: 0 };
 
-    return { 
-      status: allWeb ? "Web Paid" : "Occupied", 
-      orders: matchingOrders, 
-      bill: null, 
-      isWeb: allWeb, 
-      activeCount: matchingOrders.length 
-    };
+  const matchingBill = billsList.find((b: any) => matchingOrders.some((o: any) => o.id === b.order_id) && b.status !== "paid");
+  if (matchingBill) return { status: "Billed", orders: matchingOrders, bill: matchingBill, isWeb: false, activeCount: matchingOrders.length };
+
+  const allWeb = matchingOrders.every((o: any) => o.created_by === "guest" || o.order_source === "qr_web" || billsList.some((b: any) => b.order_id === o.id && b.status === "paid"));
+
+  return { 
+    status: allWeb ? "Web Paid" : "Occupied", 
+    orders: matchingOrders, 
+    bill: null, 
+    isWeb: allWeb, 
+    activeCount: matchingOrders.length 
   };
+};
 
   const counts = tables.reduce(
     (acc, t) => {
-      const { status } = getTableStatusInfo(t.label);
+      const { status } = getTableStatusInfo(t.label, orders, bills);
       if (status === "Available") acc.available += 1;
       else if (status === "Occupied" || status === "Web Paid") acc.occupied += 1;
       else if (status === "Billed") acc.billed += 1;
@@ -153,7 +167,7 @@ export default function WaiterScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setSelectedTableObj(tbl);
     setTable(tbl.label);
-    const { status, orders: tblOrders } = getTableStatusInfo(tbl.label);
+    const { status, orders: tblOrders } = getTableStatusInfo(tbl.label, orders, bills);
 
     if (tblOrders.length > 0) {
       setActiveOrder(tblOrders[0]);
@@ -273,20 +287,26 @@ export default function WaiterScreen() {
   // -------------------------------------------------------------
   // VIEW 1: OCCUPIED TABLE / MULTI-CUSTOMER ORDER DETAILS SCREEN
   // -------------------------------------------------------------
+  const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
+
   if (viewMode === "order_details" && selectedTableObj) {
     const tableOrders = orders.filter(
-      (o: any) => String(o.table_number).toLowerCase() === String(selectedTableObj.label).toLowerCase() && o.status !== "served" && o.status !== "cancelled"
+      (o: any) => isSameTable(o.table_number, selectedTableObj.label) && o.status !== "served" && o.status !== "cancelled"
     );
 
     const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
     const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
-    const allWebPaid = tableOrders.length > 0 && tableOrders.every((o: any) => o.created_by === "guest" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
+    const allWebPaid = tableOrders.length > 0 && tableOrders.every((o: any) => o.created_by === "guest" || o.order_source === "qr_web" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
 
     const completeIndividualOrder = async (orderIdToComplete: string) => {
+      if (completingIds.has(orderIdToComplete)) return;
+      setCompletingIds(prev => new Set(prev).add(orderIdToComplete));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      
+      // Optimistic local state update
       setOrders(prev => prev.map(o => o.id === orderIdToComplete ? { ...o, status: "served" } : o));
       
-      const remaining = tableOrders.filter((o: any) => o.id !== orderIdToComplete);
+      const remaining = tableOrders.filter((o: any) => o.id !== orderIdToComplete && o.status !== "served");
       if (remaining.length === 0) {
         setViewMode("tables");
       }
@@ -296,6 +316,12 @@ export default function WaiterScreen() {
       } catch (e: any) {
         console.warn("Failed to complete order:", e);
         await load();
+      } finally {
+        setCompletingIds(prev => {
+          const next = new Set(prev);
+          next.delete(orderIdToComplete);
+          return next;
+        });
       }
     };
 
@@ -352,7 +378,7 @@ export default function WaiterScreen() {
               tableOrders.map((order: any, idx: number) => {
                 const orderNum = order.order_number || order.id?.slice(-4) || `${idx + 1}`;
                 const statusText = (order.status || "PLACED").toUpperCase();
-                const isWebOrder = order.created_by === "guest" || order.notes?.includes("Web Order") || order.session_id || bills.some((b: any) => b.order_id === order.id && b.status === "paid");
+                const isWebOrder = order.created_by === "guest" || order.order_source === "qr_web" || order.notes?.includes("Web Order");
                 const custName = order.customer_name || `Guest ${idx + 1}`;
                 const orderTotal = order.subtotal || (order.items || []).reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0);
 
@@ -365,7 +391,7 @@ export default function WaiterScreen() {
                       </View>
                       <View style={[styles.statusPill, { backgroundColor: isWebOrder ? (isDark ? "#065F46" : "#DCFCE7") : (order.status === "placed" ? "#EEF2FF" : "#ECFDF5") }]}>
                         <Text style={[styles.statusPillText, { color: isWebOrder ? (isDark ? "#34D399" : "#16A34A") : (order.status === "placed" ? "#635BFF" : "#10B981") }]}>
-                          {isWebOrder ? "PAID ONLINE" : statusText}
+                          {isWebOrder ? "WEB QR" : statusText}
                         </Text>
                       </View>
                     </View>
@@ -429,11 +455,18 @@ export default function WaiterScreen() {
 
                         {isWebOrder ? (
                           <Pressable
-                            style={[styles.guestActionBtn, { backgroundColor: "#10B981", borderColor: "#10B981" }]}
+                            style={[
+                              styles.guestActionBtn, 
+                              { backgroundColor: "#10B981", borderColor: "#10B981" },
+                              completingIds.has(order.id) && { opacity: 0.6 }
+                            ]}
                             onPress={() => completeIndividualOrder(order.id)}
+                            disabled={completingIds.has(order.id)}
                           >
                             <Ionicons name="checkmark-circle-outline" size={14} color="#FFF" />
-                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Mark Served</Text>
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>
+                              {completingIds.has(order.id) ? "Serving..." : "Mark Served"}
+                            </Text>
                           </Pressable>
                         ) : (
                           <Pressable
@@ -604,7 +637,7 @@ export default function WaiterScreen() {
               contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: spacing.md }}
               showsVerticalScrollIndicator={false}
               renderItem={({ item, index }) => {
-                const { status } = getTableStatusInfo(item.label);
+                const { status } = getTableStatusInfo(item.label, orders, bills);
                 let bgColor = isDark ? "#161C2E" : "#ECFDF5";
                 let borderColor = isDark ? "#065F46" : "#A7F3D0";
                 let textColor = isDark ? "#34D399" : "#10B981";

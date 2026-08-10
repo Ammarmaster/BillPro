@@ -835,6 +835,7 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
         "notes": payload.notes,
         "subtotal": subtotal,
         "status": "placed",
+        "order_source": "waiter",
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -845,7 +846,7 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
         "kitchen",
         "New KOT Placed",
         f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
-        {"order_id": doc["id"], "table_number": doc.get("table_number", "-"), "customer_name": cust_name, "session_id": sess_id}
+        {"order_id": doc["id"], "table_number": doc.get("table_number", "-"), "customer_name": cust_name, "session_id": sess_id, "order_source": "waiter"}
     )
     return doc
 
@@ -869,12 +870,51 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
     order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    tid = order["tenant_id"]
+
+    # If QR order is marked served, ensure sales are accounted for idempotently in db.bills
+    if payload.status == "served" and (order.get("created_by") == "guest" or order.get("order_source") == "qr_web"):
+        existing_bill = await db.bills.find_one({"order_id": oid, "tenant_id": tid})
+        if not existing_bill:
+            bill_id = str(uuid.uuid4())
+            bill_doc = {
+                "id": bill_id,
+                "tenant_id": tid,
+                "order_id": oid,
+                "session_id": order.get("session_id", ""),
+                "customer_name": order.get("customer_name", "Guest"),
+                "table_number": order.get("table_number", ""),
+                "items": order.get("items", []),
+                "subtotal": float(order.get("subtotal", 0.0)),
+                "tax_percent": 0.0,
+                "tax": 0.0,
+                "cgst": 0.0,
+                "sgst": 0.0,
+                "gst_enabled": False,
+                "discount": 0.0,
+                "total": float(order.get("subtotal", 0.0)),
+                "upi_url": "",
+                "status": "paid",
+                "payment_method": order.get("payment_method") or "online",
+                "created_by": "guest",
+                "created_at": order.get("created_at", datetime.now(timezone.utc).isoformat()),
+                "paid_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.bills.insert_one(bill_doc)
+
+    dashboard_summary_cache.pop(tid, None)
+
     await notify_tenant(
-        order["tenant_id"],
-        "waiter" if payload.status in ("in_kitchen", "ready") else "cashier",
+        tid,
+        "waiter" if payload.status in ("in_kitchen", "ready") else ("kitchen" if payload.status == "placed" else "payment"),
         "Order Status Updated",
         f"Order for Table {order.get('table_number', '-')} is now {payload.status.replace('_', ' ').upper()}",
-        {"order_id": oid, "status": payload.status, "table_number": order.get("table_number", "-")}
+        {
+            "order_id": oid,
+            "status": payload.status,
+            "table_number": order.get("table_number", "-"),
+            "event": "ORDER_SERVED" if payload.status == "served" else "ORDER_UPDATED"
+        }
     )
     return order
 
@@ -1020,6 +1060,7 @@ async def public_create_order(payload: PublicOrderIn):
         "notes": payload.notes,
         "subtotal": subtotal,
         "status": "placed",
+        "order_source": "qr_web",
         "created_by": "guest",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "customer_phone": payload.customer_phone,
