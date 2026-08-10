@@ -97,7 +97,7 @@ export default function Billing() {
       if (existing) return existing;
     }
     if (tableNumber) {
-      const existingTableBill = bList.find((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status === "pending");
+      const existingTableBill = bList.find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
       if (existingTableBill) return existingTableBill;
     }
 
@@ -118,15 +118,15 @@ export default function Billing() {
         primaryOrderId = o.id;
       }
     } else if (tableNumber) {
-      const tOrders = oList.filter((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status !== "served" && x.status !== "cancelled");
+      const tOrders = oList.filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
       if (tOrders.length > 0) {
-        itemsToBill = tOrders.flatMap((o: any) => o.items || []),
+        itemsToBill = tOrders.flatMap((o: any) => o.items || []);
         subtotalToBill = tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
         primaryOrderId = tOrders[0].id;
       }
     }
 
-    if (itemsToBill.length > 0) {
+    if (itemsToBill.length > 0 || subtotalToBill > 0) {
       const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
       const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
       const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
@@ -173,9 +173,9 @@ export default function Billing() {
       const targetOrderId = orderId ? api.resolveTempId(orderId) : "";
       
       if (tableNumber) {
-        // Combined table billing
-        const tableOrders = (orders || []).filter((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status !== "served" && x.status !== "cancelled");
-        let b = (bills || []).find((x: any) => String(x.table_number).toLowerCase() === String(tableNumber).toLowerCase() && x.status === "pending");
+        // Combined table billing for Settle Entire Table
+        const tableOrders = (orders || []).filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
+        let b = (bills || []).find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
         if (!b && tableOrders.length > 0) {
           b = await api.createBill({ table_number: tableNumber }).catch(() => null);
         }
@@ -189,6 +189,7 @@ export default function Billing() {
           setErr(`No active orders found on Table ${tableNumber}`);
         }
       } else if (targetOrderId) {
+        // Individual order billing
         const o = (orders || []).find((x: any) => x.id === targetOrderId);
         setOrder(o || null);
         let b = (bills || []).find((x: any) => x.order_id === targetOrderId);
@@ -219,22 +220,53 @@ export default function Billing() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     
     const targetTbl = bill.table_number || order?.table_number || tableNumber;
+    const isIndividualOrder = !!orderId;
 
     // Optimistic UI updates
     const updatedLocalBill = { ...bill, status: "paid", payment_method: method };
     setBill(updatedLocalBill);
     setPayModal(false);
     
-    // Update local cache so that navigating back to waiter/tables is updated instantly
+    // Update local cache
     api.updateCachedBill(bill.id, updatedLocalBill);
     const oList = api.getCachedOrders() || [];
-    const updatedOrders = oList.map((o: any) => {
-      if ((targetTbl && isSameTable(o.table_number, targetTbl)) || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
-        return { ...o, status: "served" };
+
+    if (isIndividualOrder) {
+      // 1. INDIVIDUAL ORDER MARK PAID: Update ONLY the specific order paid!
+      const targetOid = api.resolveTempId(orderId || bill.order_id);
+      const updatedOrders = oList.map((o: any) => {
+        if (o.id === targetOid || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
+          return { ...o, status: "served" };
+        }
+        return o;
+      });
+      api.setCachedOrders(updatedOrders);
+
+      // Perform single targeted mutation
+      const realBillId = api.resolveTempId(bill.id);
+      const mutationId = (!realBillId || realBillId.startsWith("temp-")) ? targetOid : realBillId;
+      api.markBillPaid(mutationId, method).catch((e: any) => {
+        console.warn("Individual markBillPaid sync failed:", e.message);
+      });
+    } else {
+      // 2. SETTLE ENTIRE TABLE: Update all active orders on that table!
+      const updatedOrders = oList.map((o: any) => {
+        if (targetTbl && isSameTable(o.table_number, targetTbl)) {
+          return { ...o, status: "served" };
+        }
+        return o;
+      });
+      api.setCachedOrders(updatedOrders);
+
+      // Perform single table settlement mutation
+      if (targetTbl && targetTbl !== "Takeaway") {
+        api.settleTable(targetTbl, method).catch((e: any) => {
+          console.warn("Table settlement sync failed:", e.message);
+        });
+      } else {
+        api.markBillPaid(bill.id, method).catch(() => {});
       }
-      return o;
-    });
-    api.setCachedOrders(updatedOrders);
+    }
 
     // Auto-print receipt optimistically if cashier printer is configured for auto-print
     getPrinterSettings("cashier").then(async settings => {
@@ -242,19 +274,6 @@ export default function Billing() {
         await printBill(updatedLocalBill);
       }
     }).catch(() => {});
-    
-    // Perform background sync with table settlement guarantee
-    if (targetTbl && targetTbl !== "Takeaway") {
-      api.settleTable(targetTbl, method).catch(() => {
-        if (bill.id && !bill.id.startsWith("temp-")) {
-          api.markBillPaid(bill.id, method).catch(() => {});
-        }
-      });
-    } else if (bill.id && !bill.id.startsWith("temp-")) {
-      api.markBillPaid(bill.id, method).catch((e: any) => {
-        console.warn("Background markBillPaid sync failed:", e.message);
-      });
-    }
   };
 
   const doPrint = async () => {
