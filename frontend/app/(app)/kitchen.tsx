@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { useAudioPlayer } from "expo-audio";
 import { api } from "@/src/lib/api";
+import { printKitchenKOT } from "@/src/lib/print";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 
@@ -161,10 +162,34 @@ function KdsTicketCard({
           </View>
         </View>
 
-        {/* Live Timer */}
-        <View style={styles.timerBox}>
-          <Ionicons name="time-outline" size={15} color={theme.onSurfaceSecondary} />
-          <Text style={[styles.timerText, { color: theme.onSurfaceSecondary }]}>{elapsedTime}</Text>
+        {/* Actions & Live Timer */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            style={({ pressed }) => [
+              {
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 8,
+                backgroundColor: isDark ? "#2A2A38" : "#EEF2FF",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                opacity: pressed ? 0.7 : 1
+              }
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+              printKitchenKOT(item);
+            }}
+          >
+            <Ionicons name="print-outline" size={14} color="#635BFF" />
+            <Text style={{ fontSize: 11, fontWeight: "700", color: "#635BFF" }}>KOT</Text>
+          </Pressable>
+
+          <View style={styles.timerBox}>
+            <Ionicons name="time-outline" size={15} color={theme.onSurfaceSecondary} />
+            <Text style={[styles.timerText, { color: theme.onSurfaceSecondary }]}>{elapsedTime}</Text>
+          </View>
         </View>
       </View>
 

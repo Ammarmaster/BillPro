@@ -5,12 +5,13 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import Animated, { FadeInUp } from "react-native-reanimated";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { pickImageBase64 } from "@/src/lib/imagePicker";
 import { menuItemImageSource } from "@/src/lib/foodImage";
+import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 
 type Cat = { id: string; name: string; sort_order: number };
@@ -18,6 +19,8 @@ type Item = { id: string; category_id: string; name: string; description: string
 
 export default function MenuScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { isDark } = useTheme();
   const [cats, setCats] = useState<Cat[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [selCat, setSelCat] = useState<string | "all">("all");
@@ -78,13 +81,21 @@ export default function MenuScreen() {
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="menu-screen">
       <View style={styles.header}>
         <Text style={styles.title}>Menu</Text>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flexDirection: "row", gap: spacing.xs, alignItems: "center" }}>
+          <Pressable
+            style={[styles.iconBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}
+            onPress={() => router.push("/(app)/menu-ai-import" as any)}
+            testID="menu-ai-photos-btn"
+          >
+            <Ionicons name="sparkles" size={16} color="#635BFF" />
+            <Text style={[styles.iconBtnText, { color: "#635BFF", fontWeight: "700" }]}>AI Photos</Text>
+          </Pressable>
           <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
-            <Ionicons name="folder-open" size={18} color={colors.brand} />
+            <Ionicons name="folder-open" size={16} color={colors.brand} />
             <Text style={styles.iconBtnText}>Category</Text>
           </Pressable>
           <Pressable style={styles.iconBtnPrimary} onPress={() => { if (!cats.length) { setErr("Add a category first."); return; } setItemModal(true); }} testID="menu-add-item-btn">
-            <Ionicons name="add" size={18} color={colors.onBrand} />
+            <Ionicons name="add" size={16} color={colors.onBrand} />
             <Text style={styles.iconBtnPrimaryText}>Item</Text>
           </Pressable>
         </View>

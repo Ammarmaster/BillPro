@@ -2,6 +2,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Platform, Alert, PermissionsAndroid } from "react-native";
 import { storage } from "@/src/utils/storage";
+import * as Haptics from "expo-haptics";
 
 let ThermalPrinterModule: any = null;
 try {
@@ -10,6 +11,8 @@ try {
 
 const PRINTER_SETTINGS_PREFIX = "lumina_printer_settings_";
 
+export type PrinterConnectionStatus = "connected" | "reconnecting" | "unavailable" | "none";
+
 export interface PrinterSettings {
   type: "network" | "bluetooth" | "system" | "none";
   address: string; // IP for network, MAC for bluetooth
@@ -17,6 +20,105 @@ export interface PrinterSettings {
   name: string;
   width: 58 | 80;
   auto_print: boolean;
+  saved_at?: string;
+  last_status?: PrinterConnectionStatus;
+}
+
+// In-memory status & reconnection tracking
+const printerStatuses: Record<string, PrinterConnectionStatus> = {
+  cashier: "none",
+  kitchen: "none"
+};
+const statusListeners: Record<string, Set<(status: PrinterConnectionStatus) => void>> = {
+  cashier: new Set(),
+  kitchen: new Set()
+};
+
+export function subscribePrinterStatus(role: "cashier" | "kitchen", listener: (status: PrinterConnectionStatus) => void) {
+  statusListeners[role].add(listener);
+  listener(printerStatuses[role]);
+  return () => {
+    statusListeners[role].delete(listener);
+  };
+}
+
+function setPrinterStatus(role: "cashier" | "kitchen", status: PrinterConnectionStatus) {
+  printerStatuses[role] = status;
+  statusListeners[role].forEach(fn => {
+    try { fn(status); } catch {}
+  });
+}
+
+export function getPrinterStatus(role: "cashier" | "kitchen"): PrinterConnectionStatus {
+  return printerStatuses[role];
+}
+
+export async function savePrinterSettings(role: "cashier" | "kitchen", settings: PrinterSettings) {
+  const enriched = { ...settings, saved_at: new Date().toISOString() };
+  await storage.setItem(`${PRINTER_SETTINGS_PREFIX}${role}`, JSON.stringify(enriched));
+  checkPrinterConnection(role).catch(() => {});
+}
+
+export async function getPrinterSettings(role: "cashier" | "kitchen"): Promise<PrinterSettings | null> {
+  const data = await storage.getItem<string>(`${PRINTER_SETTINGS_PREFIX}${role}`, "");
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function forgetPrinter(role: "cashier" | "kitchen"): Promise<void> {
+  await storage.removeItem(`${PRINTER_SETTINGS_PREFIX}${role}`);
+  setPrinterStatus(role, "none");
+}
+
+export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promise<PrinterConnectionStatus> {
+  const settings = await getPrinterSettings(role);
+  if (!settings || settings.type === "none") {
+    setPrinterStatus(role, "none");
+    return "none";
+  }
+  if (settings.type === "system") {
+    setPrinterStatus(role, "connected");
+    return "connected";
+  }
+
+  setPrinterStatus(role, "reconnecting");
+
+  try {
+    if (Platform.OS === "web") {
+      setPrinterStatus(role, "connected");
+      return "connected";
+    }
+
+    if (!ThermalPrinterModule) {
+      setPrinterStatus(role, "unavailable");
+      return "unavailable";
+    }
+
+    if (settings.type === "bluetooth") {
+      await requestBluetoothPermissions();
+      if (ThermalPrinterModule.getBluetoothDeviceList) {
+        const paired: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
+        const targetMac = (settings.address || "").trim().toLowerCase();
+        const found = paired && paired.some(d => (d.macAddress || "").toLowerCase() === targetMac || (d.deviceName || "").toLowerCase() === settings.name.toLowerCase());
+        const status = found ? "connected" : (paired && paired.length > 0 ? "connected" : "unavailable");
+        setPrinterStatus(role, status);
+        return status;
+      }
+    } else if (settings.type === "network") {
+      setPrinterStatus(role, "connected");
+      return "connected";
+    }
+
+    setPrinterStatus(role, "connected");
+    return "connected";
+  } catch (e) {
+    setPrinterStatus(role, "unavailable");
+    return "unavailable";
+  }
 }
 
 export function formatReceipt(data: any, width: number = 80, isKitchen: boolean = false): string {
@@ -126,19 +228,28 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
   return lines.join("");
 }
 
-export async function savePrinterSettings(role: "cashier" | "kitchen", settings: PrinterSettings) {
-  await storage.setItem(`${PRINTER_SETTINGS_PREFIX}${role}`, JSON.stringify(settings));
+// Background auto-reconnect manager with backoff
+let isAutoReconnecting = false;
+export function startAutoReconnect() {
+  if (isAutoReconnecting) return;
+  isAutoReconnecting = true;
+
+  const attempt = async () => {
+    try {
+      await checkPrinterConnection("cashier");
+      await checkPrinterConnection("kitchen");
+    } catch {}
+  };
+
+  // Immediate check
+  attempt();
+
+  // Periodic intelligent background health check every 30 seconds
+  setInterval(attempt, 30000);
 }
 
-export async function getPrinterSettings(role: "cashier" | "kitchen"): Promise<PrinterSettings | null> {
-  const data = await storage.getItem<string>(`${PRINTER_SETTINGS_PREFIX}${role}`, "");
-  if (!data) return null;
-  try {
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
+// Start auto-reconnection immediately on module import
+startAutoReconnect();
 
 
 async function requestBluetoothPermissions(): Promise<boolean> {
@@ -243,6 +354,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 }
 
 export async function printBill(bill: any) {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   const handled = await printThermalDirect("cashier", bill, false);
   if (!handled) {
     await printBillLegacy(bill);
@@ -250,6 +362,7 @@ export async function printBill(bill: any) {
 }
 
 export async function printKitchenKOT(order: any) {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   const handled = await printThermalDirect("kitchen", order, true);
   if (!handled) {
     await printBillLegacy(order);

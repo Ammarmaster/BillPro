@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking, TextInput, ActivityIndicator, Alert } from "react-native";
+import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
@@ -372,6 +373,33 @@ function OwnerDashboard() {
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Scanner modal state for Customer Web Order QR handoff
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanInput, setScanInput] = useState("");
+  const [scanTable, setScanTable] = useState("");
+  const [scanBusy, setScanBusy] = useState(false);
+
+  const handleScanImport = async () => {
+    if (!scanInput.trim()) {
+      Alert.alert("Input Required", "Please enter or scan the customer order QR code or token.");
+      return;
+    }
+    setScanBusy(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      const res = await api.scanImportOrder(scanInput.trim(), scanTable.trim() || undefined);
+      setShowScanner(false);
+      setScanInput("");
+      setScanTable("");
+      await load();
+      Alert.alert("Order Attached", res.message || "Customer order imported successfully!");
+    } catch (e: any) {
+      Alert.alert("Import Error", e.message);
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
   const load = useCallback(async () => {
     setErr(null);
     try {
@@ -527,6 +555,33 @@ function OwnerDashboard() {
                 </View>
               </LinearGradient>
             </Animated.View>
+
+            {/* Quick Action Shortcuts */}
+            <View style={{ flexDirection: "row", gap: 10, marginVertical: spacing.md }}>
+              <Pressable
+                style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}
+                onPress={() => setShowScanner(true)}
+              >
+                <Ionicons name="qr-code-outline" size={18} color="#635BFF" />
+                <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Web Order</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: "#10B981" }]}
+                onPress={() => router.push("/(app)/menu-ai-import" as any)}
+              >
+                <Ionicons name="sparkles" size={18} color="#10B981" />
+                <Text style={[styles.quickActionShortcutText, { color: "#10B981" }]}>AI Menu Photos</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: "#F59E0B" }]}
+                onPress={() => router.push("/(app)/printer-settings")}
+              >
+                <Ionicons name="print-outline" size={18} color="#F59E0B" />
+                <Text style={[styles.quickActionShortcutText, { color: "#F59E0B" }]}>Printer</Text>
+              </Pressable>
+            </View>
 
             {/* Quick Metrics Grid */}
             <View style={styles.statusGrid}>
@@ -761,12 +816,83 @@ function OwnerDashboard() {
 
         {err && <Text style={styles.err} testID="dashboard-error">{err}</Text>}
       </ScrollView>
+
+      {/* Customer Order QR Scanner Modal */}
+      {showScanner && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: spacing.lg, zIndex: 1000 }]}>
+          <View style={{ backgroundColor: theme.surface, width: "100%", maxWidth: 400, borderRadius: 24, padding: spacing.xl, borderWidth: 1, borderColor: theme.border }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="qr-code" size={22} color="#635BFF" />
+                <Text style={{ fontSize: 18, fontWeight: "800", color: theme.onSurface }}>Scan Customer Web Order</Text>
+              </View>
+              <Pressable onPress={() => setShowScanner(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color={theme.onSurfaceSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, marginBottom: spacing.md }}>
+              Enter or paste the Order QR code payload or 16-character token from the customer's phone:
+            </Text>
+
+            <TextInput
+              style={{ borderColor: theme.border, color: theme.onSurface, backgroundColor: theme.surfaceSecondary, marginBottom: spacing.md, padding: 12, borderRadius: 12, borderWidth: 1, fontSize: 14 }}
+              value={scanInput}
+              onChangeText={setScanInput}
+              placeholder="e.g. EZBILL_ORDER:{...} or Order ID"
+              placeholderTextColor="#64748B"
+              autoFocus
+            />
+
+            <Text style={{ fontSize: 12, fontWeight: "700", color: theme.onSurface, marginBottom: 6 }}>
+              Assign to Table (Optional override):
+            </Text>
+            <TextInput
+              style={{ borderColor: theme.border, color: theme.onSurface, backgroundColor: theme.surfaceSecondary, marginBottom: spacing.lg, padding: 12, borderRadius: 12, borderWidth: 1, fontSize: 14 }}
+              value={scanTable}
+              onChangeText={setScanTable}
+              placeholder="e.g. 5 (Leave blank to use order's table)"
+              placeholderTextColor="#64748B"
+              keyboardType="numeric"
+            />
+
+            <Pressable
+              style={[{ height: 48, backgroundColor: "#635BFF", borderRadius: 14, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 }, scanBusy && { opacity: 0.6 }]}
+              onPress={handleScanImport}
+              disabled={scanBusy}
+            >
+              {scanBusy ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>Import Order to Table</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
+  quickActionShortcut: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 6,
+  },
+  quickActionShortcutText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
   greet: { letterSpacing: 1.2, fontSize: 11, fontWeight: "800" },
   name: { fontSize: 24, fontWeight: "900" },
   ownerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg, paddingHorizontal: spacing.sm },

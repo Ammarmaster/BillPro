@@ -63,10 +63,20 @@ async function delItem(k: string) {
   await SecureStore.deleteItemAsync(k);
 }
 
-export async function saveTokens(access: string, refresh: string) {
+export async function saveTokens(access: string, refresh: string, user?: any) {
   await setItem(KEYS.access, access);
   await setItem(KEYS.refresh, refresh);
+  if (user) {
+    await setItem("lumina_user", JSON.stringify(user));
+  }
 }
+
+export async function getStoredUser(): Promise<any | null> {
+  const str = await getItem("lumina_user");
+  if (!str) return null;
+  try { return JSON.parse(str); } catch { return null; }
+}
+
 export async function clearTokens() {
   clearCachePrefix("/restaurant");
   clearCachePrefix("/tables");
@@ -76,17 +86,59 @@ export async function clearTokens() {
   clearCachePrefix("/subscriptions/mine");
   await delItem(KEYS.access);
   await delItem(KEYS.refresh);
+  await delItem("lumina_user");
   await delItem("cached_sub");
 }
 export async function getAccess() { return getItem(KEYS.access); }
 export async function getRefresh() { return getItem(KEYS.refresh); }
 
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+async function doRefreshToken(): Promise<string | null> {
+  if (isRefreshing && refreshPromise) return refreshPromise;
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const rToken = await getRefresh();
+      if (!rToken) return null;
+      const res = await fetch(`${BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${rToken}`
+        }
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          // Genuinely expired refresh token
+          await clearTokens();
+        }
+        return null;
+      }
+      const data = await res.json();
+      if (data && data.access_token) {
+        await saveTokens(data.access_token, data.refresh_token || rToken, data.user);
+        return data.access_token;
+      }
+      return null;
+    } catch (e) {
+      // Network drop: do not clear tokens
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
 const inFlightRequests: Record<string, Promise<any> | undefined> = {};
 
-async function req(path: string, opts: RequestInit = {}, auth = true): Promise<any> {
+async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = false): Promise<any> {
   const isGet = !opts.method || opts.method.toUpperCase() === "GET";
   
-  if (isGet) {
+  if (isGet && !isRetry) {
     const existing = inFlightRequests[path];
     if (existing !== undefined) {
       return existing;
@@ -108,12 +160,32 @@ async function req(path: string, opts: RequestInit = {}, auth = true): Promise<a
       return memoryCache[path];
     }
 
-    const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+    } catch (netErr: any) {
+      // Network drop / offline: return cached data if available for GET
+      if (isGet && memoryCache[path]) {
+        return memoryCache[path];
+      }
+      throw new Error(netErr.message || "Network connection unavailable.");
+    }
+
+    // Automatic silent token refresh on 401 for authenticated requests
+    if (res.status === 401 && auth && !isRetry && path !== "/auth/refresh" && path !== "/auth/login" && path !== "/auth/staff-login") {
+      const newAccess = await doRefreshToken();
+      if (newAccess) {
+        return req(path, opts, auth, true);
+      }
+    }
+
     const text = await res.text();
     const data = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
     if (!res.ok) {
       const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
-      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      const err: any = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      err.status = res.status;
+      throw err;
     }
 
     if (isGet) {
@@ -125,7 +197,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true): Promise<a
     return data;
   };
 
-  if (isGet) {
+  if (isGet && !isRetry) {
     inFlightRequests[path] = execute().finally(() => {
       delete inFlightRequests[path];
     });
@@ -321,6 +393,23 @@ export const api = {
   deleteNotification: (nid: string) => req(`/notifications/${nid}`, { method: "DELETE" }),
   clearNotifications: () => req("/notifications", { method: "DELETE" }),
   savePushToken: (token: string) => req("/users/push-token", { method: "POST", body: JSON.stringify({ push_token: token }) }),
+
+  // QR Web Order Import
+  scanImportOrder: (qr_data: string, table_number?: string) => {
+    clearCachePrefix("/orders");
+    clearCachePrefix("/tables");
+    return req("/orders/scan-import", { method: "POST", body: JSON.stringify({ qr_data, table_number }) });
+  },
+
+  // AI Menu OCR & Bulk Import
+  ocrProcessMenu: (images: string[]) => {
+    return req("/menu/ocr-process", { method: "POST", body: JSON.stringify({ images }) });
+  },
+  bulkImportMenu: (categories: any[]) => {
+    clearCachePrefix("/categories");
+    clearCachePrefix("/menu-items");
+    return req("/menu/bulk-import", { method: "POST", body: JSON.stringify({ categories }) });
+  },
   
   // Cache utilities
   getCachedOrders: () => memoryCache['/orders'] || null,

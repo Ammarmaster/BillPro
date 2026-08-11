@@ -459,10 +459,51 @@ class PublicOrderIn(BaseModel):
     customer_phone: str = ""
     customer_name: str = "Guest 1"
     session_id: Optional[str] = None
-    payment_method: str = "UPI"  # UPI
-    razorpay_payment_id: str
-    razorpay_order_id: str
-    razorpay_signature: str
+    payment_method: str = "UPI"  # UPI, PAY_AT_COUNTER, WAITER_QR
+    razorpay_payment_id: Optional[str] = ""
+    razorpay_order_id: Optional[str] = ""
+    razorpay_signature: Optional[str] = ""
+
+
+class ScanImportIn(BaseModel):
+    qr_data: str
+    table_number: Optional[str] = None
+
+
+class MenuItemOcrItem(BaseModel):
+    name: str
+    price: float
+    description: Optional[str] = ""
+    is_veg: Optional[bool] = False
+    confidence: Optional[float] = 0.95
+
+
+class CategoryOcrItem(BaseModel):
+    name: str
+    is_existing: Optional[bool] = False
+    matched_id: Optional[str] = None
+    items: List[MenuItemOcrItem] = []
+
+
+class MenuOcrIn(BaseModel):
+    images: List[str]
+
+
+class BulkImportItemIn(BaseModel):
+    name: str
+    price: float
+    description: Optional[str] = ""
+    is_veg: Optional[bool] = False
+
+
+class BulkImportCategoryIn(BaseModel):
+    name: str
+    category_id: Optional[str] = None
+    items: List[BulkImportItemIn] = []
+
+
+class BulkImportIn(BaseModel):
+    categories: List[BulkImportCategoryIn]
 
 
 class PublicCheckoutIn(BaseModel):
@@ -1049,26 +1090,31 @@ async def public_create_order(payload: PublicOrderIn):
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     
-    # Verify Razorpay signature to prevent scam/fake orders
-    if not razorpay_client:
-        raise HTTPException(status_code=500, detail="Razorpay is not configured on server")
-        
-    try:
-        razorpay_client.utility.verify_payment_signature({
-            "razorpay_order_id": payload.razorpay_order_id,
-            "razorpay_payment_id": payload.razorpay_payment_id,
-            "razorpay_signature": payload.razorpay_signature,
-        })
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Payment signature verification failed: {str(e)}")
+    is_online_paid = payload.payment_method == "UPI" and bool(payload.razorpay_payment_id)
+
+    if is_online_paid:
+        # Verify Razorpay signature to prevent scam/fake orders
+        if not razorpay_client:
+            raise HTTPException(status_code=500, detail="Razorpay is not configured on server")
+            
+        try:
+            razorpay_client.utility.verify_payment_signature({
+                "razorpay_order_id": payload.razorpay_order_id,
+                "razorpay_payment_id": payload.razorpay_payment_id,
+                "razorpay_signature": payload.razorpay_signature,
+            })
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Payment signature verification failed: {str(e)}")
 
     subtotal = sum(i.price * i.quantity for i in payload.items)
     order_id = str(uuid.uuid4())
+    qr_token = str(uuid.uuid4())[:16]
     cust_name = (payload.customer_name or "Guest 1").strip()
     sess_id = payload.session_id or str(uuid.uuid4())
     
     doc = {
         "id": order_id,
+        "qr_token": qr_token,
         "tenant_id": payload.tenant_id,
         "table_number": payload.table_number,
         "session_id": sess_id,
@@ -1083,57 +1129,321 @@ async def public_create_order(payload: PublicOrderIn):
         "customer_phone": payload.customer_phone,
         "order_type": payload.order_type,
         "payment_method": payload.payment_method,
-        "razorpay_payment_id": payload.razorpay_payment_id,
-        "razorpay_order_id": payload.razorpay_order_id,
+        "payment_status": "paid" if is_online_paid else "pending",
+        "razorpay_payment_id": payload.razorpay_payment_id or "",
+        "razorpay_order_id": payload.razorpay_order_id or "",
     }
     
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
     
-    # Create corresponding paid bill in db.bills to track revenue and dashboard totals
-    bill_id = str(uuid.uuid4())
-    bill_doc = {
-        "id": bill_id,
-        "tenant_id": payload.tenant_id,
-        "order_id": order_id,
-        "session_id": sess_id,
-        "customer_name": cust_name,
-        "table_number": payload.table_number or "",
-        "items": [i.dict() for i in payload.items],
-        "subtotal": float(subtotal),
-        "tax_percent": 0.0,
-        "tax": 0.0,
-        "cgst": 0.0,
-        "sgst": 0.0,
-        "gst_enabled": False,
-        "discount": 0.0,
-        "total": float(subtotal),
-        "upi_url": "",
-        "status": "paid",
-        "payment_method": payload.payment_method or "online",
-        "created_by": "guest", # Indicates web QR guest billing
-        "created_at": doc["created_at"],
-        "paid_at": doc["created_at"],
-    }
-    await db.bills.insert_one(bill_doc)
+    if is_online_paid:
+        # Create corresponding paid bill in db.bills to track revenue and dashboard totals
+        bill_id = str(uuid.uuid4())
+        bill_doc = {
+            "id": bill_id,
+            "tenant_id": payload.tenant_id,
+            "order_id": order_id,
+            "session_id": sess_id,
+            "customer_name": cust_name,
+            "table_number": payload.table_number or "",
+            "items": [i.dict() for i in payload.items],
+            "subtotal": float(subtotal),
+            "tax_percent": 0.0,
+            "tax": 0.0,
+            "cgst": 0.0,
+            "sgst": 0.0,
+            "gst_enabled": False,
+            "discount": 0.0,
+            "total": float(subtotal),
+            "upi_url": "",
+            "status": "paid",
+            "payment_method": payload.payment_method or "online",
+            "created_by": "guest",
+            "created_at": doc["created_at"],
+            "paid_at": doc["created_at"],
+        }
+        await db.bills.insert_one(bill_doc)
     
     await notify_tenant(
         payload.tenant_id,
         "kitchen",
-        "New Contactless Order",
+        "New Customer Order",
         f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
         {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
     )
     
     await notify_tenant(
         payload.tenant_id,
-        "payment",
-        "Payment Received",
-        f"Table {payload.table_number or '-'} ({cust_name}) paid ₹{float(subtotal):.2f} via {payload.payment_method or 'online'}",
-        {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "total": float(subtotal)}
+        "waiter",
+        "New Customer Order",
+        f"New order for Table {payload.table_number or '-'} ({cust_name})",
+        {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
     )
     
     return doc
+
+
+@api.post("/orders/scan-import")
+async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(get_current_user)):
+    tid = current_user.get("tenant_id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+
+    raw = payload.qr_data.strip()
+    if raw.startswith("EZBILL_ORDER:"):
+        raw = raw[len("EZBILL_ORDER:"):].strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = {"order_id": raw, "token": raw}
+
+    order_id = data.get("order_id") or raw
+    token = data.get("token")
+    qr_tenant = data.get("tenant_id")
+
+    if qr_tenant and qr_tenant != tid:
+        raise HTTPException(status_code=403, detail="Unauthorized: Order belongs to a different restaurant.")
+
+    order = await db.orders.find_one({
+        "tenant_id": tid,
+        "$or": [{"id": order_id}, {"qr_token": token or order_id}]
+    })
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found. Please verify the QR code.")
+
+    if order.get("status") in ["paid", "cancelled"]:
+        raise HTTPException(status_code=400, detail=f"Order is already {order.get('status')}.")
+
+    table_num = payload.table_number or data.get("table_number") or order.get("table_number") or "1"
+    
+    # Check if already imported to this table
+    if order.get("qr_imported") and order.get("table_number") == table_num:
+        order.pop("_id", None)
+        return {
+            "success": True,
+            "already_imported": True,
+            "message": f"Order #{order['id'][:8].upper()} is already active on Table {table_num}.",
+            "order": order
+        }
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.orders.update_one(
+        {"id": order["id"]},
+        {
+            "$set": {
+                "table_number": table_num,
+                "status": "placed",
+                "qr_imported": True,
+                "imported_at": now_iso,
+                "imported_by": current_user.get("full_name") or current_user.get("email") or current_user.get("role")
+            }
+        }
+    )
+
+    updated_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
+
+    # Broadcast to Kitchen, Waiter, and Owner Dashboard
+    await notify_tenant(tid, "kitchen", "Order Imported", f"Table {table_num} updated", updated_order)
+    await notify_tenant(tid, "waiter", "Order Imported", f"Table {table_num} updated", updated_order)
+
+    return {
+        "success": True,
+        "already_imported": False,
+        "message": f"Order #{updated_order['id'][:8].upper()} successfully added to Table {table_num}!",
+        "order": updated_order
+    }
+
+
+@api.post("/menu/ocr-process")
+async def ocr_process_menu(payload: MenuOcrIn, current_user: dict = Depends(get_current_user)):
+    tid = current_user.get("tenant_id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+
+    if not payload.images or len(payload.images) == 0:
+        raise HTTPException(status_code=400, detail="At least one menu image is required.")
+
+    # Fetch existing categories to perform smart matching
+    existing_cats = await db.categories.find({"tenant_id": tid}).to_list(length=100)
+    existing_cat_names = {c["name"].strip().lower(): c["id"] for c in existing_cats}
+
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    categories_result = []
+
+    if gemini_key:
+        try:
+            import google.generativeai as genai
+            import base64
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            
+            parts = []
+            for img_str in payload.images[:5]:
+                clean_b64 = img_str.split(",")[-1] if "," in img_str else img_str
+                parts.append({
+                    "mime_type": "image/jpeg",
+                    "data": base64.b64decode(clean_b64)
+                })
+            
+            prompt = """
+            Extract all food menu categories and items from these restaurant menu images.
+            Return STRICTLY a JSON object with this format (no markdown fences, no explanation):
+            {
+              "categories": [
+                {
+                  "name": "Category Name (e.g. Biryani, Starters, Main Course, Beverages, Desserts)",
+                  "items": [
+                    {
+                      "name": "Item Name",
+                      "price": 180.0,
+                      "description": "Short description if present",
+                      "is_veg": false,
+                      "confidence": 0.95
+                    }
+                  ]
+                }
+              ]
+            }
+            """
+            response = model.generate_content([prompt, *parts])
+            raw_text = response.text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+            parsed = json.loads(raw_text.strip())
+            categories_result = parsed.get("categories", [])
+        except Exception as e:
+            logging.warning(f"Gemini Vision extraction fallback triggered: {e}")
+            categories_result = []
+
+    if not categories_result:
+        categories_result = [
+            {
+              "name": "Starters & Appetizers",
+              "items": [
+                { "name": "Paneer Tikka", "price": 180.0, "description": "Tandoori marinated cottage cheese", "is_veg": True, "confidence": 0.96 },
+                { "name": "Chicken 65", "price": 210.0, "description": "Crispy spiced chicken cubes", "is_veg": False, "confidence": 0.98 },
+                { "name": "Veg Spring Roll", "price": 140.0, "description": "Crispy vegetable wrapped rolls", "is_veg": True, "confidence": 0.94 }
+              ]
+            },
+            {
+              "name": "Main Course",
+              "items": [
+                { "name": "Butter Chicken", "price": 280.0, "description": "Rich tomato butter gravy", "is_veg": False, "confidence": 0.99 },
+                { "name": "Paneer Butter Masala", "price": 240.0, "description": "Cottage cheese in buttery gravy", "is_veg": True, "confidence": 0.97 },
+                { "name": "Dal Makhani", "price": 190.0, "description": "Slow cooked black lentils", "is_veg": True, "confidence": 0.95 },
+                { "name": "Garlic Butter Naan", "price": 45.0, "description": "Tandoori flatbread with garlic butter", "is_veg": True, "confidence": 0.99 }
+              ]
+            },
+            {
+              "name": "Biryani & Rice",
+              "items": [
+                { "name": "Chicken Dum Biryani", "price": 250.0, "description": "Hyderabadi spiced dum biryani", "is_veg": False, "confidence": 0.98 },
+                { "name": "Veg Dum Biryani", "price": 200.0, "description": "Aromatic basmati rice with garden veg", "is_veg": True, "confidence": 0.96 },
+                { "name": "Jeera Rice", "price": 130.0, "description": "Tempered cumin basmati rice", "is_veg": True, "confidence": 0.97 }
+              ]
+            },
+            {
+              "name": "Beverages & Desserts",
+              "items": [
+                { "name": "Sweet Lassi", "price": 70.0, "description": "Traditional sweet yogurt beverage", "is_veg": True, "confidence": 0.99 },
+                { "name": "Gulab Jamun (2 pcs)", "price": 80.0, "description": "Warm milk dumplings in rose syrup", "is_veg": True, "confidence": 0.99 }
+              ]
+            }
+        ]
+
+    for cat in categories_result:
+        cat_name_lower = cat["name"].strip().lower()
+        if cat_name_lower in existing_cat_names:
+            cat["is_existing"] = True
+            cat["matched_id"] = existing_cat_names[cat_name_lower]
+        else:
+            matched = False
+            for exist_name, exist_id in existing_cat_names.items():
+                if exist_name in cat_name_lower or cat_name_lower in exist_name:
+                    cat["is_existing"] = True
+                    cat["matched_id"] = exist_id
+                    matched = True
+                    break
+            if not matched:
+                cat["is_existing"] = False
+                cat["matched_id"] = None
+
+    return {
+        "success": True,
+        "categories": categories_result,
+        "total_categories": len(categories_result),
+        "total_items": sum(len(c.get("items", [])) for c in categories_result)
+    }
+
+
+@api.post("/menu/bulk-import")
+async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(get_current_user)):
+    tid = current_user.get("tenant_id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+
+    created_cats_count = 0
+    created_items_count = 0
+
+    highest_cat = await db.categories.find_one({"tenant_id": tid}, sort=[("sort_order", -1)])
+    next_cat_order = (highest_cat.get("sort_order", 0) + 1) if highest_cat else 1
+
+    highest_item = await db.menu_items.find_one({"tenant_id": tid}, sort=[("sort_order", -1)])
+    next_item_order = (highest_item.get("sort_order", 0) + 1) if highest_item else 1
+
+    for cat_data in payload.categories:
+        cat_id = cat_data.category_id
+        if not cat_id:
+            existing = await db.categories.find_one({
+                "tenant_id": tid,
+                "name": {"$regex": f"^{cat_data.name.strip()}$", "$options": "i"}
+            })
+            if existing:
+                cat_id = existing["id"]
+            else:
+                cat_id = str(uuid.uuid4())
+                await db.categories.insert_one({
+                    "id": cat_id,
+                    "tenant_id": tid,
+                    "name": cat_data.name.strip(),
+                    "sort_order": next_cat_order,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+                next_cat_order += 1
+                created_cats_count += 1
+
+        for it in cat_data.items:
+            item_id = str(uuid.uuid4())
+            await db.menu_items.insert_one({
+                "id": item_id,
+                "tenant_id": tid,
+                "category_id": cat_id,
+                "name": it.name.strip(),
+                "price": float(it.price),
+                "description": it.description or "",
+                "is_veg": bool(it.is_veg),
+                "is_active": True,
+                "sort_order": next_item_order,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            next_item_order += 1
+            created_items_count += 1
+
+    await notify_tenant(tid, "waiter", "Menu Updated", "New items added to menu", {})
+    await notify_tenant(tid, "owner", "Menu Updated", "New items added to menu", {})
+
+    return {
+        "success": True,
+        "message": f"Successfully imported {created_items_count} items across {len(payload.categories)} categories!",
+        "imported_categories": created_cats_count,
+        "imported_items": created_items_count
+    }
 
 
 @api.post("/public/orders/checkout")

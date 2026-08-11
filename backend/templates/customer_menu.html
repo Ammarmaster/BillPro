@@ -6,8 +6,8 @@
   <title>Menu</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     :root {
       --bg: #090D16;
@@ -990,16 +990,15 @@
       <textarea id="order-notes" class="form-input" rows="2" placeholder="E.g. Make it extra spicy, no onions..."></textarea>
     </div>
 
-    <!-- Payment Type -->
-    <div class="form-group">
-      <label class="form-label">Payment Method</label>
-      <div class="seg-picker" style="margin-bottom: 0;">
-        <button class="seg-btn active" style="flex: 1; pointer-events: none;" id="pay-upi">UPI Online Payment</button>
-      </div>
+    <!-- Action Checkout Buttons -->
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
+      <button class="checkout-btn" style="background: linear-gradient(135deg, #4F46E5, #7C3AED);" onclick="submitOrder('WAITER_QR')">
+        📱 Place Order & Show QR to Waiter
+      </button>
+      <button class="checkout-btn" style="background: var(--surface-sec); border: 1px solid var(--border); color: var(--on-surface);" onclick="submitOrder('UPI')">
+        ⚡ Pay Online with UPI
+      </button>
     </div>
-
-    <!-- Action Checkout Button -->
-    <button class="checkout-btn" style="margin-top: 16px;" onclick="submitOrder()">Place & Pay Order (UPI)</button>
   </div>
 
   <!-- Post-Order Confirmation & Feedback Sheet -->
@@ -1450,7 +1449,7 @@
     }
 
     // Submit Order API
-    async function submitOrder() {
+    async function submitOrder(mode) {
       const phoneInput = document.getElementById("cust-phone");
       const phone = phoneInput.value.trim();
       const name = document.getElementById("cust-name").value.trim();
@@ -1473,6 +1472,44 @@
         }));
 
         const totalPrice = Object.values(cart).reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
+
+        if (mode === "WAITER_QR") {
+          // Direct Web Order with Table Order QR Handoff
+          const body = {
+            tenant_id: tenantId,
+            table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
+            order_type: orderType,
+            session_id: customerSessionId,
+            customer_name: customerGuestName || name || "Guest 1",
+            items: orderItems,
+            notes: notes,
+            customer_phone: phone,
+            payment_method: "WAITER_QR",
+          };
+
+          const verifyRes = await fetch("/api/public/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+
+          if (!verifyRes.ok) {
+            const errData = await verifyRes.json();
+            throw new Error(errData.detail || "Failed to create order.");
+          }
+
+          const placedOrder = await verifyRes.json();
+
+          // Clear Cart
+          cart = {};
+          renderMenu();
+          updateCartBar();
+          closeCartSheet();
+
+          // Open success & review page
+          showCheckoutConfirmation(placedOrder);
+          return;
+        }
 
         // 1. Create Razorpay Payment Session on backend
         const checkoutRes = await fetch("/api/public/orders/checkout", {
@@ -1562,6 +1599,7 @@
 
       } catch (e) {
         alert("Ordering Error: " + e.message);
+      } finally {
         showLoader(false);
       }
     }
@@ -1826,10 +1864,10 @@
 
     function renderReceiptHTML(order) {
       const restName = order.restaurant_name || restaurantInfo.name;
-      const orderDate = new Date(order.created_at).toLocaleString();
+      const orderDate = new Date(order.created_at || Date.now()).toLocaleString();
       const orderId = order.id || "N/A";
-      const tableNum = order.table_number || "Takeaway";
-      const itemsListHTML = order.items.map(it => `
+      const tableNum = order.table_number || initialTableLabel || "Takeaway";
+      const itemsListHTML = (order.items || []).map(it => `
         <div class="receipt-row">
           <span>${it.quantity} × ${it.name}</span>
           <span>₹${(it.price * it.quantity).toFixed(2)}</span>
@@ -1840,7 +1878,8 @@
       const tax = order.bill?.tax || 0;
       const discount = order.bill?.discount || 0;
       const total = order.bill?.total || subtotal;
-      const paymentMethod = order.bill?.payment_method || "Online UPI";
+      const isPaid = order.payment_status === "paid" || order.status === "paid";
+      const paymentMethod = order.payment_method || (isPaid ? "Online UPI" : "Pay at Counter");
       
       return `
         <div class="receipt-container">
@@ -1849,6 +1888,18 @@
             <div class="receipt-meta">Order ID: #${orderId.slice(-8).toUpperCase()}</div>
             <div class="receipt-meta">Date: ${orderDate}</div>
             <div class="receipt-meta">Table: ${tableNum}</div>
+          </div>
+
+          <!-- Table Order QR Handoff Card -->
+          <div style="background: #FFFFFF; border-radius: 16px; padding: 14px; margin: 14px 0; text-align: center; color: #0F172A; box-shadow: 0 4px 14px rgba(0,0,0,0.15);">
+            <div style="font-size: 11px; font-weight: 800; color: #4F46E5; letter-spacing: 0.5px; text-transform: uppercase;">
+              Table Order QR Code
+            </div>
+            <div id="order-qr-code" style="display: flex; justify-content: center; margin: 10px auto; min-height: 140px; align-items: center;"></div>
+            <div style="font-size: 13px; font-weight: 800;">Order #${orderId.slice(-8).toUpperCase()}</div>
+            <div style="font-size: 11px; color: #64748B; margin-top: 3px; font-weight: 600;">
+              Show this QR to your waiter to confirm Table ${tableNum}
+            </div>
           </div>
           
           <div class="receipt-items">
@@ -1873,13 +1924,13 @@
           <div class="receipt-divider"></div>
           
           <div class="receipt-total">
-            <span>Total Paid</span>
+            <span>Total Payable</span>
             <span>₹${total.toFixed(2)}</span>
           </div>
           
           <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
-            <span class="receipt-status-pill">✓ Paid via ${paymentMethod}</span>
-            <span style="font-size: 11px; color: #10B981; font-weight: 700;">✓ Kitchen Received</span>
+            <span class="receipt-status-pill">${isPaid ? '✓ Paid Online' : '🕒 Pay to Waiter / Cashier'}</span>
+            <span style="font-size: 11px; color: #10B981; font-weight: 700;">✓ Kitchen Active</span>
           </div>
         </div>
       `;
@@ -1890,6 +1941,28 @@
       selectedCheckoutRating = 0;
       
       document.getElementById("checkout-receipt-container").innerHTML = renderReceiptHTML(order);
+
+      // Render Order QR Code asynchronously
+      setTimeout(() => {
+        const qrContainer = document.getElementById("order-qr-code");
+        if (qrContainer && typeof QRCode !== "undefined") {
+          qrContainer.innerHTML = "";
+          const qrPayload = "EZBILL_ORDER:" + JSON.stringify({
+            order_id: order.id,
+            token: order.qr_token || order.id,
+            tenant_id: tenantId,
+            table_number: order.table_number || initialTableLabel || ""
+          });
+          new QRCode(qrContainer, {
+            text: qrPayload,
+            width: 140,
+            height: 140,
+            colorDark: "#0F172A",
+            colorLight: "#FFFFFF",
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        }
+      }, 50);
       
       document.getElementById("checkout-phone-input-row").style.display = "flex";
       document.getElementById("checkout-otp-input-row").style.display = "none";

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api, saveTokens, clearTokens, getAccess } from "@/src/lib/api";
+import { api, saveTokens, clearTokens, getAccess, getStoredUser } from "@/src/lib/api";
 
 type User = { id: string; email: string; full_name: string; role: string; tenant_id: string | null };
 
@@ -29,12 +29,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     try {
+      const stored = await getStoredUser();
+      if (stored) {
+        setUser(stored);
+      }
       const t = await getAccess();
-      if (!t) { setUser(null); return; }
+      if (!t && !stored) { setUser(null); return; }
+      
       const me = await api.me();
-      if (me) setUser(me);
+      if (me) {
+        setUser(me);
+      }
     } catch (e: any) {
-      // Only clear tokens on explicit 401 Unauthorized, never on network drop
+      // Only clear tokens on explicit unrecoverable 401 Unauthorized, never on network failure
       if (e?.status === 401) {
         setUser(null);
         await clearTokens();
@@ -44,6 +51,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
+      // Synchronously hydrate stored user on Frame 0
+      const stored = await getStoredUser();
+      if (stored) {
+        setUser(stored);
+      }
       await refreshUser();
       setLoading(false);
     })();
@@ -51,17 +63,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const r = await api.login(email, password);
-    await saveTokens(r.access_token, r.refresh_token);
+    await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
   };
   const staffLogin = async (phone: string, pin: string) => {
     const r = await api.staffLogin(phone, pin);
-    await saveTokens(r.access_token, r.refresh_token);
+    await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
   };
   const register = async (email: string, password: string, full_name: string, role = "owner", terms_accepted = false) => {
     const r = await api.register(email, password, full_name, role, terms_accepted);
-    await saveTokens(r.access_token, r.refresh_token);
+    await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
   };
   const logout = async () => {
