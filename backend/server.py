@@ -1377,14 +1377,14 @@ async def ocr_process_menu(payload: MenuOcrIn, current_user: dict = Depends(get_
             """
             response = model.generate_content([prompt, *parts])
             raw_text = response.text.strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
+            first_brace = raw_text.find('{')
+            last_brace = raw_text.rfind('}')
+            if first_brace != -1 and last_brace != -1:
+                json_str = raw_text[first_brace:last_brace+1]
+            else:
+                json_str = raw_text
             
-            parsed = json.loads(raw_text.strip())
+            parsed = json.loads(json_str)
             if not parsed.get("is_menu", True):
                 raise HTTPException(status_code=400, detail=parsed.get("error_message") or "This image does not appear to contain a readable menu.")
             
