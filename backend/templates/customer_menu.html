@@ -2077,7 +2077,6 @@
       window.open(mapsUrl, "_blank");
       document.getElementById("checkout-google-opened").style.display = "block";
       
-      const text = document.getElementById("checkout-ai-review-text").textContent;
       const token = localStorage.getItem("customer_token");
       const headers = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = "Bearer " + token;
