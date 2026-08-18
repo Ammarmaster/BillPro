@@ -59,13 +59,12 @@ export default function MenuAiImportScreen() {
       }
 
       const res = await ImagePicker.launchCameraAsync({
-        base64: true,
-        quality: 0.8,
+        quality: 0.7,
         allowsEditing: true,
       });
 
-      if (!res.canceled && res.assets[0]?.base64) {
-        setImages(prev => [...prev, `data:image/jpeg;base64,${res.assets[0].base64}`]);
+      if (!res.canceled && res.assets[0]?.uri) {
+        setImages(prev => [...prev, res.assets[0].uri]);
       }
     } catch (e: any) {
       Alert.alert("Camera Error", e.message);
@@ -81,13 +80,12 @@ export default function MenuAiImportScreen() {
       }
 
       const res = await ImagePicker.launchImageLibraryAsync({
-        base64: true,
-        quality: 0.8,
+        quality: 0.7,
         allowsMultipleSelection: true,
       });
 
       if (!res.canceled && res.assets) {
-        const newImages = res.assets.filter(a => a.base64).map(a => `data:image/jpeg;base64,${a.base64}`);
+        const newImages = res.assets.map(a => a.uri);
         setImages(prev => [...prev, ...newImages]);
       }
     } catch (e: any) {

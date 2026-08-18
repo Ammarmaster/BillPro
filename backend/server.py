@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect, BackgroundTasks, File, UploadFile
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -1302,13 +1302,31 @@ async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(
 
 
 @api.post("/menu/ocr-process")
-async def ocr_process_menu(payload: MenuOcrIn, current_user: dict = Depends(get_current_user)):
+async def ocr_process_menu(
+    images: List[UploadFile] = File(...),
+    current_user: dict = Depends(get_current_user)
+):
     tid = current_user.get("tenant_id")
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
 
-    if not payload.images or len(payload.images) == 0:
+    if not images or len(images) == 0:
         raise HTTPException(status_code=400, detail="At least one menu image is required.")
+
+    # Validation checks
+    MAX_SIZE = 10 * 1024 * 1024 # 10MB limit per image
+    for img in images:
+        # Format validation
+        content_type = img.content_type or ""
+        filename = (img.filename or "").lower()
+        if not (content_type.startswith("image/") or filename.endswith(('.jpg', '.jpeg', '.png', '.webp'))):
+            raise HTTPException(status_code=400, detail="Unsupported image format. Please upload JPG, PNG, or WEBP.")
+        
+        # Size validation
+        img_bytes = await img.read()
+        if len(img_bytes) > MAX_SIZE:
+            raise HTTPException(status_code=413, detail="Image is too large (max 10MB)")
+        await img.seek(0)
 
     # Fetch existing categories to perform smart matching
     existing_cats = await db.categories.find({"tenant_id": tid}).to_list(length=100)
@@ -1320,16 +1338,15 @@ async def ocr_process_menu(payload: MenuOcrIn, current_user: dict = Depends(get_
     if gemini_key:
         try:
             import google.generativeai as genai
-            import base64
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel("gemini-1.5-flash")
             
             parts = []
-            for img_str in payload.images[:5]:
-                clean_b64 = img_str.split(",")[-1] if "," in img_str else img_str
+            for img in images[:5]:
+                file_bytes = await img.read()
                 parts.append({
-                    "mime_type": "image/jpeg",
-                    "data": base64.b64decode(clean_b64)
+                    "mime_type": img.content_type or "image/jpeg",
+                    "data": file_bytes
                 })
             
             prompt = """

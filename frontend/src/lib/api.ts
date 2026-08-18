@@ -462,9 +462,11 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 
   const execute = async () => {
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
       ...((opts.headers as any) || {}),
     };
+    if (!(opts.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
     if (auth) {
       const t = await getAccess();
       if (t) headers["Authorization"] = `Bearer ${t}`;
@@ -723,7 +725,19 @@ export const api = {
 
   // AI Menu OCR & Bulk Import
   ocrProcessMenu: (images: string[]) => {
-    return req("/menu/ocr-process", { method: "POST", body: JSON.stringify({ images }) });
+    const formData = new FormData();
+    images.forEach((uri, idx) => {
+      const filename = uri.split("/").pop() || `menu_page_${idx}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1] : "jpg";
+      const type = `image/${ext === "png" ? "png" : ext === "webp" ? "webp" : "jpeg"}`;
+      formData.append("images", {
+        uri,
+        name: filename,
+        type,
+      } as any);
+    });
+    return req("/menu/ocr-process", { method: "POST", body: formData });
   },
   bulkImportMenu: (categories: any[]) => {
     clearCachePrefix("/categories");
