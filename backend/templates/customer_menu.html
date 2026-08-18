@@ -2026,10 +2026,20 @@
     }
 
     async function continueToGoogleMaps() {
-      const mapsUrl = restaurantInfo.googleReviewUrl || restaurantInfo.google_maps_link;
-      if (!mapsUrl) {
-        alert("Google review link is not configured. Please contact the restaurant administrator.");
-        return;
+      let mapsUrl = restaurantInfo.googleReviewUrl || restaurantInfo.google_maps_link;
+      const restName = restaurantInfo.name || "Restaurant";
+      const restAddr = restaurantInfo.address || "";
+      
+      // Check if URL is generic, missing, or placeholder
+      if (!mapsUrl || mapsUrl.trim().length === 0 || mapsUrl.includes("your-restaurant") || mapsUrl.includes("maps.google.com/?cid=123")) {
+        // Fallback to high-reliability search that opens review prompt directly
+        mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restName + ' ' + restAddr)}`;
+      }
+      
+      // Auto-copy the review text to clipboard so it's ready to paste in 1 click!
+      const text = document.getElementById("checkout-ai-review-text").textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {});
       }
       
       window.open(mapsUrl, "_blank");

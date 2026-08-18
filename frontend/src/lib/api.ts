@@ -410,6 +410,11 @@ export const api = {
     clearCachePrefix("/menu-items");
     return req("/menu/bulk-import", { method: "POST", body: JSON.stringify({ categories }) });
   },
+  rollbackBulkImport: (itemIds: string[], categoryIds: string[]) => {
+    clearCachePrefix("/categories");
+    clearCachePrefix("/menu-items");
+    return req("/menu/bulk-import/rollback", { method: "POST", body: JSON.stringify({ item_ids: itemIds, category_ids: categoryIds }) });
+  },
   
   // Cache utilities
   getCachedOrders: () => memoryCache['/orders'] || null,

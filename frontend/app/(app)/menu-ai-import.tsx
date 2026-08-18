@@ -19,6 +19,10 @@ type ExtractedItem = {
   description: string;
   is_veg: boolean;
   confidence: number;
+  action?: "create" | "replace" | "skip";
+  existing_item_id?: string | null;
+  duplicate_name?: string | null;
+  original_price?: number | null;
 };
 
 type ExtractedCategory = {
@@ -39,6 +43,8 @@ export default function MenuAiImportScreen() {
   const [analyzingStepText, setAnalyzingStepText] = useState("Analyzing menu photos...");
   const [categories, setCategories] = useState<ExtractedCategory[]>([]);
   const [importing, setImporting] = useState(false);
+  const [importedData, setImportedData] = useState<{ item_ids: string[]; category_ids: string[] } | null>(null);
+  const [showUndo, setShowUndo] = useState(false);
 
   // -------------------------------------------------------------
   // Step 1: Camera & Gallery Photo Picking
@@ -54,6 +60,7 @@ export default function MenuAiImportScreen() {
       const res = await ImagePicker.launchCameraAsync({
         base64: true,
         quality: 0.8,
+        allowsEditing: true,
       });
 
       if (!res.canceled && res.assets[0]?.base64) {
@@ -124,7 +131,34 @@ export default function MenuAiImportScreen() {
       clearInterval(progressTimer);
 
       if (res && res.categories) {
-        setCategories(res.categories);
+        // Fetch existing menu items to match duplicates
+        let existing: any[] = [];
+        try {
+          existing = await api.listMenu();
+        } catch (_) {}
+
+        const normalizeName = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+
+        // Enforce actions on items: "create" | "replace" | "skip"
+        const processedCategories = res.categories.map((c: any) => {
+          return {
+            ...c,
+            items: (c.items || []).map((it: any) => {
+              const normalizedExtracted = normalizeName(it.name);
+              const matchedItem = existing.find(e => normalizeName(e.name) === normalizedExtracted);
+              
+              return {
+                ...it,
+                action: matchedItem ? "skip" : "create", // Default duplicate resolution is to skip
+                existing_item_id: matchedItem ? matchedItem.id : null,
+                duplicate_name: matchedItem ? matchedItem.name : null,
+                original_price: matchedItem ? matchedItem.price : null
+              };
+            })
+          };
+        });
+
+        setCategories(processedCategories);
         setStep("review");
       } else {
         throw new Error("Could not parse menu structure.");
@@ -213,14 +247,26 @@ export default function MenuAiImportScreen() {
           name: it.name.trim(),
           price: Number(it.price) || 0,
           description: it.description || "",
-          is_veg: Boolean(it.is_veg)
+          is_veg: Boolean(it.is_veg),
+          action: it.action || "create",
+          existing_item_id: it.existing_item_id || undefined
         }))
       }));
 
       const res = await api.bulkImportMenu(payloadCategories);
+      
+      // Save created IDs for Undo
+      if (res.imported_item_ids && res.imported_category_ids) {
+        setImportedData({
+          item_ids: res.imported_item_ids,
+          category_ids: res.imported_category_ids
+        });
+        setShowUndo(true);
+      }
+
       Alert.alert(
         "🎉 Import Successful!",
-        res.message || `Added ${res.imported_items || 0} items to your restaurant menu!`,
+        res.message || `Menu items successfully processed!`,
         [
           {
             text: "View Menu",
@@ -230,6 +276,22 @@ export default function MenuAiImportScreen() {
       );
     } catch (e: any) {
       Alert.alert("Import Failed", e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleUndoImport = async () => {
+    if (!importedData) return;
+    setImporting(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      const res = await api.rollbackBulkImport(importedData.item_ids, importedData.category_ids);
+      setShowUndo(false);
+      setImportedData(null);
+      Alert.alert("Import Undone", res.message || "reverted the imported records successfully.");
+    } catch (e: any) {
+      Alert.alert("Undo Failed", e.message);
     } finally {
       setImporting(false);
     }
@@ -354,12 +416,30 @@ export default function MenuAiImportScreen() {
                 {/* Items in this category */}
                 {cat.items.map((item, itemIdx) => {
                   const isUncertain = item.confidence < 0.85 || isNaN(item.price) || item.price <= 0;
+                  const isDuplicate = !!item.duplicate_name;
                   return (
-                    <View key={itemIdx} style={[styles.itemBox, isUncertain && styles.itemBoxUncertain]}>
+                    <View
+                      key={itemIdx}
+                      style={[
+                        styles.itemBox,
+                        isUncertain && styles.itemBoxUncertain,
+                        isDuplicate && item.action === "skip" && { borderColor: "#635BFF", backgroundColor: isDark ? "rgba(99,91,255,0.05)" : "#EEF2FF" },
+                        item.action === "skip" && { opacity: 0.7 }
+                      ]}
+                    >
                       {isUncertain && (
                         <View style={styles.uncertainWarning}>
                           <Ionicons name="alert-circle" size={14} color="#F59E0B" />
                           <Text style={styles.uncertainWarningText}>Please verify price or name</Text>
+                        </View>
+                      )}
+
+                      {isDuplicate && (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, backgroundColor: "rgba(99,91,255,0.1)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                          <Ionicons name="copy-outline" size={12} color="#635BFF" />
+                          <Text style={{ fontSize: 11, color: "#635BFF", fontWeight: "700", flex: 1 }}>
+                            Duplicate of "{item.duplicate_name}" (₹{item.original_price})
+                          </Text>
                         </View>
                       )}
 
@@ -405,6 +485,47 @@ export default function MenuAiImportScreen() {
                         placeholder="Optional description / details"
                         placeholderTextColor="#475569"
                       />
+
+                      {/* Duplicate Resolution Pills */}
+                      {isDuplicate && (
+                        <View style={{ flexDirection: "row", gap: 8, marginTop: 8, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}>
+                          <Pressable
+                            style={[
+                              { flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: theme.border },
+                              item.action === "skip" && { backgroundColor: "#635BFF", borderColor: "#635BFF" }
+                            ]}
+                            onPress={() => updateItem(catIdx, itemIdx, "action", "skip")}
+                          >
+                            <Text style={[{ fontSize: 11, fontWeight: "700", color: theme.onSurfaceSecondary }, item.action === "skip" && { color: "#FFF" }]}>
+                              Skip
+                            </Text>
+                          </Pressable>
+                          
+                          <Pressable
+                            style={[
+                              { flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: theme.border },
+                              item.action === "replace" && { backgroundColor: "#E0F2FE", borderColor: "#0284C7" }
+                            ]}
+                            onPress={() => updateItem(catIdx, itemIdx, "action", "replace")}
+                          >
+                            <Text style={[{ fontSize: 11, fontWeight: "700", color: theme.onSurfaceSecondary }, item.action === "replace" && { color: "#0284C7" }]}>
+                              Replace Price
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            style={[
+                              { flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: theme.border },
+                              item.action === "create" && { backgroundColor: "#DCFCE7", borderColor: "#15803D" }
+                            ]}
+                            onPress={() => updateItem(catIdx, itemIdx, "action", "create")}
+                          >
+                            <Text style={[{ fontSize: 11, fontWeight: "700", color: theme.onSurfaceSecondary }, item.action === "create" && { color: "#15803D" }]}>
+                              Keep Both
+                            </Text>
+                          </Pressable>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -424,20 +545,45 @@ export default function MenuAiImportScreen() {
 
           {/* Bottom Import Confirmation Bar */}
           <View style={[styles.bottomBar, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 16) }]}>
-            <Pressable
-              style={[styles.importBtn, importing && { opacity: 0.6 }]}
-              onPress={handleBulkImport}
-              disabled={importing}
-            >
-              {importing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                  <Text style={styles.importBtnText}>Import Menu to Restaurant</Text>
-                </>
-              )}
-            </Pressable>
+            {showUndo ? (
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Pressable
+                  style={[styles.importBtn, { backgroundColor: "#EF4444", flex: 1 }]}
+                  onPress={handleUndoImport}
+                  disabled={importing}
+                >
+                  {importing ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh" size={20} color="#FFFFFF" />
+                      <Text style={styles.importBtnText}>Undo Import</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={[styles.importBtn, { backgroundColor: "#10B981", flex: 1 }]}
+                  onPress={() => router.back()}
+                >
+                  <Text style={styles.importBtnText}>View Menu</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={[styles.importBtn, importing && { opacity: 0.6 }]}
+                onPress={handleBulkImport}
+                disabled={importing}
+              >
+                {importing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
+                    <Text style={styles.importBtnText}>Import Menu to Restaurant</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
           </View>
         </View>
       )}

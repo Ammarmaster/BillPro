@@ -494,6 +494,8 @@ class BulkImportItemIn(BaseModel):
     price: float
     description: Optional[str] = ""
     is_veg: Optional[bool] = False
+    action: Optional[str] = "create"  # "create" | "replace" | "skip"
+    existing_item_id: Optional[str] = None
 
 
 class BulkImportCategoryIn(BaseModel):
@@ -504,6 +506,11 @@ class BulkImportCategoryIn(BaseModel):
 
 class BulkImportIn(BaseModel):
     categories: List[BulkImportCategoryIn]
+
+
+class ImportRollbackIn(BaseModel):
+    item_ids: List[str]
+    category_ids: List[str]
 
 
 class PublicCheckoutIn(BaseModel):
@@ -898,7 +905,11 @@ async def list_orders(status_filter: Optional[str] = None, user: dict = Depends(
     tid = await _ensure_tenant(user)
     q = {"tenant_id": tid}
     if status_filter:
-        q["status"] = status_filter
+        if status_filter != "all":
+            q["status"] = status_filter
+    else:
+        # Hide unconfirmed pending_scan web orders from active waiter/kitchen view until scanned
+        q["status"] = {"$ne": "pending_scan"}
     orders = await db.orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
     return orders
 
@@ -1122,7 +1133,8 @@ async def public_create_order(payload: PublicOrderIn):
         "items": [i.dict() for i in payload.items],
         "notes": payload.notes,
         "subtotal": subtotal,
-        "status": "placed",
+        "status": "placed" if is_online_paid else "pending_scan",
+        "qr_imported": True if is_online_paid else False,
         "order_source": "qr_web",
         "created_by": "guest",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1165,21 +1177,21 @@ async def public_create_order(payload: PublicOrderIn):
         }
         await db.bills.insert_one(bill_doc)
     
-    await notify_tenant(
-        payload.tenant_id,
-        "kitchen",
-        "New Customer Order",
-        f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
-        {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
-    )
-    
-    await notify_tenant(
-        payload.tenant_id,
-        "waiter",
-        "New Customer Order",
-        f"New order for Table {payload.table_number or '-'} ({cust_name})",
-        {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
-    )
+        await notify_tenant(
+            payload.tenant_id,
+            "kitchen",
+            "New Customer Order",
+            f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
+            {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
+        )
+        
+        await notify_tenant(
+            payload.tenant_id,
+            "waiter",
+            "New Customer Order",
+            f"New order for Table {payload.table_number or '-'} ({cust_name})",
+            {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
+        )
     
     return doc
 
@@ -1388,6 +1400,9 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
 
+    imported_item_ids = []
+    imported_category_ids = []
+    updated_items_count = 0
     created_cats_count = 0
     created_items_count = 0
 
@@ -1399,6 +1414,7 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
 
     for cat_data in payload.categories:
         cat_id = cat_data.category_id
+        is_new_cat = False
         if not cat_id:
             existing = await db.categories.find_one({
                 "tenant_id": tid,
@@ -1417,32 +1433,83 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
                 })
                 next_cat_order += 1
                 created_cats_count += 1
+                is_new_cat = True
+        
+        if is_new_cat:
+            imported_category_ids.append(cat_id)
 
         for it in cat_data.items:
-            item_id = str(uuid.uuid4())
-            await db.menu_items.insert_one({
-                "id": item_id,
-                "tenant_id": tid,
-                "category_id": cat_id,
-                "name": it.name.strip(),
-                "price": float(it.price),
-                "description": it.description or "",
-                "is_veg": bool(it.is_veg),
-                "is_active": True,
-                "sort_order": next_item_order,
-                "created_at": datetime.now(timezone.utc).isoformat()
-            })
-            next_item_order += 1
-            created_items_count += 1
+            action = it.action or "create"
+            if action == "skip":
+                continue
+            elif action == "replace" and it.existing_item_id:
+                # Update existing item in the DB
+                await db.menu_items.update_one(
+                    {"id": it.existing_item_id, "tenant_id": tid},
+                    {"$set": {
+                        "price": float(it.price),
+                        "description": it.description or "",
+                        "is_veg": bool(it.is_veg)
+                    }}
+                )
+                updated_items_count += 1
+            else:
+                # Create a new menu item
+                item_id = str(uuid.uuid4())
+                await db.menu_items.insert_one({
+                    "id": item_id,
+                    "tenant_id": tid,
+                    "category_id": cat_id,
+                    "name": it.name.strip(),
+                    "price": float(it.price),
+                    "description": it.description or "",
+                    "is_veg": bool(it.is_veg),
+                    "is_active": True,
+                    "sort_order": next_item_order,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+                next_item_order += 1
+                created_items_count += 1
+                imported_item_ids.append(item_id)
 
     await notify_tenant(tid, "waiter", "Menu Updated", "New items added to menu", {})
     await notify_tenant(tid, "owner", "Menu Updated", "New items added to menu", {})
 
     return {
         "success": True,
-        "message": f"Successfully imported {created_items_count} items across {len(payload.categories)} categories!",
+        "message": f"Successfully imported {created_items_count} items and updated {updated_items_count} items!",
         "imported_categories": created_cats_count,
-        "imported_items": created_items_count
+        "imported_items": created_items_count,
+        "updated_items": updated_items_count,
+        "imported_item_ids": imported_item_ids,
+        "imported_category_ids": imported_category_ids
+    }
+
+@api.post("/menu/bulk-import/rollback")
+async def rollback_bulk_import(payload: ImportRollbackIn, current_user: dict = Depends(get_current_user)):
+    tid = current_user.get("tenant_id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+
+    deleted_items = await db.menu_items.delete_many({
+        "tenant_id": tid,
+        "id": {"$in": payload.item_ids}
+    })
+
+    deleted_cats_count = 0
+    for cid in payload.category_ids:
+        # Only delete category if it has no items remaining (to prevent orphans or deleting existing active category items)
+        remaining = await db.menu_items.count_documents({"tenant_id": tid, "category_id": cid})
+        if remaining == 0:
+            await db.categories.delete_one({"id": cid, "tenant_id": tid})
+            deleted_cats_count += 1
+
+    await notify_tenant(tid, "waiter", "Menu Updated", "Menu import undone", {})
+    await notify_tenant(tid, "owner", "Menu Updated", "Menu import undone", {})
+
+    return {
+        "success": True,
+        "message": f"Undone menu import: removed {deleted_items.deleted_count} items and {deleted_cats_count} categories."
     }
 
 

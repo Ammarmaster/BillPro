@@ -88,6 +88,24 @@ export default function More() {
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
+            {/* AI Menu from Photos */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/menu-ai-import" as any)} testID="manage-ai-menu-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
+                <Ionicons name="sparkles" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.rowTitle, { color: theme.onSurface }]}>AI Menu from Photos</Text>
+                  <View style={{ backgroundColor: "#10B981", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <Text style={{ color: "#FFF", fontSize: 9, fontWeight: "800" }}>NEW</Text>
+                  </View>
+                </View>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Scan menu cards into dishes with Vision AI</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
             {/* Table Management */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/tables")} testID="manage-tables-btn">
               <View style={styles.iconBox}>

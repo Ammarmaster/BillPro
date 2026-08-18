@@ -31,6 +31,7 @@ export default function MenuScreen() {
   const [catName, setCatName] = useState("");
 
   const [itemModal, setItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [iName, setIName] = useState("");
   const [iPrice, setIPrice] = useState("");
   const [iDesc, setIDesc] = useState("");
@@ -62,15 +63,39 @@ export default function MenuScreen() {
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
-  const addItem = async () => {
+  const saveItem = async () => {
     const price = parseFloat(iPrice);
     if (!iName.trim() || !iCat || isNaN(price) || price <= 0) { setErr("Fill name, category, valid price."); return; }
     setBusy(true);
     try {
-      await api.createMenuItem({ category_id: iCat, name: iName.trim(), description: iDesc, price, image_base64: iImg, is_active: true });
-      setIName(""); setIPrice(""); setIDesc(""); setIImg(""); setItemModal(false);
+      if (editingItem) {
+        // Update existing item
+        await api.updateMenuItem(editingItem.id, {
+          category_id: iCat,
+          name: iName.trim(),
+          description: iDesc,
+          price,
+          image_base64: iImg || undefined,
+          is_active: editingItem.is_active
+        });
+      } else {
+        // Create new item
+        await api.createMenuItem({
+          category_id: iCat,
+          name: iName.trim(),
+          description: iDesc,
+          price,
+          image_base64: iImg,
+          is_active: true
+        });
+      }
+      setIName(""); setIPrice(""); setIDesc(""); setIImg(""); setEditingItem(null); setItemModal(false);
       await load();
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const delItem = async (id: string) => { try { await api.deleteMenuItem(id); await load(); } catch (e: any) { setErr(e.message); } };
@@ -94,7 +119,16 @@ export default function MenuScreen() {
             <Ionicons name="folder-open" size={16} color={colors.brand} />
             <Text style={styles.iconBtnText}>Category</Text>
           </Pressable>
-          <Pressable style={styles.iconBtnPrimary} onPress={() => { if (!cats.length) { setErr("Add a category first."); return; } setItemModal(true); }} testID="menu-add-item-btn">
+          <Pressable style={styles.iconBtnPrimary} onPress={() => {
+            if (!cats.length) { setErr("Add a category first."); return; }
+            setEditingItem(null);
+            setIName("");
+            setIPrice("");
+            setIDesc("");
+            setIImg("");
+            setICat(cats[0].id);
+            setItemModal(true);
+          }} testID="menu-add-item-btn">
             <Ionicons name="add" size={16} color={colors.onBrand} />
             <Text style={styles.iconBtnPrimaryText}>Item</Text>
           </Pressable>
@@ -121,17 +155,29 @@ export default function MenuScreen() {
           keyExtractor={i => i.id}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
           renderItem={({ item, index }) => (
-            <Animated.View entering={FadeInUp.delay(index * 40).springify()} style={styles.itemCard} testID={`menu-item-${item.id}`}>
-              <Image source={menuItemImageSource(item)} style={styles.itemImg} contentFit="cover" transition={200} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                {!!item.description && <Text style={styles.itemDesc} numberOfLines={1}>{item.description}</Text>}
-                <Text style={styles.itemPrice}>₹{item.price}</Text>
-              </View>
-              <Pressable onPress={() => delItem(item.id)} hitSlop={8} testID={`menu-item-delete-${item.id}`}>
-                <Ionicons name="trash" size={20} color={colors.onError} />
-              </Pressable>
-            </Animated.View>
+            <Pressable
+              onPress={() => {
+                setEditingItem(item);
+                setIName(item.name);
+                setIPrice(String(item.price));
+                setIDesc(item.description || "");
+                setICat(item.category_id);
+                setIImg(item.image_base64 || "");
+                setItemModal(true);
+              }}
+            >
+              <Animated.View entering={FadeInUp.delay(index * 40).springify()} style={styles.itemCard} testID={`menu-item-${item.id}`}>
+                <Image source={menuItemImageSource(item)} style={styles.itemImg} contentFit="cover" transition={200} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemName}>{item.name}</Text>
+                  {!!item.description && <Text style={styles.itemDesc} numberOfLines={1}>{item.description}</Text>}
+                  <Text style={styles.itemPrice}>₹{item.price}</Text>
+                </View>
+                <Pressable onPress={() => delItem(item.id)} hitSlop={8} testID={`menu-item-delete-${item.id}`}>
+                  <Ionicons name="trash" size={20} color={colors.onError} />
+                </Pressable>
+              </Animated.View>
+            </Pressable>
           )}
         />
       )}
@@ -155,14 +201,14 @@ export default function MenuScreen() {
         </View>
       </Modal>
 
-      <Modal transparent visible={itemModal} animationType="slide" onRequestClose={() => setItemModal(false)}>
+      <Modal transparent visible={itemModal} animationType="slide" onRequestClose={() => { setEditingItem(null); setItemModal(false); }}>
         <View style={styles.modalBg}>
           <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]}>
-            <Text style={styles.modalTitle}>New Menu Item</Text>
+            <Text style={styles.modalTitle}>{editingItem ? "Edit Menu Item" : "New Menu Item"}</Text>
 
             <Pressable style={styles.imgPickerRow} onPress={pickImg} testID="item-image-picker">
               {iImg ? (
-                <Image source={{ uri: `data:image/jpeg;base64,${iImg}` }} style={styles.imgPreview} contentFit="cover" />
+                <Image source={{ uri: iImg.startsWith("data:") ? iImg : `data:image/jpeg;base64,${iImg}` }} style={styles.imgPreview} contentFit="cover" />
               ) : (
                 <View style={styles.imgPlaceholder}>
                   <Ionicons name="image" size={26} color={colors.onSurfaceSecondary} />
@@ -185,10 +231,10 @@ export default function MenuScreen() {
               ))}
             </ScrollView>
             <View style={styles.modalActions}>
-              <Pressable style={styles.ghostBtn} onPress={() => setItemModal(false)} testID="item-cancel-btn">
+              <Pressable style={styles.ghostBtn} onPress={() => { setEditingItem(null); setItemModal(false); }} testID="item-cancel-btn">
                 <Text style={styles.ghostBtnText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.primaryBtn} onPress={addItem} disabled={busy} testID="item-save-btn">
+              <Pressable style={styles.primaryBtn} onPress={saveItem} disabled={busy} testID="item-save-btn">
                 {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
               </Pressable>
             </View>

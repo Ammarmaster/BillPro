@@ -11,6 +11,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
+import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 
 const formatAmount = (num: number, detailed: boolean = false) => {
   if (detailed) return `₹${num.toLocaleString("en-IN")}`;
@@ -375,29 +376,12 @@ function OwnerDashboard() {
 
   // Scanner modal state for Customer Web Order QR handoff
   const [showScanner, setShowScanner] = useState(false);
-  const [scanInput, setScanInput] = useState("");
-  const [scanTable, setScanTable] = useState("");
-  const [scanBusy, setScanBusy] = useState(false);
 
-  const handleScanImport = async () => {
-    if (!scanInput.trim()) {
-      Alert.alert("Input Required", "Please enter or scan the customer order QR code or token.");
-      return;
-    }
-    setScanBusy(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    try {
-      const res = await api.scanImportOrder(scanInput.trim(), scanTable.trim() || undefined);
-      setShowScanner(false);
-      setScanInput("");
-      setScanTable("");
-      await load();
-      Alert.alert("Order Attached", res.message || "Customer order imported successfully!");
-    } catch (e: any) {
-      Alert.alert("Import Error", e.message);
-    } finally {
-      setScanBusy(false);
-    }
+  const handleScanImport = async (qrData: string, tableOverride?: string) => {
+    const res = await api.scanImportOrder(qrData, tableOverride || undefined);
+    setShowScanner(false);
+    await load();
+    Alert.alert("Order Attached", res.message || "Customer order imported successfully!");
   };
 
   const load = useCallback(async () => {
@@ -817,62 +801,12 @@ function OwnerDashboard() {
         {err && <Text style={styles.err} testID="dashboard-error">{err}</Text>}
       </ScrollView>
 
-      {/* Customer Order QR Scanner Modal */}
-      {showScanner && (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: spacing.lg, zIndex: 1000 }]}>
-          <View style={{ backgroundColor: theme.surface, width: "100%", maxWidth: 400, borderRadius: 24, padding: spacing.xl, borderWidth: 1, borderColor: theme.border }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Ionicons name="qr-code" size={22} color="#635BFF" />
-                <Text style={{ fontSize: 18, fontWeight: "800", color: theme.onSurface }}>Scan Customer Web Order</Text>
-              </View>
-              <Pressable onPress={() => setShowScanner(false)} hitSlop={12}>
-                <Ionicons name="close" size={24} color={theme.onSurfaceSecondary} />
-              </Pressable>
-            </View>
-
-            <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, marginBottom: spacing.md }}>
-              Enter or paste the Order QR code payload or 16-character token from the customer's phone:
-            </Text>
-
-            <TextInput
-              style={{ borderColor: theme.border, color: theme.onSurface, backgroundColor: theme.surfaceSecondary, marginBottom: spacing.md, padding: 12, borderRadius: 12, borderWidth: 1, fontSize: 14 }}
-              value={scanInput}
-              onChangeText={setScanInput}
-              placeholder="e.g. EZBILL_ORDER:{...} or Order ID"
-              placeholderTextColor="#64748B"
-              autoFocus
-            />
-
-            <Text style={{ fontSize: 12, fontWeight: "700", color: theme.onSurface, marginBottom: 6 }}>
-              Assign to Table (Optional override):
-            </Text>
-            <TextInput
-              style={{ borderColor: theme.border, color: theme.onSurface, backgroundColor: theme.surfaceSecondary, marginBottom: spacing.lg, padding: 12, borderRadius: 12, borderWidth: 1, fontSize: 14 }}
-              value={scanTable}
-              onChangeText={setScanTable}
-              placeholder="e.g. 5 (Leave blank to use order's table)"
-              placeholderTextColor="#64748B"
-              keyboardType="numeric"
-            />
-
-            <Pressable
-              style={[{ height: 48, backgroundColor: "#635BFF", borderRadius: 14, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 }, scanBusy && { opacity: 0.6 }]}
-              onPress={handleScanImport}
-              disabled={scanBusy}
-            >
-              {scanBusy ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>Import Order to Table</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      )}
+      {/* Customer Order QR Scanner Modal with Camera & Manual Fallback */}
+      <OrderQRScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScanSuccess={handleScanImport}
+      />
     </View>
   );
 }
