@@ -107,14 +107,7 @@ export default function MenuScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Menu</Text>
         <View style={{ flexDirection: "row", gap: spacing.xs, alignItems: "center" }}>
-          <Pressable
-            style={[styles.iconBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}
-            onPress={() => router.push("/(app)/menu-ai-import" as any)}
-            testID="menu-ai-photos-btn"
-          >
-            <Ionicons name="sparkles" size={16} color="#635BFF" />
-            <Text style={[styles.iconBtnText, { color: "#635BFF", fontWeight: "700" }]}>AI Photos</Text>
-          </Pressable>
+
           <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
             <Ionicons name="folder-open" size={16} color={colors.brand} />
             <Text style={styles.iconBtnText}>Category</Text>

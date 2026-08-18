@@ -571,13 +571,7 @@ function OwnerDashboard() {
                 <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Web Order</Text>
               </Pressable>
 
-              <Pressable
-                style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: "#10B981" }]}
-                onPress={() => router.push("/(app)/menu-ai-import" as any)}
-              >
-                <Ionicons name="sparkles" size={18} color="#10B981" />
-                <Text style={[styles.quickActionShortcutText, { color: "#10B981" }]}>AI Menu Photos</Text>
-              </Pressable>
+
 
               <Pressable
                 style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: "#F59E0B" }]}

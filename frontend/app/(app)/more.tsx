@@ -1,5 +1,5 @@
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Switch, SafeAreaView, StatusBar,
+  View, Text, StyleSheet, ScrollView, Pressable, Switch, SafeAreaView, StatusBar, Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -89,20 +89,24 @@ export default function More() {
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
             {/* AI Menu from Photos */}
-            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/menu-ai-import" as any)} testID="manage-ai-menu-btn">
-              <View style={[styles.iconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
-                <Ionicons name="sparkles" size={20} color="#635BFF" />
+            <Pressable 
+              style={styles.rowItem} 
+              onPress={() => Alert.alert("Coming Soon", "AI Menu from Photos is coming soon!")} 
+              testID="manage-ai-menu-btn"
+            >
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB" }]}>
+                <Ionicons name="sparkles" size={20} color="#F59E0B" />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={[styles.rowTitle, { color: theme.onSurface }]}>AI Menu from Photos</Text>
-                  <View style={{ backgroundColor: "#10B981", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                    <Text style={{ color: "#FFF", fontSize: 9, fontWeight: "800" }}>NEW</Text>
+                  <Text style={[styles.rowTitle, { color: theme.onSurface, opacity: 0.6 }]}>AI Menu from Photos</Text>
+                  <View style={{ backgroundColor: "#F59E0B", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <Text style={{ color: "#FFF", fontSize: 8, fontWeight: "800" }}>COMING SOON</Text>
                   </View>
                 </View>
-                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Scan menu cards into dishes with Vision AI</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary, opacity: 0.6 }]}>Scan menu cards into dishes with Vision AI</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} style={{ opacity: 0.4 }} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
