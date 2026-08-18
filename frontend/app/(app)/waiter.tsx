@@ -56,6 +56,14 @@ export default function WaiterScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); // 0ms Instant table display
+  const [pendingSync, setPendingSync] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPendingSync(api.getPendingSyncCount());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Guest session tracking for multi-customer tables
   const [currentGuestName, setCurrentGuestName] = useState("Guest 1");
@@ -631,8 +639,21 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           {/* Header */}
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: theme.onSurface }]}>Tables</Text>
-              <Text style={[styles.subtitle, { color: theme.onSurfaceSecondary }]}>Tap a table to take order & view status</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={[styles.title, { color: theme.onSurface, marginBottom: 0 }]}>Tables</Text>
+                {pendingSync > 0 ? (
+                  <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#F59E0B" }} />
+                    <Text style={{ fontSize: 9, color: "#F59E0B", fontWeight: "700" }}>{pendingSync} waiting</Text>
+                  </View>
+                ) : (
+                  <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
+                    <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Synced</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.subtitle, { color: theme.onSurfaceSecondary, marginTop: 2 }]}>Tap a table to take order & view status</Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Pressable

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { printBill, sharePdf, getPrinterSettings } from "@/src/lib/print";
+import { BillingEngine } from "@/src/lib/billingEngine";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import QRCode from "qrcode";
@@ -187,7 +188,34 @@ export default function Billing() {
         if (o) setOrder(o);
         let b = (bills || []).find((x: any) => x.order_id === targetOrderId);
         if (!b && o) {
-          b = await api.createBill({ order_id: targetOrderId }).catch(() => null);
+          b = await api.createBill({ order_id: targetOrderId }).catch(() => {
+            // Local offline calculation fallback
+            const calc = BillingEngine.calculate({
+              items: o.items || [],
+              discount: 0,
+              taxPercent: r?.gst_enabled ? (r.gst_rate || 5.0) : 0,
+              gstEnabled: !!r?.gst_enabled
+            });
+            const localSeq = Math.random().toString(36).substring(2, 8);
+            return {
+              id: "temp-bill-" + Math.random().toString(36).substring(2, 10),
+              bill_number: `EZ-${new Date().getFullYear()}-OFFLINE-${localSeq}`,
+              order_id: o.id,
+              order_ids: [o.id],
+              table_number: o.table_number || "Takeaway",
+              items: o.items || [],
+              subtotal: calc.subtotal,
+              tax_percent: r?.gst_enabled ? (r.gst_rate || 5.0) : 0,
+              tax: calc.tax,
+              cgst: calc.cgst,
+              sgst: calc.sgst,
+              gst_enabled: !!r?.gst_enabled,
+              discount: calc.discount,
+              total: calc.total,
+              status: "pending",
+              created_at: new Date().toISOString()
+            };
+          });
         }
         if (b) {
           setBill(b);
@@ -199,7 +227,35 @@ export default function Billing() {
         const tableOrders = (orders || []).filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
         let b = (bills || []).find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
         if (!b && tableOrders.length > 0) {
-          b = await api.createBill({ table_number: tableNumber }).catch(() => null);
+          b = await api.createBill({ table_number: tableNumber }).catch(() => {
+            // Local offline calculation fallback for entire table
+            const combinedItems = tableOrders.flatMap((o: any) => o.items || []);
+            const calc = BillingEngine.calculate({
+              items: combinedItems,
+              discount: 0,
+              taxPercent: r?.gst_enabled ? (r.gst_rate || 5.0) : 0,
+              gstEnabled: !!r?.gst_enabled
+            });
+            const localSeq = Math.random().toString(36).substring(2, 8);
+            return {
+              id: "temp-bill-" + Math.random().toString(36).substring(2, 10),
+              bill_number: `EZ-${new Date().getFullYear()}-OFFLINE-${localSeq}`,
+              order_id: tableOrders[0].id,
+              order_ids: tableOrders.map((o: any) => o.id),
+              table_number: tableNumber,
+              items: combinedItems,
+              subtotal: calc.subtotal,
+              tax_percent: r?.gst_enabled ? (r.gst_rate || 5.0) : 0,
+              tax: calc.tax,
+              cgst: calc.cgst,
+              sgst: calc.sgst,
+              gst_enabled: !!r?.gst_enabled,
+              discount: calc.discount,
+              total: calc.total,
+              status: "pending",
+              created_at: new Date().toISOString()
+            };
+          });
         }
         if (b) {
           setBill(b);

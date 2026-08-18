@@ -14,6 +14,8 @@ import time
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
+from billing_engine import calculate_bill
+
 dashboard_summary_cache: dict[str, tuple[float, dict]] = {}
 
 ROOT_DIR = Path(__file__).parent
@@ -731,15 +733,16 @@ async def create_category(payload: CategoryIn, user: dict = Depends(require_role
 @api.get("/categories")
 async def list_categories(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    cats = await db.categories.find({"tenant_id": tid}, {"_id": 0}).sort("sort_order", 1).to_list(500)
+    cats = await db.categories.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("sort_order", 1).to_list(500)
     return cats
 
 
 @api.delete("/categories/{cid}")
 async def delete_category(cid: str, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
-    await db.categories.delete_one({"id": cid, "tenant_id": tid})
-    await db.menu_items.delete_many({"category_id": cid, "tenant_id": tid})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.categories.update_one({"id": cid, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
+    await db.menu_items.update_many({"category_id": cid, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
     return {"ok": True}
 
 
@@ -756,14 +759,15 @@ async def create_menu_item(payload: MenuItemIn, user: dict = Depends(require_rol
 @api.get("/menu-items")
 async def list_menu_items(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    items = await db.menu_items.find({"tenant_id": tid}, {"_id": 0}).to_list(2000)
+    items = await db.menu_items.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).to_list(2000)
     return items
 
 
 @api.delete("/menu-items/{iid}")
 async def delete_menu_item(iid: str, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
-    await db.menu_items.delete_one({"id": iid, "tenant_id": tid})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.menu_items.update_one({"id": iid, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
     return {"ok": True}
 
 
@@ -793,15 +797,44 @@ async def create_table(payload: TableIn, user: dict = Depends(require_roles("own
 @api.get("/tables")
 async def list_tables(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    tables = await db.tables.find({"tenant_id": tid}, {"_id": 0}).sort("label", 1).to_list(500)
+    tables = await db.tables.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("label", 1).to_list(500)
     return tables
 
 
 @api.delete("/tables/{tbl_id}")
 async def delete_table(tbl_id: str, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
-    await db.tables.delete_one({"id": tbl_id, "tenant_id": tid})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.tables.update_one({"id": tbl_id, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
     return {"ok": True}
+
+@api.get("/sync")
+async def delta_sync(since: Optional[str] = None, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    
+    q = {"tenant_id": tid}
+    if since:
+        # Check both created_at (additions) and deleted_at (deletes)
+        q["$or"] = [
+            {"created_at": {"$gte": since}},
+            {"deleted_at": {"$gte": since}}
+        ]
+        
+    categories = await db.categories.find(q, {"_id": 0}).to_list(1000)
+    menu_items = await db.menu_items.find(q, {"_id": 0}).to_list(2000)
+    orders = await db.orders.find(q, {"_id": 0}).to_list(1000)
+    bills = await db.bills.find(q, {"_id": 0}).to_list(1000)
+    tables = await db.tables.find(q, {"_id": 0}).to_list(500)
+    
+    return {
+        "categories": categories,
+        "menu_items": menu_items,
+        "orders": orders,
+        "bills": bills,
+        "tables": tables,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
 
 
 # ---------- waiters (staff) ----------
@@ -1587,15 +1620,18 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
     if tax_percent == 5.0 and "gst_rate" in restaurant:
         tax_percent = float(restaurant["gst_rate"])
       
-    tax = round(subtotal * (tax_percent / 100), 2) if gst_enabled else 0.0
-    cgst = round(tax / 2, 2) if gst_enabled else 0.0
-    sgst = round(tax - cgst, 2) if gst_enabled else 0.0
-    total = round(subtotal + tax - payload.discount, 2)
+    calc = calculate_bill(
+        items=combined_items,
+        discount=float(payload.discount or 0.0),
+        tax_percent=float(tax_percent or 0.0),
+        gst_enabled=bool(gst_enabled)
+    )
+    total = calc["total"]
     upi_id = restaurant.get("upi_id", "")
     merchant = restaurant.get("merchant_name", restaurant.get("name", "Merchant"))
     primary_order_id = order_ids[0]
     upi_url = f"upi://pay?pa={upi_id}&pn={merchant.replace(' ', '%20')}&am={total}&cu=INR&tn=Table-{table_num}"
-    
+
     bill = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1603,13 +1639,13 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
         "order_ids": order_ids,
         "table_number": table_num,
         "items": combined_items,
-        "subtotal": subtotal,
+        "subtotal": calc["subtotal"],
         "tax_percent": tax_percent if gst_enabled else 0.0,
-        "tax": tax,
-        "cgst": cgst,
-        "sgst": sgst,
+        "tax": calc["tax"],
+        "cgst": calc["cgst"],
+        "sgst": calc["sgst"],
         "gst_enabled": gst_enabled,
-        "discount": payload.discount,
+        "discount": calc["discount"],
         "total": total,
         "upi_url": upi_url,
         "status": "pending",
@@ -2835,6 +2871,54 @@ async def get_dashboard_feedback(user: dict = Depends(require_roles("owner", "ma
     return feedbacks
 
 
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
+import json
+
+@app.middleware("http")
+async def idempotency_middleware(request: Request, call_next):
+    if request.method in ["POST", "PATCH", "DELETE", "PUT"]:
+        op_id = request.headers.get("x-operation-id")
+        if op_id:
+            existing = await db.processed_operations.find_one({"id": op_id})
+            if existing:
+                content = existing.get("response_body", "")
+                status_code = existing.get("status_code", 200)
+                try:
+                    parsed_json = json.loads(content)
+                    return JSONResponse(content=parsed_json, status_code=status_code)
+                except Exception:
+                    return Response(content=content, status_code=status_code)
+
+            response = await call_next(request)
+            
+            if 200 <= response.status_code < 300:
+                response_body = b""
+                async for chunk in response.body_iterator:
+                    response_body += chunk
+                
+                try:
+                    body_str = response_body.decode("utf-8")
+                except Exception:
+                    body_str = ""
+
+                await db.processed_operations.insert_one({
+                    "id": op_id,
+                    "response_body": body_str,
+                    "status_code": response.status_code,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+
+                return Response(
+                    content=response_body,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                )
+            return response
+
+    return await call_next(request)
+
+
 from fastapi.middleware.gzip import GZipMiddleware
 
 app.include_router(api)
@@ -2866,6 +2950,8 @@ async def seed_super_admin():
         await db.customer_feedback.create_index([("tenant_id", 1), ("created_at", -1)])
         await db.menu_items.create_index([("tenant_id", 1), ("category_id", 1)])
         await db.tables.create_index([("tenant_id", 1), ("label", 1)])
+        await db.processed_operations.create_index([("id", 1)], unique=True)
+        await db.processed_operations.create_index([("created_at", 1)])
         logger.info("Database compound indexes verified and active.")
     except Exception as e:
         logger.warning("Index setup notice: %s", e)

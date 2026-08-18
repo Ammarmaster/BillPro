@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import { BillingEngine } from "./billingEngine";
 
 const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 
@@ -133,6 +134,320 @@ async function doRefreshToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+interface OutboxAction {
+  operationId: string;
+  path: string;
+  method: string;
+  body?: any;
+  timestamp: number;
+  tempId?: string;
+}
+
+let outboxQueue: OutboxAction[] = [];
+let isSyncing = false;
+
+async function saveOutbox() {
+  await setItem("disk_outbox_queue", JSON.stringify(outboxQueue));
+}
+
+// Hydrate outbox queue on startup
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  try {
+    const v = window.localStorage.getItem("disk_outbox_queue");
+    if (v) {
+      outboxQueue = JSON.parse(v);
+      setTimeout(() => startSyncRunner(), 1000);
+    }
+  } catch {}
+} else if (Platform.OS !== "web") {
+  SecureStore.getItemAsync("disk_outbox_queue").then(v => {
+    if (v) {
+      outboxQueue = JSON.parse(v);
+      setTimeout(() => startSyncRunner(), 1000);
+    }
+  }).catch(() => {});
+}
+
+export async function startSyncRunner() {
+  if (isSyncing || outboxQueue.length === 0) return;
+  isSyncing = true;
+  try {
+    while (outboxQueue.length > 0) {
+      const action = outboxQueue[0];
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Operation-ID": action.operationId
+      };
+      const t = await getAccess();
+      if (t) headers["Authorization"] = `Bearer ${t}`;
+
+      const res = await fetch(`${BASE}/api${action.path}`, {
+        method: action.method,
+        headers,
+        body: action.body ? JSON.stringify(action.body) : undefined
+      });
+
+      if (!res.ok) {
+        if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403) {
+          console.warn("Outbox item failed with client error, skipping:", action.path, res.status);
+          outboxQueue.shift();
+          await saveOutbox();
+          continue;
+        }
+        break;
+      }
+
+      const serverData = await res.json();
+      if (action.tempId && serverData && serverData.id) {
+        tempIdMap[action.tempId] = serverData.id;
+        for (const queued of outboxQueue) {
+          if (queued.body) {
+            let bodyStr = JSON.stringify(queued.body);
+            bodyStr = bodyStr.split(action.tempId).join(serverData.id);
+            queued.body = JSON.parse(bodyStr);
+          }
+        }
+        rewriteCacheTempIds(action.tempId, serverData.id);
+      }
+
+      outboxQueue.shift();
+      await saveOutbox();
+    }
+  } catch (err) {
+    console.warn("Sync runner network failure:", err);
+  } finally {
+    isSyncing = false;
+  }
+}
+
+function rewriteCacheTempIds(tempId: string, realId: string) {
+  for (const k in memoryCache) {
+    const list = memoryCache[k];
+    if (Array.isArray(list)) {
+      const updated = list.map((item: any) => {
+        let str = JSON.stringify(item);
+        if (str.includes(tempId)) {
+          str = str.split(tempId).join(realId);
+          return JSON.parse(str);
+        }
+        return item;
+      });
+      memoryCache[k] = updated;
+      setItem("disk_cache_" + k, JSON.stringify(updated)).catch(() => {});
+    }
+  }
+}
+
+async function handleOfflineMutation(path: string, opts: RequestInit): Promise<any> {
+  const method = opts.method || "POST";
+  const body = typeof opts.body === "string" ? JSON.parse(opts.body) : {};
+  const operationId = "op_" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+
+  if (path === "/orders" && method === "POST") {
+    const tempId = "temp-order-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+    const newOrder = {
+      id: tempId,
+      tenant_id: "local_tenant",
+      table_number: body.table_number,
+      session_id: body.session_id || tempId,
+      customer_name: body.customer_name || "Guest 1",
+      items: body.items || [],
+      notes: body.notes || "",
+      subtotal: (body.items || []).reduce((s: number, i: any) => s + (i.price * i.quantity), 0),
+      status: "placed",
+      order_source: "waiter",
+      created_by: "waiter",
+      created_at: new Date().toISOString(),
+      operationId
+    };
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
+    await saveOutbox();
+
+    const oList = memoryCache["/orders"] || [];
+    memoryCache["/orders"] = [newOrder, ...oList.filter((o: any) => o.id !== tempId)];
+    await setItem("disk_cache_/orders", JSON.stringify(memoryCache["/orders"]));
+    clearCachePrefix("/tables");
+    return newOrder;
+  }
+
+  if (path.startsWith("/orders/") && method === "PATCH") {
+    const orderId = path.split("/")[2];
+    const isStatus = path.endsWith("/status");
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
+    await saveOutbox();
+
+    const oList = memoryCache["/orders"] || [];
+    const updated = oList.map((o: any) => {
+      if (o.id === orderId) {
+        if (isStatus) return { ...o, status: body.status };
+        return { ...o, ...body };
+      }
+      return o;
+    });
+    memoryCache["/orders"] = updated;
+    await setItem("disk_cache_/orders", JSON.stringify(updated));
+    clearCachePrefix("/tables");
+    return updated.find((o: any) => o.id === orderId) || { id: orderId, ...body };
+  }
+
+  if (path === "/bills" && method === "POST") {
+    const tempId = "temp-bill-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+    let combinedItems: any[] = [];
+    let subtotal = 0;
+    let tableNum = body.table_number || "Takeaway";
+    const orderIds = body.order_ids || (body.order_id ? [body.order_id] : []);
+
+    const oList = memoryCache["/orders"] || [];
+    const targetOrders = oList.filter((o: any) => orderIds.includes(o.id));
+    if (targetOrders.length > 0) {
+      tableNum = targetOrders[0].table_number;
+      for (const o of targetOrders) {
+        combinedItems.push(...(o.items || []));
+        subtotal += o.subtotal || 0;
+      }
+    }
+
+    let localSeq = parseInt((await getItem("local_bill_seq")) || "0", 10) + 1;
+    await setItem("local_bill_seq", String(localSeq));
+    const billNo = `EZ-${new Date().getFullYear()}-OFFLINE-${String(localSeq).padStart(4, "0")}`;
+
+    const calc = BillingEngine.calculate({
+      items: combinedItems,
+      discount: body.discount || 0,
+      taxPercent: body.tax_percent || 5.0,
+      gstEnabled: body.gst_enabled !== false
+    });
+
+    const newBill = {
+      id: tempId,
+      bill_number: billNo,
+      order_id: orderIds[0] || tempId,
+      order_ids: orderIds,
+      table_number: tableNum,
+      items: combinedItems,
+      subtotal: calc.subtotal,
+      tax_percent: body.tax_percent || 5.0,
+      tax: calc.tax,
+      cgst: calc.cgst,
+      sgst: calc.sgst,
+      gst_enabled: body.gst_enabled !== false,
+      discount: calc.discount,
+      total: calc.total,
+      status: "pending",
+      created_at: new Date().toISOString(),
+      operationId
+    };
+
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
+    await saveOutbox();
+
+    const bList = memoryCache["/bills"] || [];
+    memoryCache["/bills"] = [newBill, ...bList.filter((b: any) => b.id !== tempId)];
+    await setItem("disk_cache_/bills", JSON.stringify(memoryCache["/bills"]));
+    return newBill;
+  }
+
+  if (path.endsWith("/pay") && method === "PATCH") {
+    const billId = path.split("/")[2];
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
+    await saveOutbox();
+
+    const bList = memoryCache["/bills"] || [];
+    const updated = bList.map((b: any) => {
+      if (b.id === billId) return { ...b, status: "paid", payment_method: body.payment_method };
+      return b;
+    });
+    memoryCache["/bills"] = updated;
+    await setItem("disk_cache_/bills", JSON.stringify(updated));
+    return updated.find((b: any) => b.id === billId) || { id: billId, status: "paid" };
+  }
+
+  if (path === "/bills/settle-table" && method === "POST") {
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
+    await saveOutbox();
+    const targetTbl = body.table_number;
+
+    const oList = memoryCache["/orders"] || [];
+    const updatedOrders = oList.map((o: any) => {
+      if (o.table_number === targetTbl) return { ...o, status: "served" };
+      return o;
+    });
+    memoryCache["/orders"] = updatedOrders;
+    await setItem("disk_cache_/orders", JSON.stringify(updatedOrders));
+
+    const bList = memoryCache["/bills"] || [];
+    const updatedBills = bList.map((b: any) => {
+      if (b.table_number === targetTbl) return { ...b, status: "paid", payment_method: body.payment_method };
+      return b;
+    });
+    memoryCache["/bills"] = updatedBills;
+    await setItem("disk_cache_/bills", JSON.stringify(updatedBills));
+    clearCachePrefix("/tables");
+    return { success: true };
+  }
+
+  if (path === "/categories" && method === "POST") {
+    const tempId = "temp-cat-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+    const newCat = { id: tempId, name: body.name, sort_order: body.sort_order || 0, created_at: new Date().toISOString() };
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
+    await saveOutbox();
+
+    const cList = memoryCache["/categories"] || [];
+    memoryCache["/categories"] = [...cList, newCat];
+    await setItem("disk_cache_/categories", JSON.stringify(memoryCache["/categories"]));
+    return newCat;
+  }
+
+  if (path.startsWith("/categories/") && method === "DELETE") {
+    const catId = path.split("/")[2];
+    outboxQueue.push({ operationId, path, method, timestamp: Date.now() });
+    await saveOutbox();
+
+    const cList = memoryCache["/categories"] || [];
+    memoryCache["/categories"] = cList.filter((c: any) => c.id !== catId);
+    await setItem("disk_cache_/categories", JSON.stringify(memoryCache["/categories"]));
+    return { success: true };
+  }
+
+  if (path === "/menu-items" && method === "POST") {
+    const tempId = "temp-item-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+    const newItem = {
+      id: tempId,
+      category_id: body.category_id,
+      name: body.name,
+      price: body.price,
+      description: body.description || "",
+      is_veg: body.is_veg || false,
+      is_active: true,
+      created_at: new Date().toISOString()
+    };
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
+    await saveOutbox();
+
+    const mList = memoryCache["/menu-items"] || [];
+    memoryCache["/menu-items"] = [...mList, newItem];
+    await setItem("disk_cache_/menu-items", JSON.stringify(memoryCache["/menu-items"]));
+    return newItem;
+  }
+
+  if (path.startsWith("/menu-items/") && (method === "PATCH" || method === "DELETE")) {
+    const itemId = path.split("/")[2];
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
+    await saveOutbox();
+
+    const mList = memoryCache["/menu-items"] || [];
+    if (method === "DELETE") {
+      memoryCache["/menu-items"] = mList.filter((m: any) => m.id !== itemId);
+    } else {
+      memoryCache["/menu-items"] = mList.map((m: any) => m.id === itemId ? { ...m, ...body } : m);
+    }
+    await setItem("disk_cache_/menu-items", JSON.stringify(memoryCache["/menu-items"]));
+    return { success: true };
+  }
+
+  return { id: "temp-" + Math.random().toString(36).substring(2, 10), ...body };
+}
+
 const inFlightRequests: Record<string, Promise<any> | undefined> = {};
 
 async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = false): Promise<any> {
@@ -165,10 +480,12 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
       res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
     } catch (netErr: any) {
       // Network drop / offline: return cached data if available for GET
-      if (isGet && memoryCache[path]) {
-        return memoryCache[path];
+      if (isGet) {
+        if (memoryCache[path]) return memoryCache[path];
+        throw new Error(netErr.message || "Network connection unavailable.");
+      } else {
+        return await handleOfflineMutation(path, opts);
       }
-      throw new Error(netErr.message || "Network connection unavailable.");
     }
 
     // Automatic silent token refresh on 401 for authenticated requests
@@ -193,6 +510,8 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
       if (data) {
         setItem("disk_cache_" + path, JSON.stringify(data)).catch(() => {});
       }
+      // Replay outbox changes reactively
+      startSyncRunner().catch(() => {});
     }
     return data;
   };
@@ -208,6 +527,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 }
 
 export const api = {
+  getPendingSyncCount: () => outboxQueue.length,
   login: (email: string, password: string) =>
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
   staffLogin: (phone: string, pin: string) =>

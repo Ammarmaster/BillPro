@@ -373,6 +373,14 @@ function OwnerDashboard() {
   const [feedbacks, setFeedbacks] = useState<any[]>(() => api.getCachedFeedback() || []);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingSync, setPendingSync] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPendingSync(api.getPendingSyncCount());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Scanner modal state for Customer Web Order QR handoff
   const [showScanner, setShowScanner] = useState(false);
@@ -485,8 +493,21 @@ function OwnerDashboard() {
         {/* Profile Header */}
         <View style={styles.ownerHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.greetText, { color: theme.onSurfaceSecondary }]}>Welcome back</Text>
-            <Text style={[styles.ownerTitle, { color: theme.onSurface }]} numberOfLines={1}>{user?.full_name || "Business Partner"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={[styles.greetText, { color: theme.onSurfaceSecondary, marginBottom: 0 }]}>Welcome back</Text>
+              {pendingSync > 0 ? (
+                <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#F59E0B" }} />
+                  <Text style={{ fontSize: 9, color: "#F59E0B", fontWeight: "700" }}>{pendingSync} waiting</Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
+                  <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Synced</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.ownerTitle, { color: theme.onSurface, marginTop: 4 }]} numberOfLines={1}>{user?.full_name || "Business Partner"}</Text>
           </View>
           <View style={[styles.roleBadge, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "rgba(99, 91, 255, 0.08)" }]}>
             <Ionicons name="shield-checkmark" size={14} color={colors.brand} />
