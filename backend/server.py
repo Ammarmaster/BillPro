@@ -1333,19 +1333,42 @@ async def ocr_process_menu(payload: MenuOcrIn, current_user: dict = Depends(get_
                 })
             
             prompt = """
-            Extract all food menu categories and items from these restaurant menu images.
+            You are a menu document extraction system.
+            You are NOT allowed to create, infer, guess, complete, or hallucinate any menu item or price.
+
+            First, analyze the provided image. Determine if the image is a restaurant food menu or a page from a food menu.
+            If the image is a person, a random object, a receipt, a table, a wall, or any screenshot unrelated to a food menu, you MUST return:
+            {
+              "is_menu": false,
+              "error_message": "This image does not appear to contain a readable menu."
+            }
+
+            If it is a menu, extract the categories and items strictly grounded in the visible text.
+            For each item, you must find its name, price, and description (if present).
+            Every returned item must include:
+            1. "name": The exact or near-exact item name as printed.
+            2. "price": The exact numeric price in Rupees. If the price is unclear, missing, or represents multiple values (e.g. ₹120/₹200), return null.
+            3. "description": The description if printed directly below/beside the item. Do NOT invent a description. If not present, return null.
+            4. "sourceText": The exact line of text from the image where this item and price were detected.
+            5. "confidence": A float between 0.0 and 1.0 representing your confidence in this extraction.
+            6. "is_veg": A boolean indicating if the item is veg. Look for green dots, leaf icons, or explicit labels. If unclear, default to false.
+
+            Only create a category if its heading actually appears as a section title in the image. If there are no section titles, group items under the category name "Uncategorized". Do NOT invent categories.
+
             Return STRICTLY a JSON object with this format (no markdown fences, no explanation):
             {
+              "is_menu": true,
               "categories": [
                 {
-                  "name": "Category Name (e.g. Biryani, Starters, Main Course, Beverages, Desserts)",
+                  "name": "Category Name",
                   "items": [
                     {
                       "name": "Item Name",
                       "price": 180.0,
                       "description": "Short description if present",
-                      "is_veg": false,
-                      "confidence": 0.95
+                      "sourceText": "Item Name ........ 180",
+                      "is_veg": true,
+                      "confidence": 0.98
                     }
                   ]
                 }
@@ -1360,47 +1383,73 @@ async def ocr_process_menu(payload: MenuOcrIn, current_user: dict = Depends(get_
                 raw_text = raw_text[3:]
             if raw_text.endswith("```"):
                 raw_text = raw_text[:-3]
+            
             parsed = json.loads(raw_text.strip())
-            categories_result = parsed.get("categories", [])
+            if not parsed.get("is_menu", True):
+                raise HTTPException(status_code=400, detail=parsed.get("error_message") or "This image does not appear to contain a readable menu.")
+            
+            raw_categories = parsed.get("categories", [])
+            for cat in raw_categories:
+                cat_name = str(cat.get("name", "Uncategorized")).strip()
+                if not cat_name:
+                    cat_name = "Uncategorized"
+                
+                validated_items = []
+                for item in cat.get("items", []):
+                    name = str(item.get("name", "")).strip()
+                    price = item.get("price")
+                    source_text = str(item.get("sourceText", "")).strip()
+                    
+                    if not name or not source_text:
+                        continue
+                    
+                    if price is not None:
+                        try:
+                            price = float(price)
+                        except ValueError:
+                            price = None
+                    
+                    # Fuzzy grounding check
+                    name_words = [w.lower() for w in name.split() if len(w) > 2]
+                    grounded = True
+                    if name_words:
+                        source_lower = source_text.lower()
+                        if not any(word in source_lower for word in name_words):
+                            grounded = False
+                    
+                    if not grounded:
+                        continue
+                        
+                    validated_items.append({
+                        "name": name,
+                        "price": price,
+                        "description": item.get("description") or None,
+                        "sourceText": source_text,
+                        "is_veg": bool(item.get("is_veg", False)),
+                        "confidence": float(item.get("confidence", 0.90))
+                    })
+                
+                if validated_items:
+                    categories_result.append({
+                        "name": cat_name,
+                        "items": validated_items
+                    })
+                    
+        except HTTPException as he:
+            raise he
         except Exception as e:
-            logging.warning(f"Gemini Vision extraction fallback triggered: {e}")
-            categories_result = []
+            raise HTTPException(status_code=400, detail=f"Failed to process menu: {str(e)}")
+    else:
+        raise HTTPException(
+            status_code=400, 
+            detail="Gemini API Key is missing. Please configure GEMINI_API_KEY in your environment variables to enable AI Menu Import."
+        )
 
     if not categories_result:
-        categories_result = [
-            {
-              "name": "Starters & Appetizers",
-              "items": [
-                { "name": "Paneer Tikka", "price": 180.0, "description": "Tandoori marinated cottage cheese", "is_veg": True, "confidence": 0.96 },
-                { "name": "Chicken 65", "price": 210.0, "description": "Crispy spiced chicken cubes", "is_veg": False, "confidence": 0.98 },
-                { "name": "Veg Spring Roll", "price": 140.0, "description": "Crispy vegetable wrapped rolls", "is_veg": True, "confidence": 0.94 }
-              ]
-            },
-            {
-              "name": "Main Course",
-              "items": [
-                { "name": "Butter Chicken", "price": 280.0, "description": "Rich tomato butter gravy", "is_veg": False, "confidence": 0.99 },
-                { "name": "Paneer Butter Masala", "price": 240.0, "description": "Cottage cheese in buttery gravy", "is_veg": True, "confidence": 0.97 },
-                { "name": "Dal Makhani", "price": 190.0, "description": "Slow cooked black lentils", "is_veg": True, "confidence": 0.95 },
-                { "name": "Garlic Butter Naan", "price": 45.0, "description": "Tandoori flatbread with garlic butter", "is_veg": True, "confidence": 0.99 }
-              ]
-            },
-            {
-              "name": "Biryani & Rice",
-              "items": [
-                { "name": "Chicken Dum Biryani", "price": 250.0, "description": "Hyderabadi spiced dum biryani", "is_veg": False, "confidence": 0.98 },
-                { "name": "Veg Dum Biryani", "price": 200.0, "description": "Aromatic basmati rice with garden veg", "is_veg": True, "confidence": 0.96 },
-                { "name": "Jeera Rice", "price": 130.0, "description": "Tempered cumin basmati rice", "is_veg": True, "confidence": 0.97 }
-              ]
-            },
-            {
-              "name": "Beverages & Desserts",
-              "items": [
-                { "name": "Sweet Lassi", "price": 70.0, "description": "Traditional sweet yogurt beverage", "is_veg": True, "confidence": 0.99 },
-                { "name": "Gulab Jamun (2 pcs)", "price": 80.0, "description": "Warm milk dumplings in rose syrup", "is_veg": True, "confidence": 0.99 }
-              ]
-            }
-        ]
+        raise HTTPException(
+            status_code=400,
+            detail="No readable menu items or prices could be extracted from this image. Please check image quality and try again."
+        )
 
     for cat in categories_result:
         cat_name_lower = cat["name"].strip().lower()

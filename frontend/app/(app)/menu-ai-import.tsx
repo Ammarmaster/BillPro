@@ -19,6 +19,7 @@ type ExtractedItem = {
   description: string;
   is_veg: boolean;
   confidence: number;
+  sourceText?: string;
   action?: "create" | "replace" | "skip";
   existing_item_id?: string | null;
   duplicate_name?: string | null;
@@ -139,26 +140,45 @@ export default function MenuAiImportScreen() {
 
         const normalizeName = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
 
-        // Enforce actions on items: "create" | "replace" | "skip"
-        const processedCategories = res.categories.map((c: any) => {
-          return {
-            ...c,
-            items: (c.items || []).map((it: any) => {
-              const normalizedExtracted = normalizeName(it.name);
-              const matchedItem = existing.find(e => normalizeName(e.name) === normalizedExtracted);
-              
-              return {
-                ...it,
-                action: matchedItem ? "skip" : "create", // Default duplicate resolution is to skip
-                existing_item_id: matchedItem ? matchedItem.id : null,
-                duplicate_name: matchedItem ? matchedItem.name : null,
-                original_price: matchedItem ? matchedItem.price : null
-              };
-            })
-          };
-        });
+        const normalCategories: any[] = [];
+        const uncertainItems: any[] = [];
 
-        setCategories(processedCategories);
+        for (const c of res.categories) {
+          const keepItems: any[] = [];
+          for (const it of (c.items || [])) {
+            const normalizedExtracted = normalizeName(it.name);
+            const matchedItem = existing.find(e => normalizeName(e.name) === normalizedExtracted);
+            const processedItem = {
+              ...it,
+              action: matchedItem ? "skip" : "create",
+              existing_item_id: matchedItem ? matchedItem.id : null,
+              duplicate_name: matchedItem ? matchedItem.name : null,
+              original_price: matchedItem ? matchedItem.price : null
+            };
+
+            if ((it.confidence ?? 1.0) < 0.70) {
+              uncertainItems.push(processedItem);
+            } else {
+              keepItems.push(processedItem);
+            }
+          }
+
+          if (keepItems.length > 0) {
+            normalCategories.push({
+              ...c,
+              items: keepItems
+            });
+          }
+        }
+
+        if (uncertainItems.length > 0) {
+          normalCategories.push({
+            name: "Uncertain Items",
+            items: uncertainItems
+          });
+        }
+
+        setCategories(normalCategories);
         setStep("review");
       } else {
         throw new Error("Could not parse menu structure.");
@@ -415,7 +435,9 @@ export default function MenuAiImportScreen() {
 
                 {/* Items in this category */}
                 {cat.items.map((item, itemIdx) => {
-                  const isUncertain = item.confidence < 0.85 || isNaN(item.price) || item.price <= 0;
+                  const confidence = item.confidence ?? 1.0;
+                  const hasBadPrice = isNaN(item.price) || item.price === null || item.price <= 0;
+                  const isUncertain = confidence < 0.90 || hasBadPrice;
                   const isDuplicate = !!item.duplicate_name;
                   return (
                     <View
@@ -485,6 +507,15 @@ export default function MenuAiImportScreen() {
                         placeholder="Optional description / details"
                         placeholderTextColor="#475569"
                       />
+
+                      {item.sourceText ? (
+                        <View style={{ marginTop: 6, backgroundColor: isDark ? "#1E293B" : "#F1F5F9", padding: 6, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Ionicons name="document-text-outline" size={12} color="#64748B" />
+                          <Text style={{ fontSize: 10, color: "#64748B", fontStyle: "italic", flex: 1 }} numberOfLines={1}>
+                            Source: "{item.sourceText}"
+                          </Text>
+                        </View>
+                      ) : null}
 
                       {/* Duplicate Resolution Pills */}
                       {isDuplicate && (
