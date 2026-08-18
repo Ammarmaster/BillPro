@@ -144,26 +144,26 @@ export default function WaiterScreen() {
 
   const { subscribe } = useNotifications();
 
-  // Instant 0ms WebSocket State Reconciliation
+  // Instant WebSocket State Reconciliation
   useEffect(() => {
     return subscribe((notif) => {
-      const data = notif.data;
-      if (!data) return;
-
-      const { order_id, status, table_number, event } = data;
-
       // 0ms instant table state update on payment / order completion
-      if (event === "TABLE_SETTLED") {
-        setOrders(prev => prev.map(o => (table_number && isSameTable(o.table_number, table_number)) ? { ...o, status: "served" } : o));
-      } else if (order_id && (event === "ORDER_SERVED" || event === "ORDER_PAID" || status === "served" || status === "paid")) {
-        setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status: "served" } : o));
-      } else if (order_id && status) {
-        setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status } : o));
+      const data = notif.data;
+      if (data) {
+        const { order_id, status, table_number, event } = data;
+        if (event === "TABLE_SETTLED") {
+          setOrders(prev => prev.map(o => (table_number && isSameTable(o.table_number, table_number)) ? { ...o, status: "served" } : o));
+        } else if (order_id && (event === "ORDER_SERVED" || event === "ORDER_PAID" || status === "served" || status === "paid")) {
+          setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status: "served" } : o));
+        } else if (order_id && status) {
+          setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status } : o));
+        }
       }
 
-      // If new order placed, silently update orders
-      if (notif.category === "kitchen" && order_id) {
+      // Refresh local cache and states from server to stay 100% consistent across all devices
+      if (notif.category === "kitchen" || notif.category === "payment" || notif.category === "waiter") {
         api.listOrders().then(fresh => { if (fresh) setOrders(fresh); }).catch(() => {});
+        api.listBills().then(fresh => { if (fresh) setBills(fresh); }).catch(() => {});
       }
     });
   }, [subscribe]);
@@ -505,30 +505,13 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                           <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginLeft: 4 }}>Edit</Text>
                         </Pressable>
 
-                        {isWebOrder ? (
-                          <Pressable
-                            style={[
-                              styles.guestActionBtn, 
-                              { backgroundColor: "#10B981", borderColor: "#10B981" },
-                              completingIds.has(order.id) && { opacity: 0.6 }
-                            ]}
-                            onPress={() => completeIndividualOrder(order.id)}
-                            disabled={completingIds.has(order.id)}
-                          >
-                            <Ionicons name="checkmark-circle-outline" size={14} color="#FFF" />
-                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>
-                              {completingIds.has(order.id) ? "Serving..." : "Mark Served"}
-                            </Text>
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            style={[styles.guestActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
-                            onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id } })}
-                          >
-                            <Ionicons name="receipt-outline" size={14} color="#FFF" />
-                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
-                          </Pressable>
-                        )}
+                        <Pressable
+                          style={[styles.guestActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
+                          onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id } })}
+                        >
+                          <Ionicons name="receipt-outline" size={14} color="#FFF" />
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
+                        </Pressable>
                       </View>
                     </View>
                   </View>
@@ -547,31 +530,18 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
               <Text style={styles.addOrderBtnText}>+ Add Order</Text>
             </Pressable>
 
-            {allWebPaid ? (
-              <Pressable
-                style={[styles.genBillBtn, { backgroundColor: "#10B981", shadowColor: "#10B981" }]}
-                onPress={completeAllTableOrders}
-              >
-                <View>
-                  <Text style={styles.genBillAmt}>All Paid Online</Text>
-                  <Text style={styles.genBillSub}>Complete & Free Table</Text>
-                </View>
-                <Ionicons name="checkmark-done-circle" size={24} color="#FFFFFF" />
-              </Pressable>
-            ) : (
-              <Pressable
-                style={styles.genBillBtn}
-                onPress={() => {
-                  router.push({ pathname: "/(app)/billing", params: { tableNumber: selectedTableObj.label } });
-                }}
-              >
-                <View>
-                  <Text style={styles.genBillAmt}>₹{totalTableAmount}</Text>
-                  <Text style={styles.genBillSub}>Settle Entire Table</Text>
-                </View>
-                <Ionicons name="receipt-outline" size={22} color="#FFFFFF" />
-              </Pressable>
-            )}
+            <Pressable
+              style={styles.genBillBtn}
+              onPress={() => {
+                router.push({ pathname: "/(app)/billing", params: { tableNumber: selectedTableObj.label } });
+              }}
+            >
+              <View>
+                <Text style={styles.genBillAmt}>₹{totalTableAmount}</Text>
+                <Text style={styles.genBillSub}>Settle Entire Table</Text>
+              </View>
+              <Ionicons name="receipt-outline" size={22} color="#FFFFFF" />
+            </Pressable>
           </View>
 
           {/* Guest Selector Modal */}
