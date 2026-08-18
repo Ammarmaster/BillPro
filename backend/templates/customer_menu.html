@@ -1146,6 +1146,21 @@
     </button>
   </div>
 
+
+  <!-- Error Mask Overlay -->
+  <div id="error-container" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #090D16; z-index: 99; justify-content: center; align-items: center; padding: 24px; text-align: center;">
+    <div style="background: #121824; border: 1px solid #1C2434; padding: 32px 24px; border-radius: 16px; max-width: 400px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+      <div style="background: rgba(239, 68, 68, 0.1); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+        <svg style="width: 32px; height: 32px; fill: #EF4444;" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      </div>
+      <h3 style="color: #FFF; font-size: 20px; margin-bottom: 12px; font-weight: 700; font-family: sans-serif;">Connection Error</h3>
+      <p id="error-message" style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; font-family: sans-serif;">Failed to load restaurant menu. Please try scanning the QR code again.</p>
+      <button onclick="window.location.reload()" style="background: #635BFF; color: #FFF; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 15px; cursor: pointer; width: 100%; transition: opacity 0.2s; font-family: sans-serif;">
+        Retry Connection
+      </button>
+    </div>
+  </div>
+
   <!-- Loading Mask Overlay -->
   <div class="loader-overlay" id="loading-overlay">
     <div class="spinner"></div>
@@ -1193,13 +1208,29 @@
     let orderType = "dine_in";
     let paymentMethod = "UPI";
 
+    function showError(msg) {
+      document.getElementById("loading-overlay").style.display = "none";
+      const errBox = document.getElementById("error-container");
+      const errMsg = document.getElementById("error-message");
+      if (errBox && errMsg) {
+        errMsg.textContent = msg;
+        errBox.style.display = "flex";
+      } else {
+        alert("Failed to initialize: " + msg);
+      }
+    }
+
     // Initialize Page
     async function init() {
       showLoader(true);
       try {
+        if (!tenantId || tenantId === "undefined" || tenantId.includes("{TENANT_ID}")) {
+          throw new Error("Invalid Restaurant Context. Please ask the restaurant staff to regenerate the Table QR code.");
+        }
+
         // Load Restaurant Info
         const rRes = await fetch(`/api/public/restaurant/${tenantId}`);
-        if (!rRes.ok) throw new Error("Restaurant not found");
+        if (!rRes.ok) throw new Error("Restaurant not found. The POS restaurant setup might be incomplete.");
         restaurantInfo = await rRes.json();
         
         // Update header UI
@@ -1216,7 +1247,7 @@
         // Set table number UI
         const badge = document.getElementById("table-badge");
         const tblInput = document.getElementById("table-number-input");
-        if (initialTableLabel) {
+        if (initialTableLabel && initialTableLabel !== "undefined" && !initialTableLabel.includes("{TABLE_LABEL}")) {
           badge.textContent = `Table ${initialTableLabel}`;
           tblInput.value = initialTableLabel;
 
@@ -1241,14 +1272,15 @@
 
         // Load Menu Data
         const mRes = await fetch(`/api/public/menu/${tenantId}`);
+        if (!mRes.ok) throw new Error("Failed to load restaurant menu.");
         menuData = await mRes.json();
         
         renderCategories();
         renderMenu();
-      } catch (e) {
-        alert("Failed to initialize: " + e.message);
-      } finally {
         showLoader(false);
+      } catch (e) {
+        console.error("Initialization error:", e);
+        showError(e.message);
       }
     }
 
