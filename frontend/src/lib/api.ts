@@ -261,10 +261,17 @@ function rewriteCacheTempIds(tempId: string, realId: string) {
   }
 }
 
-async function handleOfflineMutation(path: string, opts: RequestInit): Promise<any> {
+async function handleOfflineMutation(path: string, opts: RequestInit, enqueue = true): Promise<any> {
   const method = opts.method || "POST";
   const body = typeof opts.body === "string" ? JSON.parse(opts.body) : {};
   const operationId = "op_" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+
+  const maybeEnqueue = async (item: any) => {
+    if (enqueue) {
+      outboxQueue.push(item);
+      await saveOutbox();
+    }
+  };
 
   if (path === "/orders" && method === "POST") {
     const tempId = "temp-order-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
@@ -283,8 +290,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
       created_at: new Date().toISOString(),
       operationId
     };
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now(), tempId });
 
     const oList = memoryCache["/orders"] || [];
     const updated = [newOrder, ...oList.filter((o: any) => o.id !== tempId)];
@@ -298,8 +304,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
   if (path.startsWith("/orders/") && method === "PATCH") {
     const orderId = path.split("/")[2];
     const isStatus = path.endsWith("/status");
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now() });
 
     const oList = memoryCache["/orders"] || [];
     const updated = oList.map((o: any) => {
@@ -364,8 +369,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
       operationId
     };
 
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now(), tempId });
 
     const bList = memoryCache["/bills"] || [];
     const updated = [newBill, ...bList.filter((b: any) => b.id !== tempId)];
@@ -377,8 +381,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
 
   if (path.endsWith("/pay") && method === "PATCH") {
     const billId = path.split("/")[2];
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now() });
 
     const bList = memoryCache["/bills"] || [];
     const updated = bList.map((b: any) => {
@@ -392,8 +395,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
   }
 
   if (path === "/bills/settle-table" && method === "POST") {
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now() });
     const targetTbl = body.table_number;
 
     const oList = memoryCache["/orders"] || [];
@@ -420,8 +422,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
   if (path === "/categories" && method === "POST") {
     const tempId = "temp-cat-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
     const newCat = { id: tempId, name: body.name, sort_order: body.sort_order || 0, created_at: new Date().toISOString() };
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now(), tempId });
 
     const cList = memoryCache["/categories"] || [];
     const updated = [...cList, newCat];
@@ -433,8 +434,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
 
   if (path.startsWith("/categories/") && method === "DELETE") {
     const catId = path.split("/")[2];
-    outboxQueue.push({ operationId, path, method, timestamp: Date.now() });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, timestamp: Date.now() });
 
     const cList = memoryCache["/categories"] || [];
     const updated = cList.filter((c: any) => c.id !== catId);
@@ -456,8 +456,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
       is_active: true,
       created_at: new Date().toISOString()
     };
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now(), tempId });
 
     const mList = memoryCache["/menu-items"] || [];
     const updated = [...mList, newItem];
@@ -469,8 +468,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
 
   if (path.startsWith("/menu-items/") && (method === "PATCH" || method === "DELETE")) {
     const itemId = path.split("/")[2];
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now() });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now() });
 
     const mList = memoryCache["/menu-items"] || [];
     let updated: any[];
@@ -494,8 +492,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
       status: "OPEN",
       created_at: new Date().toISOString()
     };
-    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, body, timestamp: Date.now(), tempId });
 
     const tList = memoryCache["/tables"] || [];
     const updated = [...tList, newTbl];
@@ -507,8 +504,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
 
   if (path.startsWith("/tables/") && method === "DELETE") {
     const tblId = path.split("/")[2];
-    outboxQueue.push({ operationId, path, method, timestamp: Date.now() });
-    await saveOutbox();
+    await maybeEnqueue({ operationId, path, method, timestamp: Date.now() });
 
     const tList = memoryCache["/tables"] || [];
     const updated = tList.filter((t: any) => t.id !== tblId);
@@ -546,10 +542,71 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
   );
 
   // Local-First Write Policy: ALWAYS update local cache instantly, queue action, sync in background
+  // Local-First Write Policy: ALWAYS update local cache instantly.
+  // Try direct online network call first to sync instantly to the cloud. Fallback to outbox queue if unreachable/offline.
   if (isLocalFirstMutation) {
-    const localResult = await handleOfflineMutation(path, opts);
-    startSyncRunner().catch(() => {});
-    return localResult;
+    const localResult = await handleOfflineMutation(path, opts, false);
+
+    const headers: Record<string, string> = {
+      ...((opts.headers as any) || {}),
+    };
+    if (!(opts.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (auth) {
+      const t = await getAccess();
+      if (t) headers["Authorization"] = `Bearer ${t}`;
+    }
+
+    try {
+      const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+      if (res.ok) {
+        const text = await res.text();
+        const freshData = text ? JSON.parse(text) : null;
+        if (freshData) {
+          // Resolve temp ID mappings and update global cache
+          if (localResult && localResult.id && freshData.id) {
+            tempIdMap[localResult.id] = freshData.id;
+            if (path === "/orders" || path.startsWith("/orders/")) {
+              api.updateCachedOrder(localResult.id, freshData);
+            } else if (path === "/bills" || path.startsWith("/bills/")) {
+              api.updateCachedBill(localResult.id, freshData);
+            }
+          }
+          // Clear prefix caches to keep other related caches (like dashboard / tables) fresh
+          if (path.startsWith("/orders")) {
+            clearCachePrefix("/tables");
+            clearCachePrefix("/dashboard/summary");
+          } else if (path.startsWith("/bills")) {
+            clearCachePrefix("/dashboard/summary");
+          }
+        }
+        return freshData;
+      } else {
+        throw new Error("Server returned non-ok status: " + res.status);
+      }
+    } catch (err) {
+      console.log("[LocalFirst] Online write failed/timeout. Enqueuing to sync outbox queue fallback:", err);
+      // Fallback: enqueue the mutation to the outbox queue
+      const operationId = "op_" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+      const method = opts.method || "POST";
+      const body = typeof opts.body === "string" ? JSON.parse(opts.body) : {};
+      
+      outboxQueue.push({ 
+        operationId, 
+        path, 
+        method, 
+        body, 
+        timestamp: Date.now(), 
+        tempId: localResult ? localResult.id : undefined 
+      });
+      await saveOutbox();
+      
+      // Trigger background sync runner to retry/poll
+      startSyncRunner().catch(() => {});
+      
+      return localResult;
+    }
   }
 
   const execute = async () => {
