@@ -123,9 +123,17 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
 
 export const DEFAULT_EZBILL_LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQAAAADrRVxmAAACjElEQVR4nM2Vv2sUQRTHvzO3p3eoeIJHEEUXKyHEuzKg4PoXGAiKjWhn4X9gk9U/QLSyjZ2SJpVilWtEuxxaWCiyGJBoILkiMae5vSfz3szu3CS52OkrNnfffN6792tmgX9iyjzqVxIA+uxNAJERTt9aRI7hzzgTikVjif0bOyFKyzD7WMLP2hiiNhpzD1P8lN/ax1JTwjgA435ArOGSIWM9qwI4XH7UTJ2YC4i77LJpeiXENMsVSiNE6AEV6eVW3XlE7EFr5MpSIqx/4kRj4JwIGzRvYmRAX8BvbzEQoiUEUaKFaAvxtAk91F7FL2aTIbQh7ogw+RkaHpE3V1IhVEeEyYsY+sT36x+4fK7jl1JqauE87wZvyQ4Ba8eeWIKALaXU7MvnrmtEXf7QKQXTval7CAmUg+yFQjcUGiPC0F9GDaAKky4VEKq2XfBijFqVAYnkE+neLhrgYYzYEY6R74pxoJCHwu9Q2CwF2YbVMs4EZ24HJi6klLYTFyLn1AYloR5UlFLFgk9QzovYTz2BFxHWxQxl24xx3goXAJwKa9kxabQ9oepmpyUxYMYGE6GCLzPePdGiPMVxIlq1908GtcQ5ZGXqV1V7/VXmNvS2HBaid1Yw7rRsYxgXd7BQxrBfYl9wROSEzqVOs+43eaMIGssYDJ750y8JyBDTgojNrhMt//jIBFcy56WuTXsSLzGYO/RaQURyCL8CJMRQghzlthETnPo2uSM0KK+/VypGYyzfsB5bu901RxdmnR6/fN0Zu8GdvTnrtAepnplcS/0Ae4orL0+lZzf8S+23+O0sOeN9Ajqr3slDh9a9Dj4ifu95RHufefH5M8+/HTqiEzqZ4ph52bywAdLkdxvif7A9XHChgusoMPAAAAABJRU5ErkJggg==";
 
-export function getBillLogo(snapshot?: any): string {
-  if (snapshot && snapshot.logo_base64) {
-    return snapshot.logo_base64;
+export function getBillLogo(snapshot?: any, width: number = 80): string {
+  if (snapshot) {
+    if (width === 58 && snapshot.logo_base64_58) {
+      return snapshot.logo_base64_58;
+    }
+    if (width === 80 && snapshot.logo_base64_80) {
+      return snapshot.logo_base64_80;
+    }
+    if (snapshot.logo_base64) {
+      return snapshot.logo_base64;
+    }
   }
   return DEFAULT_EZBILL_LOGO_BASE64;
 }
@@ -137,7 +145,7 @@ export function formatCurrency(val: number): string {
   return `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatReceipt(data: any, width: number = 80, isKitchen: boolean = false): string {
+export async function formatReceipt(data: any, width: number = 80, isKitchen: boolean = false): Promise<string> {
   const maxChars = width === 58 ? 32 : 48;
   const divider = "-".repeat(maxChars);
   const lines: string[] = [];
@@ -166,7 +174,7 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
   } else {
     // Customer Receipt
     const r = data.restaurant_snapshot || {};
-    const logoBase64 = getBillLogo(r);
+    const logoBase64 = getBillLogo(r, width);
     lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     lines.push(`[C]<b><font size='big'>${r.name || "Restaurant"}</font></b>\n`);
     if (r.address) lines.push(`[C]${r.address}\n`);
@@ -273,11 +281,25 @@ export function formatReceipt(data: any, width: number = 80, isKitchen: boolean 
       const merchant = r.merchant_name || r.name || "Merchant";
       const totalAmount = Number(data.total || 0).toFixed(2);
       const upiUrl = `upi://pay?pa=${r.upi_id}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR`;
-      const qrSize = width === 58 ? "16" : "20";
       
-      lines.push(`[C]Scan to Pay via UPI (₹${totalAmount})\n`);
-      lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
-      lines.push(`[C]${divider}\n`);
+      try {
+        const QRCode = require("qrcode");
+        const qrSize = width === 58 ? 160 : 220;
+        // Generate QR code data URL (returns data:image/png;base64,...)
+        const qrDataUrl = await QRCode.toDataURL(upiUrl, {
+          margin: 2,
+          width: qrSize,
+          errorCorrectionLevel: 'M'
+        });
+        
+        lines.push(`[C]Scan to Pay via UPI (₹${totalAmount})\n`);
+        lines.push(`[C]<img>${qrDataUrl}</img>\n`);
+        lines.push(`[C]${divider}\n`);
+      } catch (qrErr) {
+        console.warn("Failed to generate payment QR code:", qrErr);
+        lines.push(`[C]Payment QR could not be generated.\n`);
+        lines.push(`[C]${divider}\n`);
+      }
     }
 
     lines.push(`[C]Thank you! Visit again.\n`);
@@ -340,7 +362,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     return false; // Fallback to system print sheet
   }
 
-  const payload = formatReceipt(data, settings.width, isKitchen);
+  const payload = await formatReceipt(data, settings.width, isKitchen);
   
   if (Platform.OS === "web") {
     console.log("Thermal print (web fallback):\n", payload);

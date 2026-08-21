@@ -1170,6 +1170,7 @@
   <script>
     // Injected variables
     const tenantId = "{{TENANT_ID}}";
+    const initialTableId = "{{TABLE_ID}}";
     const initialTableLabel = "{{TABLE_LABEL}}";
 
     const sessionKey = `table_session_${tenantId}_${initialTableLabel || "takeaway"}`;
@@ -1510,6 +1511,7 @@
           const body = {
             tenant_id: tenantId,
             table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
+            table_id: orderType === "dine_in" ? (initialTableId || null) : null,
             order_type: orderType,
             session_id: customerSessionId,
             customer_name: customerGuestName || name || "Guest 1",
@@ -1573,6 +1575,7 @@
               const body = {
                 tenant_id: tenantId,
                 table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
+                table_id: orderType === "dine_in" ? (initialTableId || null) : null,
                 order_type: orderType,
                 session_id: customerSessionId,
                 customer_name: customerGuestName || name || "Guest 1",
@@ -1983,6 +1986,7 @@
             order_id: order.id,
             token: order.qr_token || order.id,
             tenant_id: tenantId,
+            table_id: order.table_id || initialTableId || "",
             table_number: order.table_number || initialTableLabel || ""
           });
           new QRCode(qrContainer, {

@@ -1,14 +1,22 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api, saveTokens, clearTokens, getAccess, getStoredUser, getRefresh } from "@/src/lib/api";
 
-type User = { id: string; email: string; full_name: string; role: string; tenant_id: string | null };
+type User = { 
+  id: string; 
+  email: string; 
+  full_name: string; 
+  role: string; 
+  tenant_id: string | null; 
+  privacy_consent?: boolean; 
+  marketing_consent?: boolean; 
+};
 
 type Ctx = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   staffLogin: (phone: string, pin: string) => Promise<void>;
-  register: (email: string, password: string, full_name: string, role?: string, terms_accepted?: boolean) => Promise<void>;
+  register: (email: string, password: string, full_name: string, role?: string, terms_accepted?: boolean, privacy_consent?: boolean, marketing_consent?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -96,8 +104,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
   };
-  const register = async (email: string, password: string, full_name: string, role = "owner", terms_accepted = false) => {
-    const r = await api.register(email, password, full_name, role, terms_accepted);
+  const register = async (email: string, password: string, full_name: string, role = "owner", terms_accepted = false, privacy_consent = false, marketing_consent = false) => {
+    const r = await api.register(email, password, full_name, role, terms_accepted, privacy_consent, marketing_consent);
     await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
   };

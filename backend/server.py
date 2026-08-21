@@ -310,6 +310,118 @@ def verify_pw(pw: str, hashed: str) -> bool:
     return pw == hashed
 
 
+def optimize_logo_base64(b64_str: str, max_w: int = 180, max_h: int = 180) -> str:
+    if not b64_str:
+        return ""
+    if "," in b64_str:
+        b64_str = b64_str.split(",")[1]
+    try:
+        import base64
+        import io
+        from PIL import Image
+        
+        img_data = base64.b64decode(b64_str)
+        img = Image.open(io.BytesIO(img_data))
+        
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            background = Image.new("RGBA", img.size, (255, 255, 255))
+            alpha_composite = Image.alpha_composite(background, img.convert("RGBA"))
+            img = alpha_composite.convert("RGB")
+        else:
+            img = img.convert("RGB")
+            
+        img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+        img = img.convert("1")
+        
+        out_io = io.BytesIO()
+        img.save(out_io, format="PNG")
+        return base64.b64encode(out_io.getvalue()).decode("utf-8")
+    except ImportError:
+        print("PIL is not installed. Skipping image optimization.")
+        return b64_str
+    except Exception as e:
+        print(f"Failed to optimize logo base64 (w={max_w}):", e)
+        return b64_str
+
+
+def parse_qr_data(qr_data: str):
+    qr_data = qr_data.strip()
+    if qr_data.startswith("EZBILL_ORDER:"):
+        qr_data = qr_data[len("EZBILL_ORDER:"):].strip()
+    
+    try:
+        import json
+        data = json.loads(qr_data)
+        if isinstance(data, dict):
+            return {
+                "order_id": data.get("order_id") or data.get("orderId"),
+                "token": data.get("token"),
+                "tenant_id": data.get("tenant_id") or data.get("tenantId"),
+                "table_number": data.get("table_number") or data.get("tableNumber") or data.get("tableId"),
+                "table_id": data.get("table_id") or data.get("tableId")
+            }
+    except Exception:
+        pass
+
+    if "://" in qr_data or "/" in qr_data:
+        from urllib.parse import urlparse, parse_qs
+        try:
+            parsed_url = urlparse(qr_data)
+            path_parts = parsed_url.path.strip("/").split("/")
+            query = parse_qs(parsed_url.query)
+            
+            order_id = query.get("order_id", [None])[0] or query.get("orderId", [None])[0]
+            token = query.get("token", [None])[0]
+            tenant_id = query.get("tenant_id", [None])[0] or query.get("tenantId", [None])[0]
+            table_number = query.get("table_number", [None])[0] or query.get("tableNumber", [None])[0]
+            
+            if len(path_parts) >= 3 and path_parts[0] == "menu":
+                if not tenant_id:
+                    tenant_id = path_parts[1]
+                if not table_number:
+                    table_number = path_parts[2]
+            
+            if order_id or token or tenant_id:
+                return {
+                    "order_id": order_id,
+                    "token": token,
+                    "tenant_id": tenant_id,
+                    "table_number": table_number,
+                    "table_id": query.get("table_id", [None])[0] or query.get("tableId", [None])[0]
+                }
+        except Exception:
+            pass
+
+    return {
+        "order_id": qr_data,
+        "token": qr_data,
+        "tenant_id": None,
+        "table_number": None,
+        "table_id": None
+    }
+
+
+async def log_consent_event(user_id: str, tenant_id: Optional[str], consent_type: str, purpose: str, version: str, status: str, source: str, ip: str = "", ua: str = ""):
+    now = datetime.now(timezone.utc).isoformat()
+    record = {
+        "id": str(uuid.uuid4()),
+        "userId": user_id,
+        "restaurantId": tenant_id or "",
+        "consentType": consent_type,
+        "purpose": purpose,
+        "documentVersion": version,
+        "consentStatus": status,
+        "acceptedAt": now if status == "accepted" else None,
+        "withdrawnAt": now if status == "withdrawn" else None,
+        "source": source,
+        "ipAddress": ip,
+        "userAgent": ua,
+        "createdAt": now,
+        "updatedAt": now
+    }
+    await db.consent_records.insert_one(record)
+
+
 def make_token(sub: str, role: str, tenant_id: Optional[str], refresh: bool = False) -> str:
     now = datetime.now(timezone.utc)
     exp = now + (timedelta(days=REFRESH_TTL_DAYS) if refresh else timedelta(minutes=ACCESS_TTL_MIN))
@@ -354,6 +466,8 @@ class RegisterIn(BaseModel):
     full_name: str
     role: str = "owner"  # owner registers themselves; super_admin creates staff
     terms_accepted: Optional[bool] = False
+    privacy_consent: Optional[bool] = False
+    marketing_consent: Optional[bool] = False
 
 
 class LoginIn(BaseModel):
@@ -455,6 +569,7 @@ class OrderIn(BaseModel):
 class PublicOrderIn(BaseModel):
     tenant_id: str
     table_number: str
+    table_id: Optional[str] = None
     order_type: str = "dine_in"  # dine_in, take_away
     items: List[OrderItemIn]
     notes: str = ""
@@ -479,6 +594,7 @@ class QRResolveIn(BaseModel):
 class QRConfirmIn(BaseModel):
     qr_data: str
     table_number: Optional[str] = None
+    table_id: Optional[str] = None
     operation_id: Optional[str] = None
 
 
@@ -555,15 +671,16 @@ async def root():
 
 
 @api.post("/auth/register", response_model=TokenOut)
-async def register(payload: RegisterIn):
-    if not payload.terms_accepted:
-        raise HTTPException(status_code=400, detail="You must agree to the Terms & Conditions and Privacy Policy")
+async def register(payload: RegisterIn, request: Request = None):
+    if not payload.terms_accepted or not payload.privacy_consent:
+        raise HTTPException(status_code=400, detail="You must agree to the Terms & Conditions and Privacy Notice")
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     if payload.role not in ("owner", "manager", "waiter", "kitchen"):
         raise HTTPException(status_code=400, detail="Invalid role for self-registration")
     uid = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
     doc = {
         "id": uid,
         "email": payload.email.lower(),
@@ -572,10 +689,21 @@ async def register(payload: RegisterIn):
         "role": payload.role,
         "tenant_id": None,
         "terms_accepted": True,
-        "terms_accepted_at": datetime.now(timezone.utc).isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "terms_accepted_at": now_iso,
+        "privacy_consent": True,
+        "marketing_consent": bool(payload.marketing_consent),
+        "created_at": now_iso,
     }
     await db.users.insert_one(doc)
+    
+    # Audit log DPDP consent events
+    ip = request.client.host if (request and request.client) else ""
+    ua = request.headers.get("user-agent", "") if request else ""
+    await log_consent_event(uid, None, "TERMS_AND_CONDITIONS", "To accept service terms", "v1.0", "accepted", "registration", ip, ua)
+    await log_consent_event(uid, None, "PRIVACY_POLICY", "To allow data processing", "v1.0", "accepted", "registration", ip, ua)
+    if payload.marketing_consent:
+        await log_consent_event(uid, None, "MARKETING_CONSENT", "To receive promotional messages", "v1.0", "accepted", "registration", ip, ua)
+        
     user_out = {k: v for k, v in doc.items() if k not in ("password", "_id")}
     return TokenOut(
         access_token=make_token(uid, payload.role, None),
@@ -665,6 +793,48 @@ async def me(user: dict = Depends(get_current_user)):
     return user
 
 
+class ConsentUpdateIn(BaseModel):
+    consent_type: str
+    status: str
+
+
+@api.post("/users/consent")
+async def update_user_consent(payload: ConsentUpdateIn, current_user: dict = Depends(get_current_user), request: Request = None):
+    field_map = {
+        "TERMS_AND_CONDITIONS": "terms_accepted",
+        "PRIVACY_POLICY": "privacy_consent",
+        "MARKETING_CONSENT": "marketing_consent"
+    }
+    field_name = field_map.get(payload.consent_type)
+    if not field_name:
+        raise HTTPException(status_code=400, detail="Invalid consent category")
+        
+    val = (payload.status == "accepted")
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {field_name: val}})
+    
+    purpose_map = {
+        "TERMS_AND_CONDITIONS": "To accept service terms",
+        "PRIVACY_POLICY": "To allow data processing",
+        "MARKETING_CONSENT": "To receive promotional messages"
+    }
+    
+    ip = request.client.host if (request and request.client) else ""
+    ua = request.headers.get("user-agent", "") if request else ""
+    
+    await log_consent_event(
+        current_user["id"],
+        current_user.get("tenant_id"),
+        payload.consent_type,
+        purpose_map[payload.consent_type],
+        "v1.0",
+        payload.status,
+        "settings",
+        ip,
+        ua
+    )
+    return {"success": True, "status": payload.status}
+
+
 @api.delete("/auth/delete-account")
 async def delete_my_account(user: dict = Depends(get_current_user)):
     uid = user["id"]
@@ -705,12 +875,21 @@ async def refresh(authorization: Optional[str] = Header(default=None)):
 async def create_or_update_restaurant(payload: RestaurantIn, user: dict = Depends(require_roles("owner", "super_admin"))):
     tenant_id = user.get("tenant_id")
     now = datetime.now(timezone.utc).isoformat()
+    
+    doc_data = payload.dict()
+    if payload.logo_base64:
+        doc_data["logo_base64_58"] = optimize_logo_base64(payload.logo_base64, 180, 180)
+        doc_data["logo_base64_80"] = optimize_logo_base64(payload.logo_base64, 260, 260)
+    else:
+        doc_data["logo_base64_58"] = ""
+        doc_data["logo_base64_80"] = ""
+        
     if tenant_id:
-        await db.restaurants.update_one({"id": tenant_id}, {"$set": {**payload.dict(), "updated_at": now}})
+        await db.restaurants.update_one({"id": tenant_id}, {"$set": {**doc_data, "updated_at": now}})
         rest = await db.restaurants.find_one({"id": tenant_id}, {"_id": 0})
         return rest
     tenant_id = str(uuid.uuid4())
-    doc = {"id": tenant_id, **payload.dict(), "owner_user_id": user["id"], "is_read": False, "created_at": now, "updated_at": now}
+    doc = {"id": tenant_id, **doc_data, "owner_user_id": user["id"], "is_read": False, "created_at": now, "updated_at": now}
     await db.restaurants.insert_one(doc)
     await db.users.update_one({"id": user["id"]}, {"$set": {"tenant_id": tenant_id}})
     doc.pop("_id", None)
@@ -1160,17 +1339,32 @@ async def public_create_order(payload: PublicOrderIn):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Payment signature verification failed: {str(e)}")
 
+    # Resolve stable Table ID
+    table = None
+    if payload.table_id:
+        table = await db.tables.find_one({"tenant_id": payload.tenant_id, "id": payload.table_id})
+    if not table and payload.table_number:
+        table = await db.tables.find_one({"tenant_id": payload.tenant_id, "label": payload.table_number})
+        
+    if not table:
+        raise HTTPException(status_code=400, detail="This table is no longer available.")
+        
+    table_id = table["id"]
+    table_number = table["label"]
+
     subtotal = sum(i.price * i.quantity for i in payload.items)
     order_id = str(uuid.uuid4())
     qr_token = str(uuid.uuid4())[:16]
     cust_name = (payload.customer_name or "Guest 1").strip()
     sess_id = payload.session_id or str(uuid.uuid4())
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     
     doc = {
         "id": order_id,
         "qr_token": qr_token,
         "tenant_id": payload.tenant_id,
-        "table_number": payload.table_number,
+        "table_number": table_number,
+        "table_id": table_id,
         "session_id": sess_id,
         "customer_name": cust_name,
         "items": [i.dict() for i in payload.items],
@@ -1181,6 +1375,7 @@ async def public_create_order(payload: PublicOrderIn):
         "order_source": "qr_web",
         "created_by": "guest",
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at,
         "customer_phone": payload.customer_phone,
         "order_type": payload.order_type,
         "payment_method": payload.payment_method,
@@ -1317,23 +1512,14 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
 
-    raw = payload.qr_data.strip()
-    if raw.startswith("EZBILL_ORDER:"):
-        raw = raw[len("EZBILL_ORDER:"):].strip()
-
-    try:
-        data = json.loads(raw)
-    except Exception:
-        data = {"order_id": raw, "token": raw}
-
-    order_id = data.get("order_id") or raw
+    data = parse_qr_data(payload.qr_data)
+    order_id = data.get("order_id")
     token = data.get("token")
     qr_tenant = data.get("tenant_id")
 
     if qr_tenant and qr_tenant != tid:
-        raise HTTPException(status_code=403, detail="This QR belongs to another restaurant.")
+        raise HTTPException(status_code=403, detail="This order belongs to another restaurant.")
 
-    # Optimized index query
     order = await db.orders.find_one({
         "tenant_id": tid,
         "$or": [{"id": order_id}, {"qr_token": token or order_id}]
@@ -1342,15 +1528,36 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
     if not order:
         raise HTTPException(status_code=404, detail="Order not found. Please verify the QR code.")
 
-    if order.get("status") == "pending_scan":
-        created_at_str = order.get("created_at")
-        if created_at_str:
-            try:
-                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) - created_at > timedelta(hours=2):
-                    raise HTTPException(status_code=400, detail="This order QR has expired. Please generate a new one.")
-            except Exception:
-                pass
+    if order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"]:
+        raise HTTPException(status_code=400, detail="Order already confirmed.")
+    elif order.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="Order is already cancelled.")
+
+    created_at_str = order.get("created_at")
+    if created_at_str:
+        try:
+            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) - created_at > timedelta(hours=2):
+                raise HTTPException(status_code=400, detail="This order QR has expired. Please generate a new QR.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    table_num = data.get("table_number") or order.get("table_number")
+    table_id = data.get("table_id") or order.get("table_id")
+    
+    table = None
+    if table_id:
+        table = await db.tables.find_one({"tenant_id": tid, "id": table_id})
+    if not table and table_num:
+        table = await db.tables.find_one({"tenant_id": tid, "label": table_num})
+        
+    if not table:
+        raise HTTPException(status_code=400, detail="This table/order is no longer available.")
+
+    table_num = table["label"]
+    table_id = table["id"]
 
     items = []
     for it in order.get("items") or []:
@@ -1365,8 +1572,8 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
         "success": True,
         "orderId": order.get("id"),
         "restaurantId": order.get("tenant_id"),
-        "tableId": order.get("table_number") or "",
-        "tableName": f"Table {order.get('table_number') or ''}" if order.get("table_number") else "",
+        "tableId": table_id,
+        "tableName": f"Table {table_num}",
         "customerName": order.get("customer_name") or "Guest 1",
         "items": items,
         "total": order.get("subtotal") or 0,
@@ -1386,21 +1593,13 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         if existing_op:
             return existing_op.get("response")
 
-    raw = payload.qr_data.strip()
-    if raw.startswith("EZBILL_ORDER:"):
-        raw = raw[len("EZBILL_ORDER:"):].strip()
-
-    try:
-        data = json.loads(raw)
-    except Exception:
-        data = {"order_id": raw, "token": raw}
-
-    order_id = data.get("order_id") or raw
+    data = parse_qr_data(payload.qr_data)
+    order_id = data.get("order_id")
     token = data.get("token")
     qr_tenant = data.get("tenant_id")
 
     if qr_tenant and qr_tenant != tid:
-        raise HTTPException(status_code=403, detail="This QR belongs to another restaurant.")
+        raise HTTPException(status_code=403, detail="This order belongs to another restaurant.")
 
     order = await db.orders.find_one({
         "tenant_id": tid,
@@ -1410,12 +1609,22 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
     if not order:
         raise HTTPException(status_code=404, detail="Order not found.")
 
-    if order.get("status") in ["paid", "cancelled"]:
-        raise HTTPException(status_code=400, detail=f"Order is already {order.get('status')}.")
-
     table_num = payload.table_number or data.get("table_number") or order.get("table_number") or "1"
+    table_id = payload.table_id or data.get("table_id") or order.get("table_id")
+    
+    table = None
+    if table_id:
+        table = await db.tables.find_one({"tenant_id": tid, "id": table_id})
+    if not table and table_num:
+        table = await db.tables.find_one({"tenant_id": tid, "label": table_num})
+        
+    if not table:
+        raise HTTPException(status_code=400, detail="This table/order is no longer available.")
 
-    if order.get("status") == "placed" and order.get("qr_imported") and order.get("table_number") == table_num:
+    table_num = table["label"]
+    table_id = table["id"]
+
+    if order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"]:
         order.pop("_id", None)
         res = {
             "success": True,
@@ -1426,6 +1635,9 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         if op_id:
             await db.processed_operations.insert_one({"id": op_id, "response": res, "created_at": datetime.now(timezone.utc).isoformat()})
         return res
+        
+    if order.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="Order is already cancelled.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
     result = await db.orders.update_one(
@@ -1436,6 +1648,7 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         {
             "$set": {
                 "table_number": table_num,
+                "table_id": table_id,
                 "status": "placed",
                 "qr_imported": True,
                 "imported_at": now_iso,
@@ -1446,7 +1659,7 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
 
     if result.modified_count == 0:
         re_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
-        if re_order and re_order.get("status") == "placed":
+        if re_order and re_order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"]:
             res = {
                 "success": True,
                 "already_confirmed": True,
@@ -1458,10 +1671,13 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
             return res
         raise HTTPException(status_code=400, detail="Order could not be confirmed. It might be already processed or inactive.")
 
+    # Mark the stable table status as occupied in the database
+    await db.tables.update_one({"id": table_id, "tenant_id": tid}, {"$set": {"status": "occupied"}})
+
     updated_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
 
-    await notify_tenant(tid, "kitchen", "Order Imported", f"Table {table_num} updated", updated_order)
-    await notify_tenant(tid, "waiter", "Order Imported", f"Table {table_num} updated", updated_order)
+    await notify_tenant(tid, "kitchen", "Order Confirmed", f"Table {table_num} updated", updated_order)
+    await notify_tenant(tid, "waiter", "Order Confirmed", f"Table {table_num} updated", updated_order)
 
     res = {
         "success": True,
@@ -2841,11 +3057,23 @@ async def razorpay_webhook(request: Request):
 @app.get("/menu/{tenant_id}/{table_label}", response_class=HTMLResponse)
 async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None):
     try:
+        table_id = ""
+        table_num = ""
+        if table_label:
+            table = await db.tables.find_one({"tenant_id": tenant_id, "$or": [{"id": table_label}, {"label": table_label}]})
+            if table:
+                table_id = table.get("id", "")
+                table_num = table.get("label", "")
+            else:
+                table_id = table_label
+                table_num = table_label
+        
         template_path = Path(__file__).parent / "templates" / "customer_menu.html"
         with open(template_path, "r", encoding="utf-8") as f:
             html_content = f.read()
         html_content = html_content.replace("{{TENANT_ID}}", tenant_id)
-        html_content = html_content.replace("{{TABLE_LABEL}}", table_label or "")
+        html_content = html_content.replace("{{TABLE_ID}}", table_id)
+        html_content = html_content.replace("{{TABLE_LABEL}}", table_num)
         headers = {
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",

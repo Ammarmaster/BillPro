@@ -23,6 +23,8 @@ export default function Register() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
@@ -36,8 +38,8 @@ export default function Register() {
       setErr("Please fill all fields.");
       return;
     }
-    if (!termsAccepted) {
-      setErr("You must agree to the Terms & Conditions and Privacy Policy.");
+    if (!termsAccepted || !privacyConsent) {
+      setErr("You must agree to the Terms & Conditions and Privacy Notice.");
       return;
     }
     if (password.length < 6) {
@@ -51,7 +53,7 @@ export default function Register() {
     setBusy(true);
     try {
       // 1. Create the user owner account
-      await register(email.trim(), password, ownerName.trim(), "owner", true);
+      await register(email.trim(), password, ownerName.trim(), "owner", true, privacyConsent, marketingConsent);
       
       // 2. Automatically save the restaurant details
       await api.saveRestaurant({
@@ -235,12 +237,37 @@ export default function Register() {
               <Text style={styles.termsText}>
                 I agree to the{" "}
                 <Text style={styles.termsLink} onPress={() => setShowTermsModal(true)}>
-                  Terms & Conditions
-                </Text>{" "}
-                and{" "}
-                <Text style={styles.termsLink} onPress={() => setShowPrivacyModal(true)}>
-                  Privacy Policy
+                  Terms & Conditions *
                 </Text>
+              </Text>
+            </Pressable>
+
+            {/* Privacy Policy Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setPrivacyConsent(!privacyConsent)}
+            >
+              <View style={[styles.checkbox, privacyConsent && styles.checkboxChecked]}>
+                {privacyConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I acknowledge the{" "}
+                <Text style={styles.termsLink} onPress={() => setShowPrivacyModal(true)}>
+                  Privacy Notice & Consent to Data Processing *
+                </Text>
+              </Text>
+            </Pressable>
+
+            {/* Marketing Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setMarketingConsent(!marketingConsent)}
+            >
+              <View style={[styles.checkbox, marketingConsent && styles.checkboxChecked]}>
+                {marketingConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I consent to receive marketing and promotional messages (Optional)
               </Text>
             </Pressable>
 
@@ -254,9 +281,13 @@ export default function Register() {
 
             {/* Create Button */}
             <Pressable
-              style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
+              style={({ pressed }) => [
+                styles.submitBtn, 
+                pressed && styles.btnPressed, 
+                (busy || !termsAccepted || !privacyConsent) && { opacity: 0.5 }
+              ]}
               onPress={submit}
-              disabled={busy}
+              disabled={busy || !termsAccepted || !privacyConsent}
               testID="register-submit-btn"
             >
               {busy ? (

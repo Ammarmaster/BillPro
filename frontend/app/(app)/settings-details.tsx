@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
   KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Switch, Alert,
@@ -13,11 +13,56 @@ import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/context/ThemeContext";
 import { spacing } from "@/src/theme";
 import { selectDefaultPrinter, getDefaultPrinter, clearDefaultPrinter } from "@/src/lib/print";
+import { useAuth } from "@/src/context/AuthContext";
 
 export default function SettingsDetails() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+
+  const { user, refreshUser, logout } = useAuth();
+  const [privacyConsent, setPrivacyConsent] = useState(user?.privacy_consent ?? true);
+  const [marketingConsent, setMarketingConsent] = useState(user?.marketing_consent ?? false);
+
+  useEffect(() => {
+    if (user) {
+      setPrivacyConsent(user.privacy_consent ?? true);
+      setMarketingConsent(user.marketing_consent ?? false);
+    }
+  }, [user]);
+
+  const handleConsentToggle = async (type: string, val: boolean) => {
+    try {
+      if (type === "PRIVACY_POLICY" && !val) {
+        Alert.alert(
+          "Withdraw Data Consent?",
+          "Withdrawing your data processing consent will deactivate your account and log you out. We are legally required to retain historical invoices and tax records.\n\nAre you sure you want to withdraw consent?",
+          [
+            { text: "Cancel", style: "cancel" },
+            { 
+              text: "Withdraw & Sign Out", 
+              style: "destructive",
+              onPress: async () => {
+                await api.updateConsent(type, "withdrawn");
+                Alert.alert("Consent Withdrawn", "Your consent has been recorded. Logging out now.");
+                logout();
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      const newStatus = val ? "accepted" : "withdrawn";
+      await api.updateConsent(type, newStatus);
+      if (type === "PRIVACY_POLICY") setPrivacyConsent(val);
+      if (type === "MARKETING_CONSENT") setMarketingConsent(val);
+      Alert.alert("Success", `Consent preferences updated: ${newStatus}`);
+      await refreshUser();
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to update consent.");
+    }
+  };
 
   const [form, setForm] = useState({
     name: "", owner_name: "", bio: "", address: "", phone: "", phone2: "",
@@ -33,6 +78,7 @@ export default function SettingsDetails() {
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
+    refreshUser().catch(() => {});
     try {
       const [r, url] = await Promise.all([
         api.getRestaurant(),
@@ -222,6 +268,49 @@ export default function SettingsDetails() {
                       {Platform.OS === "ios" ? (printerUrl ? "Disconnect" : "Select") : "Info"}
                     </Text>
                   </Pressable>
+                </View>
+
+                {/* Privacy & Consent Settings Card */}
+                <View style={{ marginTop: spacing.md, padding: spacing.md, borderRadius: 16, borderWidth: 1.5, borderColor: theme.border, backgroundColor: theme.surfaceSecondary }}>
+                  <Text style={{ fontSize: 16, fontWeight: "900", color: theme.onSurface, marginBottom: spacing.xs }}>Privacy & Consent Settings</Text>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginBottom: spacing.md }}>Manage your DPDP consent options and data processing preferences.</Text>
+                  
+                  {/* Terms (Read-Only) */}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: theme.onSurface }}>Terms & Conditions</Text>
+                      <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary }}>Accepted on account creation (v1.0)</Text>
+                    </View>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  </View>
+
+                  {/* Privacy Notice Data Processing (Required for Account operation) */}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: theme.onSurface }}>Data Processing Consent</Text>
+                      <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary }}>Allow processing restaurant and sales data (Required)</Text>
+                    </View>
+                    <Switch
+                      value={privacyConsent}
+                      onValueChange={val => handleConsentToggle("PRIVACY_POLICY", val)}
+                      trackColor={{ false: isDark ? "#374151" : "#E2E8F0", true: "#635BFF" }}
+                      thumbColor={privacyConsent ? "#FFFFFF" : "#F4F3F4"}
+                    />
+                  </View>
+
+                  {/* Marketing / Promotional Consent (Optional) */}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 }}>
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: theme.onSurface }}>Marketing & Promotions</Text>
+                      <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary }}>Receive promotional alerts and product updates (Optional)</Text>
+                    </View>
+                    <Switch
+                      value={marketingConsent}
+                      onValueChange={val => handleConsentToggle("MARKETING_CONSENT", val)}
+                      trackColor={{ false: isDark ? "#374151" : "#E2E8F0", true: "#635BFF" }}
+                      thumbColor={marketingConsent ? "#FFFFFF" : "#F4F3F4"}
+                    />
+                  </View>
                 </View>
 
                 {err && <Text style={styles.err}>{err}</Text>}

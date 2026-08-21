@@ -534,9 +534,11 @@ export const api = {
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
   staffLogin: (phone: string, pin: string) =>
     req("/auth/staff-login", { method: "POST", body: JSON.stringify({ phone, pin }) }, false),
-  register: (email: string, password: string, full_name: string, role = "owner", terms_accepted = false) =>
-    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name, role, terms_accepted }) }, false),
+  register: (email: string, password: string, full_name: string, role = "owner", terms_accepted = false, privacy_consent = false, marketing_consent = false) =>
+    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name, role, terms_accepted, privacy_consent, marketing_consent }) }, false),
   me: () => req("/auth/me"),
+  updateConsent: (consent_type: string, status: "accepted" | "withdrawn") =>
+    req("/users/consent", { method: "POST", body: JSON.stringify({ consent_type, status }) }),
   getRestaurant: () => req("/restaurant"),
   saveRestaurant: (payload: any) => {
     clearCachePrefix("/restaurant");
@@ -725,10 +727,10 @@ export const api = {
   resolveQrOrder: (qr_data: string) => {
     return req("/orders/qr/resolve", { method: "POST", body: JSON.stringify({ qr_data }) });
   },
-  confirmQrOrder: (qr_data: string, table_number?: string, operation_id?: string) => {
+  confirmQrOrder: (qr_data: string, table_number?: string, operation_id?: string, table_id?: string) => {
     clearCachePrefix("/orders");
     clearCachePrefix("/tables");
-    return req("/orders/qr/confirm", { method: "POST", body: JSON.stringify({ qr_data, table_number, operation_id }) });
+    return req("/orders/qr/confirm", { method: "POST", body: JSON.stringify({ qr_data, table_number, operation_id, table_id }) });
   },
 
   // AI Menu OCR & Bulk Import

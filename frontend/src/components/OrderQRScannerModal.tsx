@@ -30,6 +30,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
   const [facing, setFacing] = useState<"back" | "front">("back");
   const [manualCode, setManualCode] = useState("");
   const [targetTable, setTargetTable] = useState(defaultTable);
+  const [targetTableId, setTargetTableId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   
   const [previewOrder, setPreviewOrder] = useState<any | null>(null);
@@ -45,6 +46,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
       setBusy(false);
       setManualCode("");
       setTargetTable(defaultTable);
+      setTargetTableId(null);
       setTorch(false);
       setPreviewOrder(null);
       setErrorMsg(null);
@@ -79,6 +81,9 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
         const stripped = raw.substring("EZBILL_ORDER:".length).trim();
         const parsed = JSON.parse(stripped);
         qrTenant = parsed.tenant_id || null;
+        if (parsed.table_id) {
+          setTargetTableId(parsed.table_id);
+        }
         if (parsed.table_number && !targetTable) {
           setTargetTable(parsed.table_number);
         }
@@ -87,6 +92,9 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
       try {
         const parsed = JSON.parse(raw);
         qrTenant = parsed.tenant_id || null;
+        if (parsed.table_id) {
+          setTargetTableId(parsed.table_id);
+        }
         if (parsed.table_number && !targetTable) {
           setTargetTable(parsed.table_number);
         }
@@ -103,8 +111,12 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
     try {
       const res = await api.resolveQrOrder(data);
       setPreviewOrder(res);
-      if (res.tableId && !targetTable) {
-        setTargetTable(res.tableId);
+      if (res.tableId) {
+        setTargetTableId(res.tableId);
+      }
+      if (res.tableName && !targetTable) {
+        // Fallback to table label
+        setTargetTable(res.tableName.replace("Table ", ""));
       }
     } catch (e: any) {
       setErrorMsg(e.message || "Failed to resolve order details.");
@@ -137,7 +149,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
     const opId = `op_confirm_${previewOrder?.orderId || "qr"}_${Date.now()}`;
 
     try {
-      const res = await api.confirmQrOrder(scannedData, targetTable.trim() || undefined, opId);
+      const res = await api.confirmQrOrder(scannedData, targetTable.trim() || undefined, opId, targetTableId || undefined);
       // Clean up and notify parent component
       await onScanSuccess(res.order);
     } catch (e: any) {
