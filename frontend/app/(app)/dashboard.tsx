@@ -385,11 +385,10 @@ function OwnerDashboard() {
   // Scanner modal state for Customer Web Order QR handoff
   const [showScanner, setShowScanner] = useState(false);
 
-  const handleScanImport = async (qrData: string, tableOverride?: string) => {
-    const res = await api.scanImportOrder(qrData, tableOverride || undefined);
+  const handleScanImport = async (confirmedOrder: any) => {
     setShowScanner(false);
-    await load();
-    Alert.alert("Order Attached", res.message || "Customer order imported successfully!");
+    load().catch(() => {});
+    Alert.alert("Order Attached", "Customer order confirmed and attached successfully!");
   };
 
   const load = useCallback(async () => {

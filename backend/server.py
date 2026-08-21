@@ -472,6 +472,16 @@ class ScanImportIn(BaseModel):
     table_number: Optional[str] = None
 
 
+class QRResolveIn(BaseModel):
+    qr_data: str
+
+
+class QRConfirmIn(BaseModel):
+    qr_data: str
+    table_number: Optional[str] = None
+    operation_id: Optional[str] = None
+
+
 class MenuItemOcrItem(BaseModel):
     name: str
     price: float
@@ -1299,6 +1309,174 @@ async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(
         "message": f"Order #{updated_order['id'][:8].upper()} successfully added to Table {table_num}!",
         "order": updated_order
     }
+
+
+@api.post("/orders/qr/resolve")
+async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(get_current_user)):
+    tid = current_user.get("tenant_id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+
+    raw = payload.qr_data.strip()
+    if raw.startswith("EZBILL_ORDER:"):
+        raw = raw[len("EZBILL_ORDER:"):].strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = {"order_id": raw, "token": raw}
+
+    order_id = data.get("order_id") or raw
+    token = data.get("token")
+    qr_tenant = data.get("tenant_id")
+
+    if qr_tenant and qr_tenant != tid:
+        raise HTTPException(status_code=403, detail="This QR belongs to another restaurant.")
+
+    # Optimized index query
+    order = await db.orders.find_one({
+        "tenant_id": tid,
+        "$or": [{"id": order_id}, {"qr_token": token or order_id}]
+    })
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found. Please verify the QR code.")
+
+    if order.get("status") == "pending_scan":
+        created_at_str = order.get("created_at")
+        if created_at_str:
+            try:
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) - created_at > timedelta(hours=2):
+                    raise HTTPException(status_code=400, detail="This order QR has expired. Please generate a new one.")
+            except Exception:
+                pass
+
+    items = []
+    for it in order.get("items") or []:
+        items.append({
+            "id": it.get("menu_item_id") or it.get("id") or "",
+            "name": it.get("name") or "",
+            "quantity": it.get("quantity") or 1,
+            "price": it.get("price") or 0
+        })
+
+    return {
+        "success": True,
+        "orderId": order.get("id"),
+        "restaurantId": order.get("tenant_id"),
+        "tableId": order.get("table_number") or "",
+        "tableName": f"Table {order.get('table_number') or ''}" if order.get("table_number") else "",
+        "customerName": order.get("customer_name") or "Guest 1",
+        "items": items,
+        "total": order.get("subtotal") or 0,
+        "status": order.get("status") or "pending_scan",
+    }
+
+
+@api.post("/orders/qr/confirm")
+async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(get_current_user)):
+    tid = current_user.get("tenant_id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+
+    op_id = payload.operation_id
+    if op_id:
+        existing_op = await db.processed_operations.find_one({"id": op_id})
+        if existing_op:
+            return existing_op.get("response")
+
+    raw = payload.qr_data.strip()
+    if raw.startswith("EZBILL_ORDER:"):
+        raw = raw[len("EZBILL_ORDER:"):].strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = {"order_id": raw, "token": raw}
+
+    order_id = data.get("order_id") or raw
+    token = data.get("token")
+    qr_tenant = data.get("tenant_id")
+
+    if qr_tenant and qr_tenant != tid:
+        raise HTTPException(status_code=403, detail="This QR belongs to another restaurant.")
+
+    order = await db.orders.find_one({
+        "tenant_id": tid,
+        "$or": [{"id": order_id}, {"qr_token": token or order_id}]
+    })
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    if order.get("status") in ["paid", "cancelled"]:
+        raise HTTPException(status_code=400, detail=f"Order is already {order.get('status')}.")
+
+    table_num = payload.table_number or data.get("table_number") or order.get("table_number") or "1"
+
+    if order.get("status") == "placed" and order.get("qr_imported") and order.get("table_number") == table_num:
+        order.pop("_id", None)
+        res = {
+            "success": True,
+            "already_confirmed": True,
+            "message": f"Order #{order['id'][:8].upper()} is already active on Table {table_num}.",
+            "order": order
+        }
+        if op_id:
+            await db.processed_operations.insert_one({"id": op_id, "response": res, "created_at": datetime.now(timezone.utc).isoformat()})
+        return res
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    result = await db.orders.update_one(
+        {
+            "id": order["id"],
+            "status": "pending_scan"
+        },
+        {
+            "$set": {
+                "table_number": table_num,
+                "status": "placed",
+                "qr_imported": True,
+                "imported_at": now_iso,
+                "imported_by": current_user.get("full_name") or current_user.get("email") or current_user.get("role")
+            }
+        }
+    )
+
+    if result.modified_count == 0:
+        re_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
+        if re_order and re_order.get("status") == "placed":
+            res = {
+                "success": True,
+                "already_confirmed": True,
+                "message": f"Order #{re_order['id'][:8].upper()} was already confirmed by another device.",
+                "order": re_order
+            }
+            if op_id:
+                await db.processed_operations.insert_one({"id": op_id, "response": res, "created_at": datetime.now(timezone.utc).isoformat()})
+            return res
+        raise HTTPException(status_code=400, detail="Order could not be confirmed. It might be already processed or inactive.")
+
+    updated_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
+
+    await notify_tenant(tid, "kitchen", "Order Imported", f"Table {table_num} updated", updated_order)
+    await notify_tenant(tid, "waiter", "Order Imported", f"Table {table_num} updated", updated_order)
+
+    res = {
+        "success": True,
+        "already_confirmed": False,
+        "message": f"Order #{updated_order['id'][:8].upper()} successfully confirmed on Table {table_num}!",
+        "order": updated_order
+    }
+
+    if op_id:
+        try:
+            await db.processed_operations.insert_one({"id": op_id, "response": res, "created_at": datetime.now(timezone.utc).isoformat()})
+        except Exception:
+            pass
+
+    return res
 
 
 @api.post("/menu/ocr-process")
@@ -3010,6 +3188,8 @@ async def seed_super_admin():
         await db.orders.create_index([("tenant_id", 1), ("table_number", 1), ("status", 1)])
         await db.orders.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)])
         await db.orders.create_index([("tenant_id", 1), ("session_id", 1)])
+        await db.orders.create_index([("tenant_id", 1), ("id", 1)])
+        await db.orders.create_index([("tenant_id", 1), ("qr_token", 1)])
         await db.bills.create_index([("tenant_id", 1), ("order_id", 1)])
         await db.bills.create_index([("tenant_id", 1), ("table_number", 1), ("status", 1)])
         await db.bills.create_index([("tenant_id", 1), ("created_at", -1)])

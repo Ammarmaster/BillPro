@@ -81,18 +81,39 @@ export default function WaiterScreen() {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-  const handleScanImport = async (qrData: string, tableOverride?: string) => {
-    const res = await api.scanImportOrder(qrData, tableOverride || undefined);
+  const handleScanImport = async (confirmedOrder: any) => {
     setShowScanner(false);
-    await load();
-    Alert.alert("Order Attached", res.message || "Customer order imported successfully!");
-    if (res.order && res.order.table_number) {
-      const targetTbl = tables.find(t => t.label === res.order.table_number);
+    
+    // Optimistically insert/update the confirmed order in local state
+    setOrders(prev => {
+      const filtered = prev.filter(o => o.id !== confirmedOrder.id);
+      return [confirmedOrder, ...filtered];
+    });
+
+    // Mark the table as occupied locally
+    if (confirmedOrder.table_number) {
+      setTables(prev =>
+        prev.map(t =>
+          String(t.label).toLowerCase() === String(confirmedOrder.table_number).toLowerCase()
+            ? { ...t, status: "occupied" }
+            : t
+        )
+      );
+
+      // Instantly open the table details view with 0ms delay!
+      const targetTbl = tables.find(
+        t => String(t.label).toLowerCase() === String(confirmedOrder.table_number).toLowerCase()
+      );
       if (targetTbl) {
         setSelectedTableObj(targetTbl);
         setViewMode("order_details");
       }
     }
+
+    Alert.alert("Order Attached", "Customer order confirmed and attached successfully!");
+
+    // Trigger a silent load in background to reconcile state
+    load().catch(() => {});
   };
 
   // Priority 1: Fast table & order synchronization
@@ -341,13 +362,16 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   // -------------------------------------------------------------
   const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
 
-  if (viewMode === "order_details" && selectedTableObj) {
-    const tableOrders = orders.filter(
-      (o: any) => isSameTable(o.table_number, selectedTableObj.label) && o.status !== "served" && o.status !== "cancelled" && o.status !== "pending_scan"
-    );
+  const tableOrders = selectedTableObj
+    ? orders.filter(
+        (o: any) => isSameTable(o.table_number, selectedTableObj.label) && o.status !== "served" && o.status !== "cancelled" && o.status !== "pending_scan"
+      )
+    : [];
 
-    const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
-    const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
+  const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+  const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
+
+  if (viewMode === "order_details" && selectedTableObj) {
     const allWebPaid = tableOrders.length > 0 && tableOrders.every((o: any) => o.created_by === "guest" || o.order_source === "qr_web" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
 
     const completeIndividualOrder = async (orderIdToComplete: string) => {
@@ -644,33 +668,33 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           <View style={styles.legendRow}>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: "#10B981" }]} />
-              <Text style={styles.legendText}>Available • <Text style={styles.legendCount}>{counts.available}</Text></Text>
+              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Available • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.available}</Text></Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: "#F59E0B" }]} />
-              <Text style={styles.legendText}>Occupied • <Text style={styles.legendCount}>{counts.occupied}</Text></Text>
+              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Occupied • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.occupied}</Text></Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: "#EF4444" }]} />
-              <Text style={styles.legendText}>Billed • <Text style={styles.legendCount}>{counts.billed}</Text></Text>
+              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Billed • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.billed}</Text></Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: "#3B82F6" }]} />
-              <Text style={styles.legendText}>Reserved • <Text style={styles.legendCount}>{counts.reserved}</Text></Text>
+              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Reserved • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.reserved}</Text></Text>
             </View>
           </View>
 
           {/* Main Section Title */}
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Main</Text>
+            <Text style={[styles.sectionTitle, { color: theme.onSurface }]}>Main</Text>
           </View>
 
           {loading ? (
-            <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
+            <View style={styles.center}><ActivityIndicator size="large" color="#635BFF" /></View>
           ) : tables.length === 0 ? (
             <View style={styles.center}>
-              <Ionicons name="grid-outline" size={48} color={colors.onSurfaceTertiary} />
-              <Text style={{ color: colors.onSurfaceSecondary, marginTop: 8, fontSize: 15 }}>No tables found.</Text>
+              <Ionicons name="grid-outline" size={48} color={theme.onSurfaceTertiary} />
+              <Text style={{ color: theme.onSurfaceSecondary, marginTop: 8, fontSize: 15 }}>No tables found.</Text>
             </View>
           ) : (
             <FlatList
@@ -749,39 +773,117 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   // -------------------------------------------------------------
   // VIEW 3: MENU DISH SELECTION / ORDER CREATION SCREEN
   // -------------------------------------------------------------
+  const displayGuests = [...uniqueGuests];
+  if (currentGuestName && !displayGuests.includes(currentGuestName)) {
+    displayGuests.push(currentGuestName);
+  }
+
   return (
-    <View style={[styles.wrap, { paddingTop: insets.top }]} testID="waiter-screen">
+    <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="waiter-screen">
       
-      {/* Top Header with Back to Tables */}
-      <View style={styles.menuHeaderBar}>
-        <Pressable onPress={() => setViewMode("tables")} style={styles.backBtn} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
+      {/* Top Header with Back to Details */}
+      <View style={[styles.menuHeaderBar, { backgroundColor: theme.surface }]}>
+        <Pressable onPress={() => setViewMode("order_details")} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} hitSlop={12}>
+          <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
         </Pressable>
-        <View style={{ alignItems: "center" }}>
-          <Text style={styles.menuHeaderTitle}>Table {table || "Selection"}</Text>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginTop: 2 }}>👤 {currentGuestName || "Guest 1"}</Text>
+        <View style={{ flex: 1, marginLeft: spacing.sm }}>
+          <Text style={[styles.detailsTitle, { color: theme.onSurface }]}>Table {selectedTableObj?.label || table}</Text>
+          <Text style={[styles.detailsSub, { color: theme.onSurfaceSecondary }]}>
+            Main • {selectedTableObj?.seats || 4} seats • {tableOrders.length} open {tableOrders.length === 1 ? "order" : "orders"}
+          </Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Redesigned Add Order - Guest/Customer Selector */}
+      <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.border, backgroundColor: theme.surface }}>
+        <Text style={{ fontSize: 11, fontWeight: "700", color: theme.onSurfaceSecondary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Select Guest to Add Items</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+          {displayGuests.map((gName, idx) => {
+            const isActive = gName === currentGuestName;
+            const matchedOrder = tableOrders.find((o: any) => (o.customer_name || "Guest 1") === gName);
+            const orderAmt = matchedOrder ? matchedOrder.subtotal || 0 : 0;
+            return (
+              <Pressable
+                key={gName + idx}
+                style={[
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    gap: 6
+                  },
+                  isActive
+                    ? { backgroundColor: "#635BFF", borderColor: "#635BFF" }
+                    : { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }
+                ]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setCurrentGuestName(gName);
+                  if (matchedOrder) {
+                    setActiveOrder(matchedOrder);
+                    setCurrentSessionId(matchedOrder.session_id);
+                    setLines((matchedOrder.items || []).map((it: any) => ({
+                      menu_item_id: it.menu_item_id || it.id || "",
+                      name: it.name,
+                      price: it.price,
+                      quantity: it.quantity,
+                      notes: it.notes || "",
+                    })));
+                  } else {
+                    setActiveOrder(null);
+                    setLines([]);
+                  }
+                }}
+              >
+                <Ionicons name="person" size={14} color={isActive ? "#FFF" : theme.onSurfaceSecondary} />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: isActive ? "#FFF" : theme.onSurface }}>
+                  {gName} {orderAmt > 0 ? `(₹${orderAmt})` : ""}
+                </Text>
+              </Pressable>
+            );
+          })}
+          
+          <Pressable
+            style={[
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: "#635BFF",
+                backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                gap: 6
+              }
+            ]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setActiveOrder(null);
+              const nextNum = uniqueGuests.length + 1;
+              const nextLabel = `Guest ${nextNum}`;
+              setCurrentGuestName(nextLabel);
+              setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
+              setLines([]);
+            }}
+          >
+            <Ionicons name="add-circle" size={16} color="#635BFF" />
+            <Text style={{ fontSize: 13, fontWeight: "800", color: "#635BFF" }}>
+              + Add Guest
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
       <View style={[styles.orderPane, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
         <View style={styles.orderHeader}>
-          <Text style={[styles.paneTitle, { color: theme.onSurface }]}>Current Order</Text>
+          <Text style={[styles.paneTitle, { color: theme.onSurface }]}>Current Order Items</Text>
           <AnimText style={[styles.subVal, animStyle, { color: theme.onSurface }]} testID="waiter-subtotal">₹{subtotal.toFixed(0)}</AnimText>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableChipsWrap} contentContainerStyle={styles.tableChipsRow}>
-          {tables.length === 0 ? (
-            <TextInput
-              value={table} onChangeText={setTable} placeholder="Table #"
-              placeholderTextColor={theme.onSurfaceTertiary} style={[styles.tableInputInline, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
-              testID="waiter-table-input"
-            />
-          ) : (
-            tables.map(t => (
-              <Chip key={t.id} label={`T ${t.label}`} active={table === t.label} onPress={() => { setTable(t.label); Haptics.selectionAsync().catch(() => {}); }} testID={`waiter-table-${t.id}`} />
-            ))
-          )}
-        </ScrollView>
         {lines.length === 0 ? (
           <View style={styles.emptyOrder}>
             <Ionicons name="cart-outline" size={26} color={theme.onSurfaceTertiary} />

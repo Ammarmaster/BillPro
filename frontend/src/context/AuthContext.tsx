@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api, saveTokens, clearTokens, getAccess, getStoredUser } from "@/src/lib/api";
+import { api, saveTokens, clearTokens, getAccess, getStoredUser, getRefresh } from "@/src/lib/api";
 
 type User = { id: string; email: string; full_name: string; role: string; tenant_id: string | null };
 
@@ -51,15 +51,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      // Synchronously hydrate stored user on Frame 0
-      const stored = await getStoredUser();
-      if (stored) {
-        setUser(stored);
+      try {
+        // Hydrate stored user immediately to determine route on Frame 0
+        const stored = await getStoredUser();
+        if (stored) {
+          setUser(stored);
+        } else {
+          setUser(null);
+        }
+      } catch {
+        setUser(null);
+      } finally {
+        // Unblock UI rendering instantly
+        setLoading(false);
       }
-      await refreshUser();
-      setLoading(false);
+
+      // Validate session and refresh user profile silently in the background
+      try {
+        const t = await getAccess();
+        if (t) {
+          const me = await api.me();
+          if (me) {
+            setUser(me);
+            const r = await getRefresh();
+            await saveTokens(t, r || "", me);
+          }
+        }
+      } catch (e: any) {
+        if (e?.status === 401) {
+          setUser(null);
+          await clearTokens();
+        }
+      }
     })();
-  }, [refreshUser]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     const r = await api.login(email, password);

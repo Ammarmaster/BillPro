@@ -69,7 +69,15 @@ const ThemeContext = createContext<ThemeContextType>({
 const THEME_KEY = "billpro_theme_mode";
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [mode, setMode] = useState<ThemeMode>("dark"); // default to dark per user reference
+  const [mode, setMode] = useState<ThemeMode>(() => {
+    if (Platform.OS === "web") {
+      try {
+        const saved = window.localStorage.getItem(THEME_KEY);
+        if (saved === "light" || saved === "dark") return saved;
+      } catch {}
+    }
+    return "dark"; // Default to dark mode
+  });
 
   useEffect(() => {
     (async () => {

@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
-import { printBill, sharePdf, getPrinterSettings } from "@/src/lib/print";
+import { printBill, sharePdf, getPrinterSettings, DEFAULT_EZBILL_LOGO_BASE64, getBillLogo, formatCurrency } from "@/src/lib/print";
 import { BillingEngine } from "@/src/lib/billingEngine";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
@@ -351,10 +351,11 @@ export default function Billing() {
   const tableName = order?.table_number ? (order.table_number === "Takeaway" ? "Takeaway" : `Table ${order.table_number}`) : "Takeaway";
   const dateStr = bill?.created_at ? new Date(bill.created_at).toLocaleString() : new Date().toLocaleString();
   const isPaid = bill?.status === "paid";
-  const restaurantName = (bill?.restaurant_snapshot?.name) || restaurant?.name || "Master cheff";
+  const restaurantName = (bill?.restaurant_snapshot?.name) || restaurant?.name || "Master Chef";
   const restaurantAddress = (bill?.restaurant_snapshot?.address) || restaurant?.address || "";
   const restaurantPhone = (bill?.restaurant_snapshot?.phone) || restaurant?.phone || "";
   const restaurantPhone2 = (bill?.restaurant_snapshot?.phone2) || restaurant?.phone2 || "";
+  const logoBase64 = getBillLogo(bill?.restaurant_snapshot || restaurant);
   const upiId = restaurant?.upi_id || "8152075375-2@ybl";
   const totalAmt = bill?.total || order?.subtotal || 760;
   const itemsList = bill?.items || order?.items || [];
@@ -385,8 +386,8 @@ export default function Billing() {
           </>
         ) : (
           <>
-            <ActivityIndicator size="large" color={colors.brand} />
-            <Text style={{ color: colors.onSurfaceSecondary, marginTop: spacing.md }}>Loading bill details…</Text>
+             <ActivityIndicator size="large" color="#635BFF" />
+             <Text style={{ color: theme.onSurfaceSecondary, marginTop: spacing.md }}>Loading bill details…</Text>
           </>
         )}
       </View>
@@ -414,9 +415,18 @@ export default function Billing() {
           </View>
         </View>
 
-        {/* Bill Receipt Card matching Image 2 */}
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
           <View style={[styles.billCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            
+            {/* Centered Logo block */}
+            <View style={{ alignItems: "center", marginBottom: spacing.md }}>
+              <Image
+                source={{ uri: `data:image/png;base64,${logoBase64}` }}
+                style={styles.previewLogo}
+                contentFit="contain"
+              />
+            </View>
+
             <Text style={[styles.restaurantHeaderTitle, { color: theme.onSurface }]}>{restaurantName}</Text>
             {!!restaurantAddress && (
               <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>{restaurantAddress}</Text>
@@ -426,29 +436,103 @@ export default function Billing() {
             ) : (restaurantPhone || restaurantPhone2) ? (
               <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>Phone: {restaurantPhone || restaurantPhone2}</Text>
             ) : null}
+            {!!(bill?.restaurant_snapshot?.gst || restaurant?.gst) && (
+              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>GSTIN: {bill?.restaurant_snapshot?.gst || restaurant?.gst}</Text>
+            )}
+            
+            <View style={styles.divider} />
+
+            {/* Metadata Rows */}
+            <View style={{ gap: 4, marginBottom: spacing.sm }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Bill No: #{billNo}</Text>
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Date: {dateStr.split(",")[0] || dateStr}</Text>
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>{tableName}</Text>
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Time: {dateStr.includes(",") ? dateStr.split(",")[1]?.trim() : ""}</Text>
+              </View>
+              {!!(bill?.customer_name || order?.customer_name) && (
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Customer: {bill?.customer_name || order?.customer_name}</Text>
+              )}
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Mathematically Aligned Column Header */}
+            <View style={styles.previewHeaderRow}>
+              <Text style={[styles.previewHeaderCell, { color: theme.onSurfaceSecondary, flex: 1, textAlign: "left" }]}>ITEM</Text>
+              <Text style={[styles.previewHeaderCell, { color: theme.onSurfaceSecondary, width: 32, textAlign: "right" }]}>QTY</Text>
+              <Text style={[styles.previewHeaderCell, { color: theme.onSurfaceSecondary, width: 64, textAlign: "right" }]}>RATE</Text>
+              <Text style={[styles.previewHeaderCell, { color: theme.onSurfaceSecondary, width: 72, textAlign: "right" }]}>AMOUNT</Text>
+            </View>
+
+            <View style={styles.divider} />
             
             {/* Items List */}
-            <View style={{ marginVertical: spacing.md, gap: 8 }}>
+            <View style={{ marginVertical: spacing.sm, gap: 8 }}>
               {itemsList.map((it: any, idx: number) => (
-                <View key={idx} style={styles.itemRow}>
-                  <Text style={styles.itemQty}>{it.quantity}×</Text>
-                  <Text style={[styles.itemName, { color: theme.onSurface }]}>{it.name}</Text>
-                  <Text style={[styles.itemPrice, { color: theme.onSurface }]}>₹{it.price * it.quantity}</Text>
+                <View key={idx} style={styles.previewItemRow}>
+                  <Text style={[styles.itemNameText, { color: theme.onSurface, flex: 1, textAlign: "left" }]} numberOfLines={2}>{it.name}</Text>
+                  <Text style={[styles.itemQtyText, { color: theme.onSurfaceSecondary, width: 32, textAlign: "right" }]}>{it.quantity}</Text>
+                  <Text style={[styles.itemRateText, { color: theme.onSurfaceSecondary, width: 64, textAlign: "right" }]}>{formatCurrency(it.price)}</Text>
+                  <Text style={[styles.itemPriceText, { color: theme.onSurface, width: 72, textAlign: "right" }]}>{formatCurrency(it.price * it.quantity)}</Text>
                 </View>
               ))}
             </View>
 
             <View style={styles.divider} />
+
+            {/* Totals Section */}
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>Subtotal</Text>
-              <Text style={[styles.summaryVal, { color: theme.onSurface }]}>₹{bill?.subtotal || totalAmt}</Text>
+              <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(bill?.subtotal || order?.subtotal || totalAmt)}</Text>
             </View>
+            
+            {!!(bill?.discount || order?.discount) && (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>Discount</Text>
+                <Text style={[styles.summaryVal, { color: theme.onSurface }]}>-{formatCurrency(bill?.discount || order?.discount || 0)}</Text>
+              </View>
+            )}
+
+            {!!((bill?.discount || order?.discount) || (bill?.gst_enabled || order?.gst_enabled)) && (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>Taxable Amount</Text>
+                <Text style={[styles.summaryVal, { color: theme.onSurface }]}>
+                  {formatCurrency((bill?.subtotal || order?.subtotal || totalAmt) - (bill?.discount || order?.discount || 0))}
+                </Text>
+              </View>
+            )}
+
+            {!!(bill?.gst_enabled || order?.gst_enabled) && (
+              <>
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>CGST</Text>
+                  <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(bill?.cgst || 0)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>SGST</Text>
+                  <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(bill?.sgst || 0)}</Text>
+                </View>
+              </>
+            )}
 
             <View style={styles.divider} />
             <View style={styles.totalRow}>
               <Text style={[styles.totalLbl, { color: theme.onSurface }]}>TOTAL</Text>
-              <Text style={[styles.totalVal, { color: theme.onSurface }]} testID="bill-total">₹{totalAmt}</Text>
+              <Text style={[styles.totalVal, { color: theme.onSurface }]} testID="bill-total">{formatCurrency(totalAmt)}</Text>
             </View>
+
+            {isPaid && (
+              <>
+                <View style={styles.divider} />
+                <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: theme.onSurfaceSecondary }}>Payment: {(bill?.payment_method || "CASH").toUpperCase()}</Text>
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: theme.onSurface }}>{formatCurrency(totalAmt)}</Text>
+                </View>
+              </>
+            )}
 
             {/* Always Crisp Black & White UPI QR Container */}
             {!isPaid && (
@@ -462,7 +546,7 @@ export default function Billing() {
                   </View>
                 )}
                 <Text style={{ color: "#0F172A", fontSize: 14, fontWeight: "800" }}>{upiId}</Text>
-                <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "600" }}>Auto-fills ₹{totalAmt}</Text>
+                <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "600" }}>Auto-fills {formatCurrency(totalAmt)}</Text>
               </View>
             )}
           </View>
@@ -471,8 +555,8 @@ export default function Billing() {
         {err && <Text style={styles.err} testID="billing-error">{err}</Text>}
 
         {/* Bottom Action Bar matching Image 2 & 3 */}
-        <View style={[styles.bottomActionBar, { paddingBottom: insets.bottom + spacing.md }]}>
-          <Pressable style={styles.printBtn} onPress={doPrint} testID="bill-print-btn">
+        <View style={[styles.bottomActionBar, { backgroundColor: theme.surfaceSecondary, borderTopColor: theme.border, paddingBottom: insets.bottom + spacing.md }]}>
+          <Pressable style={[styles.printBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#F1F0FF", borderColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.15)" }]} onPress={doPrint} testID="bill-print-btn">
             <Ionicons name="print-outline" size={20} color="#635BFF" />
             <Text style={styles.printBtnText}>Print</Text>
           </Pressable>
@@ -482,9 +566,9 @@ export default function Billing() {
               <Text style={styles.markPaidBtnText}>Mark Paid  ✓</Text>
             </Pressable>
           ) : (
-            <View style={styles.alreadyPaidBadge}>
-              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-              <Text style={styles.alreadyPaidText}>Payment Complete</Text>
+            <View style={[styles.alreadyPaidBadge, { backgroundColor: theme.success }]}>
+              <Ionicons name="checkmark-circle" size={20} color={theme.onSuccess} />
+              <Text style={[styles.alreadyPaidText, { color: theme.onSuccess }]}>Payment Complete</Text>
             </View>
           )}
         </View>
@@ -492,13 +576,13 @@ export default function Billing() {
         {/* Payment Method Selection Modal matching Image 3 */}
         <Modal transparent visible={payModal} animationType="slide" onRequestClose={() => setPayModal(false)}>
           <Pressable style={styles.modalBg} onPress={() => setPayModal(false)}>
-            <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]} onPress={() => {}}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Mark paid by</Text>
+            <Pressable style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary, paddingBottom: insets.bottom + spacing.xl }]} onPress={() => {}}>
+              <View style={[styles.modalHandle, { backgroundColor: theme.borderStrong }]} />
+              <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Mark paid by</Text>
 
               <View style={styles.methodsRow}>
                 <Pressable
-                  style={styles.methodCard}
+                  style={[styles.methodCard, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#F1F0FF", borderColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.15)" }]}
                   onPress={() => handleMarkPaidWithMethod("CASH")}
                 >
                   <Ionicons name="cash-outline" size={28} color="#635BFF" />
@@ -506,7 +590,7 @@ export default function Billing() {
                 </Pressable>
 
                 <Pressable
-                  style={styles.methodCard}
+                  style={[styles.methodCard, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#F1F0FF", borderColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.15)" }]}
                   onPress={() => handleMarkPaidWithMethod("CARD")}
                 >
                   <Ionicons name="card-outline" size={28} color="#635BFF" />
@@ -514,7 +598,7 @@ export default function Billing() {
                 </Pressable>
 
                 <Pressable
-                  style={styles.methodCard}
+                  style={[styles.methodCard, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#F1F0FF", borderColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.15)" }]}
                   onPress={() => handleMarkPaidWithMethod("UPI")}
                 >
                   <Ionicons name="qr-code-outline" size={28} color="#635BFF" />
@@ -596,4 +680,13 @@ const styles = StyleSheet.create({
   methodsRow: { flexDirection: "row", gap: spacing.md },
   methodCard: { flex: 1, aspectRatio: 1, backgroundColor: "#F1F0FF", borderRadius: radius.xl, alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: "rgba(99,91,255,0.15)" },
   methodText: { color: "#635BFF", fontSize: 14, fontWeight: "800" },
+  previewLogo: { width: 80, height: 80, borderRadius: 12 },
+  metaText: { fontSize: 13, fontWeight: "600" },
+  previewHeaderRow: { flexDirection: "row", alignItems: "center", paddingVertical: 4 },
+  previewHeaderCell: { fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  previewItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 4 },
+  itemNameText: { fontSize: 14, fontWeight: "600" },
+  itemQtyText: { fontSize: 14, fontWeight: "600" },
+  itemRateText: { fontSize: 14, fontWeight: "600" },
+  itemPriceText: { fontSize: 14, fontWeight: "700" },
 });

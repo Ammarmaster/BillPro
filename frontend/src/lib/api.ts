@@ -722,6 +722,14 @@ export const api = {
     clearCachePrefix("/tables");
     return req("/orders/scan-import", { method: "POST", body: JSON.stringify({ qr_data, table_number }) });
   },
+  resolveQrOrder: (qr_data: string) => {
+    return req("/orders/qr/resolve", { method: "POST", body: JSON.stringify({ qr_data }) });
+  },
+  confirmQrOrder: (qr_data: string, table_number?: string, operation_id?: string) => {
+    clearCachePrefix("/orders");
+    clearCachePrefix("/tables");
+    return req("/orders/qr/confirm", { method: "POST", body: JSON.stringify({ qr_data, table_number, operation_id }) });
+  },
 
   // AI Menu OCR & Bulk Import
   ocrProcessMenu: (images: string[]) => {

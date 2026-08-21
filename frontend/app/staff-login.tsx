@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
+import { useTheme } from "@/src/context/ThemeContext";
 import { spacing, radius } from "@/src/theme";
 
 export default function StaffLogin() {
@@ -15,6 +16,7 @@ export default function StaffLogin() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { staffLogin } = useAuth();
+  const { theme, isDark } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -31,37 +33,37 @@ export default function StaffLogin() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.wrap}>
-        <ScrollView contentContainerStyle={styles.scrollContainer} bounces={false} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: theme.surface }]}>
+        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: theme.surface }]} bounces={false} showsVerticalScrollIndicator={false}>
           
           {/* Solid Orange Header Section */}
-          <View style={[styles.headerSection, { paddingTop: insets.top + spacing.md }]}>
+          <View style={[styles.headerSection, { paddingTop: insets.top + spacing.md, backgroundColor: isDark ? theme.surface : "#FF5E2B" }]}>
             {/* Cutlery Plate Logo box */}
-            <View style={styles.logoBox}>
-              <Ionicons name="restaurant" size={32} color="#FF5E2B" />
+            <View style={[styles.logoBox, { backgroundColor: isDark ? "rgba(255, 94, 43, 0.2)" : "rgba(255, 255, 255, 0.2)" }]}>
+              <Ionicons name="restaurant" size={32} color={isDark ? "#FF5E2B" : "#FFFFFF"} />
             </View>
-            <Text style={styles.appTitle}>ProDevOpz ERP</Text>
-            <Text style={styles.appSubtitle}>Staff Portal</Text>
+            <Text style={[styles.appTitle, { color: theme.onSurface }]}>ProDevOpz ERP</Text>
+            <Text style={[styles.appSubtitle, { color: theme.onSurfaceSecondary }]}>Staff Portal</Text>
           </View>
 
           {/* Dark Bottom Card Section */}
-          <View style={styles.cardSection}>
-            <Text style={styles.welcomeText}>Employee Sign In</Text>
-            <Text style={styles.subtext}>Enter your registered business phone and PIN</Text>
+          <View style={[styles.cardSection, { backgroundColor: theme.surfaceSecondary }]}>
+            <Text style={[styles.welcomeText, { color: theme.onSurface }]}>Employee Sign In</Text>
+            <Text style={[styles.subtext, { color: theme.onSurfaceSecondary }]}>Enter your registered business phone and PIN</Text>
 
             {/* Phone Field */}
             <View style={styles.field}>
-              <Text style={styles.label}>Business Phone</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="call-outline" size={20} color="#64748B" style={styles.inputIcon} />
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Business Phone</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                <Ionicons name="call-outline" size={20} color={theme.onSurfaceTertiary} style={styles.inputIcon} />
                 <TextInput
                   value={phone}
                   onChangeText={setPhone}
-                  style={styles.input}
+                  style={[styles.input, { color: theme.onSurface }]}
                   placeholder="+91 98765 43210"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor={theme.onSurfaceTertiary}
                   keyboardType="phone-pad"
                   autoCapitalize="none"
                   testID="staff-phone-input"
@@ -71,15 +73,15 @@ export default function StaffLogin() {
 
             {/* PIN Field */}
             <View style={styles.field}>
-              <Text style={styles.label}>Employee PIN (4-6 digits)</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Employee PIN (4-6 digits)</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                <Ionicons name="lock-closed-outline" size={20} color={theme.onSurfaceTertiary} style={styles.inputIcon} />
                 <TextInput
                   value={pin}
                   onChangeText={setPin}
-                  style={styles.input}
+                  style={[styles.input, { color: theme.onSurface }]}
                   placeholder="••••••"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor={theme.onSurfaceTertiary}
                   keyboardType="number-pad"
                   maxLength={6}
                   secureTextEntry
@@ -96,7 +98,7 @@ export default function StaffLogin() {
                       key={idx}
                       style={[
                         styles.pinDot,
-                        isFilled && styles.pinDotFilled,
+                        { backgroundColor: isFilled ? theme.brand : theme.surfaceTertiary },
                       ]}
                     />
                   );
@@ -106,7 +108,7 @@ export default function StaffLogin() {
 
             {/* Error Message */}
             {err && (
-              <View style={styles.errBox}>
+              <View style={[styles.errBox, { backgroundColor: isDark ? "rgba(239, 68, 68, 0.1)" : "rgba(239, 68, 68, 0.1)" }]}>
                 <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
                 <Text style={styles.errText} testID="staff-error">{err}</Text>
               </View>
@@ -114,7 +116,7 @@ export default function StaffLogin() {
 
             {/* Submit Button */}
             <Pressable
-              style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
+              style={({ pressed }) => [styles.submitBtn, { backgroundColor: theme.brand }, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
               onPress={submit}
               disabled={busy}
               testID="staff-submit-btn"
@@ -128,8 +130,8 @@ export default function StaffLogin() {
 
             {/* Navigation Footers */}
             <Pressable onPress={() => router.push("/login")} style={styles.footerBtn}>
-              <Text style={styles.footerText}>
-                Are you an owner? <Text style={styles.footerAccent}>Business Login</Text>
+              <Text style={[styles.footerText, { color: theme.onSurfaceSecondary }]}>
+                Are you an owner? <Text style={[styles.footerAccent, { color: theme.brand }]}>Business Login</Text>
               </Text>
             </Pressable>
           </View>
