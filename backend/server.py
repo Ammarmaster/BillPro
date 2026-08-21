@@ -439,6 +439,39 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
 
 
+async def find_order_by_qr_or_id(tid: str, order_id: str, token: str):
+    import re
+    q_str = (order_id or "").strip()
+    tok_str = (token or "").strip()
+    
+    if not q_str and not tok_str:
+        return None
+        
+    query_or = []
+    if q_str:
+        query_or.append({"id": q_str})
+        query_or.append({"qr_token": q_str})
+    if tok_str:
+        query_or.append({"id": tok_str})
+        query_or.append({"qr_token": tok_str})
+        
+    if q_str and len(q_str) == 8:
+        query_or.append({"id": {"$regex": f"^{re.escape(q_str)}", "$options": "i"}})
+        query_or.append({"qr_token": {"$regex": f"^{re.escape(q_str)}", "$options": "i"}})
+    if tok_str and len(tok_str) == 8:
+        query_or.append({"id": {"$regex": f"^{re.escape(tok_str)}", "$options": "i"}})
+        query_or.append({"qr_token": {"$regex": f"^{re.escape(tok_str)}", "$options": "i"}})
+        
+    if q_str and len(q_str) >= 6:
+        query_or.append({"id": {"$regex": f"^{re.escape(q_str)}$", "$options": "i"}})
+        query_or.append({"qr_token": {"$regex": f"^{re.escape(q_str)}$", "$options": "i"}})
+        
+    return await db.orders.find_one({
+        "tenant_id": tid,
+        "$or": query_or
+    })
+
+
 async def get_current_user(authorization: Optional[str] = Header(default=None)) -> dict:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
@@ -1456,10 +1489,7 @@ async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(
     if qr_tenant and qr_tenant != tid:
         raise HTTPException(status_code=403, detail="Unauthorized: Order belongs to a different restaurant.")
 
-    order = await db.orders.find_one({
-        "tenant_id": tid,
-        "$or": [{"id": order_id}, {"qr_token": token or order_id}]
-    })
+    order = await find_order_by_qr_or_id(tid, order_id, token)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found. Please verify the QR code.")
 
@@ -1520,10 +1550,7 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
     if qr_tenant and qr_tenant != tid:
         raise HTTPException(status_code=403, detail="This order belongs to another restaurant.")
 
-    order = await db.orders.find_one({
-        "tenant_id": tid,
-        "$or": [{"id": order_id}, {"qr_token": token or order_id}]
-    })
+    order = await find_order_by_qr_or_id(tid, order_id, token)
 
     if not order:
         raise HTTPException(status_code=404, detail="Order not found. Please verify the QR code.")
@@ -1601,10 +1628,7 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
     if qr_tenant and qr_tenant != tid:
         raise HTTPException(status_code=403, detail="This order belongs to another restaurant.")
 
-    order = await db.orders.find_one({
-        "tenant_id": tid,
-        "$or": [{"id": order_id}, {"qr_token": token or order_id}]
-    })
+    order = await find_order_by_qr_or_id(tid, order_id, token)
 
     if not order:
         raise HTTPException(status_code=404, detail="Order not found.")
