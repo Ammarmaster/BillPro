@@ -374,16 +374,11 @@ function OwnerDashboard() {
   const [feedbacks, setFeedbacks] = useState<any[]>(() => api.getCachedFeedback() || []);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [pendingSync, setPendingSync] = useState(0);
   const [showProLockModal, setShowProLockModal] = useState(false);
 
   const hasTenant = !!user?.tenant_id;
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setPendingSync(api.getPendingSyncCount());
-    }, 1000);
-
     const { subscribeToCache } = require("@/src/lib/api");
     const unsubscribe = subscribeToCache((path: string, data: any) => {
       if (path === "/restaurant" && data) setRestaurant(data);
@@ -392,7 +387,6 @@ function OwnerDashboard() {
     });
 
     return () => {
-      clearInterval(timer);
       unsubscribe();
     };
   }, []);
@@ -509,17 +503,10 @@ function OwnerDashboard() {
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <Text style={[styles.greetText, { color: theme.onSurfaceSecondary, marginBottom: 0 }]}>Welcome back</Text>
-              {pendingSync > 0 ? (
-                <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#F59E0B" }} />
-                  <Text style={{ fontSize: 9, color: "#F59E0B", fontWeight: "700" }}>{pendingSync} waiting</Text>
-                </View>
-              ) : (
-                <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
-                  <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Synced</Text>
-                </View>
-              )}
+              <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
+                <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Live</Text>
+              </View>
             </View>
             <Text style={[styles.ownerTitle, { color: theme.onSurface, marginTop: 4 }]} numberOfLines={1}>{user?.full_name || "Business Partner"}</Text>
           </View>

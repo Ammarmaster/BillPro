@@ -244,14 +244,6 @@ export default function Kitchen() {
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [pendingSync, setPendingSync] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPendingSync(api.getPendingSyncCount());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
   
   // Kitchen Alert Audio Engine
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -535,17 +527,10 @@ export default function Kitchen() {
             </Pressable>
           </View>
           
-          {pendingSync > 0 ? (
-            <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#F59E0B" }} />
-              <Text style={{ fontSize: 10, color: "#F59E0B", fontWeight: "700" }}>{pendingSync} waiting</Text>
-            </View>
-          ) : (
-            <View style={styles.liveBadge}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
-          )}
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
         </View>
 
         {loading ? (

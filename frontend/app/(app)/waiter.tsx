@@ -56,13 +56,7 @@ export default function WaiterScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); // 0ms Instant table display
-  const [pendingSync, setPendingSync] = useState(0);
-
   useEffect(() => {
-    const timer = setInterval(() => {
-      setPendingSync(api.getPendingSyncCount());
-    }, 1000);
-
     const { subscribeToCache } = require("@/src/lib/api");
     const unsubscribe = subscribeToCache((path: string, data: any) => {
       if (path === "/categories" && data) setCats(data);
@@ -73,7 +67,6 @@ export default function WaiterScreen() {
     });
 
     return () => {
-      clearInterval(timer);
       unsubscribe();
     };
   }, []);
@@ -653,17 +646,10 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={[styles.title, { color: theme.onSurface, marginBottom: 0 }]}>Tables</Text>
-                {pendingSync > 0 ? (
-                  <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#F59E0B" }} />
-                    <Text style={{ fontSize: 9, color: "#F59E0B", fontWeight: "700" }}>{pendingSync} waiting</Text>
-                  </View>
-                ) : (
-                  <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
-                    <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Synced</Text>
-                  </View>
-                )}
+                <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
+                  <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Live</Text>
+                </View>
               </View>
               <Text style={[styles.subtitle, { color: theme.onSurfaceSecondary, marginTop: 2 }]}>Tap a table to take order & view status</Text>
             </View>

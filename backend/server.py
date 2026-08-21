@@ -2547,19 +2547,27 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
 
     dashboard_summary_cache.pop(tid, None)
 
+    settle_payload = {
+        "table_number": payload.table_number,
+        "status": "served",
+        "table_status": "AVAILABLE",
+        "active_orders_remaining": 0,
+        "total": float(total_settled),
+        "event": "TABLE_SETTLED"
+    }
     await notify_tenant(
         tid,
         "payment",
         "Table Settled",
         f"Table {payload.table_number} marked paid and cleared ({pm})",
-        {
-            "table_number": payload.table_number,
-            "status": "served",
-            "table_status": "AVAILABLE",
-            "active_orders_remaining": 0,
-            "total": float(total_settled),
-            "event": "TABLE_SETTLED"
-        }
+        settle_payload
+    )
+    await notify_tenant(
+        tid,
+        "waiter",
+        "Table Settled",
+        f"Table {payload.table_number} marked paid and cleared ({pm})",
+        settle_payload
     )
     return {
         "ok": True,
@@ -2649,21 +2657,31 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     
     dashboard_summary_cache.pop(tid, None)
 
+    paid_payload = {
+        "bill_id": bill.get("id"),
+        "order_id": bill.get("order_id"),
+        "total": float(bill.get("total", 0.0)),
+        "table_number": bill.get("table_number", "-"),
+        "table_status": tbl_status,
+        "active_orders_remaining": remaining,
+        "order_type": "takeaway" if tbl_num == "Takeaway" else "waiter",
+        "event": "ORDER_PAID",
+        "status": "paid",
+        "bill": {**bill, "status": "paid", "payment_method": pm}
+    }
     await notify_tenant(
         tid,
         "payment",
         "Payment Received",
         f"Order for {bill.get('table_number', 'Takeaway')} paid ₹{bill.get('total', 0.0):.2f} via {pm}",
-        {
-            "bill_id": bill.get("id"),
-            "order_id": bill.get("order_id"),
-            "total": float(bill.get("total", 0.0)),
-            "table_number": bill.get("table_number", "-"),
-            "table_status": tbl_status,
-            "active_orders_remaining": remaining,
-            "order_type": "takeaway" if tbl_num == "Takeaway" else "waiter",
-            "event": "ORDER_PAID"
-        }
+        paid_payload
+    )
+    await notify_tenant(
+        tid,
+        "waiter",
+        "Payment Received",
+        f"Order for {bill.get('table_number', 'Takeaway')} paid ₹{bill.get('total', 0.0):.2f} via {pm}",
+        paid_payload
     )
     return {
         **bill,
