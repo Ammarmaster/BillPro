@@ -93,6 +93,11 @@ export async function clearTokens() {
 export async function getAccess() { return getItem(KEYS.access); }
 export async function getRefresh() { return getItem(KEYS.refresh); }
 
+let onUnauthorizedCallback: (() => void) | null = null;
+export function setUnauthorizedCallback(cb: () => void) {
+  onUnauthorizedCallback = cb;
+}
+
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -504,6 +509,12 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
       const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
       const err: any = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
       err.status = res.status;
+      if (res.status === 401) {
+        await clearTokens();
+        if (onUnauthorizedCallback) {
+          onUnauthorizedCallback();
+        }
+      }
       throw err;
     }
 

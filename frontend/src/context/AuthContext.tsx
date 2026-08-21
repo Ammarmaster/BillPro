@@ -94,6 +94,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  useEffect(() => {
+    const { setUnauthorizedCallback } = require("@/src/lib/api");
+    setUnauthorizedCallback(() => {
+      setUser(null);
+    });
+    return () => {
+      setUnauthorizedCallback(() => {});
+    };
+  }, []);
+
   const login = async (email: string, password: string) => {
     const r = await api.login(email, password);
     await saveTokens(r.access_token, r.refresh_token, r.user);

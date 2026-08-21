@@ -6,6 +6,7 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useAudioPlayer } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
@@ -21,6 +22,9 @@ type Props = {
   defaultTable?: string;
 };
 
+const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+const SCAN_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
+
 export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, defaultTable = "" }: Props) {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
@@ -32,6 +36,50 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
   const [targetTable, setTargetTable] = useState(defaultTable);
   const [targetTableId, setTargetTableId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Preload native player
+  const player = useAudioPlayer(Platform.OS !== "web" ? SCAN_SOUND_URL : null);
+  if (player) {
+    player.loop = false;
+  }
+  const webAudioRef = useRef<any>(null);
+
+  // Preload web Audio constructor on mount
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      try {
+        const audio = new window.Audio(SCAN_SOUND_URL);
+        audio.preload = "auto";
+        audio.loop = false;
+        audio.volume = 1.0;
+        webAudioRef.current = audio;
+      } catch (err) {
+        console.error("Failed to preload web scanner audio:", err);
+      }
+    }
+  }, []);
+
+  const playSuccessEffects = () => {
+    // 1. Success Haptics
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    
+    // 2. Play Scan Success Beep
+    try {
+      if (Platform.OS === "web") {
+        if (webAudioRef.current) {
+          webAudioRef.current.currentTime = 0;
+          webAudioRef.current.play().catch((err: any) => console.log("Web audio play blocked or failed:", err));
+        }
+      } else {
+        if (player) {
+          player.seekTo(0);
+          player.play();
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to play scan sound:", err);
+    }
+  };
   
   const [previewOrder, setPreviewOrder] = useState<any | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -118,6 +166,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
         // Fallback to table label
         setTargetTable(res.tableName.replace("Table ", ""));
       }
+      playSuccessEffects();
     } catch (e: any) {
       setErrorMsg(e.message || "Failed to resolve order details.");
     } finally {
@@ -128,7 +177,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (scannedRef.current || busy || previewOrder) return;
     scannedRef.current = true;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     await processScannedCode(data);
   };
 
