@@ -1268,6 +1268,17 @@ async def delta_sync(since: Optional[str] = None, user: dict = Depends(get_curre
 @api.post("/staff/waiters")
 async def create_waiter(payload: WaiterIn, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
+    
+    # Enforce subscription staff limits
+    limits = await get_tenant_plan_limits(tid)
+    current_waiters = await db.users.count_documents({"tenant_id": tid, "role": "waiter"})
+    if current_waiters >= limits["staff_limit"]:
+        plan_display = limits["plan"].capitalize()
+        raise HTTPException(
+            status_code=403,
+            detail=f"You've reached your {plan_display} plan limit of {limits['staff_limit']} staff. Upgrade to add more staff."
+        )
+
     if not payload.pin.isdigit():
         raise HTTPException(status_code=400, detail="PIN must be digits")
     # Ensure PIN unique within tenant
@@ -1678,6 +1689,10 @@ async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(
     tid = current_user.get("tenant_id")
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
+    
+    limits = await get_tenant_plan_limits(tid)
+    if not limits["features"].get("qr_web_menu"):
+        raise HTTPException(status_code=403, detail="QR Web Menu is a Pro feature. Upgrade your subscription plan to access it.")
 
     raw = payload.qr_data.strip()
     if raw.startswith("EZBILL_ORDER:"):
@@ -1747,6 +1762,10 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
     tid = current_user.get("tenant_id")
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
+    
+    limits = await get_tenant_plan_limits(tid)
+    if not limits["features"].get("qr_web_menu"):
+        raise HTTPException(status_code=403, detail="QR Web Menu is a Pro feature. Upgrade your subscription plan to access it.")
 
     data = parse_qr_data(payload.qr_data)
     order_id = data.get("order_id")
@@ -1819,6 +1838,10 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
     tid = current_user.get("tenant_id")
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
+    
+    limits = await get_tenant_plan_limits(tid)
+    if not limits["features"].get("qr_web_menu"):
+        raise HTTPException(status_code=403, detail="QR Web Menu is a Pro feature. Upgrade your subscription plan to access it.")
 
     op_id = payload.operation_id
     if op_id:
@@ -1933,6 +1956,10 @@ async def ocr_process_menu(
     tid = current_user.get("tenant_id")
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant context required")
+
+    limits = await get_tenant_plan_limits(tid)
+    if not limits["features"].get("ai_menu"):
+        raise HTTPException(status_code=403, detail="AI Menu import is a Growth/Pro feature. Upgrade your subscription plan to access it.")
 
     if not images or len(images) == 0:
         raise HTTPException(status_code=400, detail="At least one menu image is required.")
@@ -3058,6 +3085,64 @@ async def admin_cancel_subscription(tid: str, user: dict = Depends(require_roles
     return {"ok": True}
 
 
+async def get_tenant_plan_limits(tid: str) -> dict:
+    # Find latest subscription
+    sub = await db.subscriptions.find_one({"tenant_id": tid}, sort=[("created_at", -1)])
+    plan_name = "Starter"
+    plan_id = "STARTER_MONTHLY"
+    status = "expired"
+    
+    if sub:
+        plan_id = sub.get("plan_id", "STARTER_MONTHLY")
+        status = sub.get("status", "expired")
+    else:
+        # Default to Starter if no subscription document exists yet
+        status = "expired"
+
+    plan_base = "starter"
+    if status == "active":
+        if "growth" in plan_id.lower():
+            plan_base = "growth"
+        elif "pro" in plan_id.lower():
+            plan_base = "pro"
+
+    # Starter: 1 waiter limit (2 users total: Owner + 1 Staff)
+    # Growth: 4 waiters limit (5 users total: Owner + 4 Staff)
+    # Pro: 14 waiters limit (15 users total: Owner + 14 Staff)
+    staff_limit = 1
+    if plan_base == "growth":
+        staff_limit = 4
+    elif plan_base == "pro":
+        staff_limit = 14
+
+    features = {
+        "billing": True,
+        "menu_crud": True,
+        "table_crud": True,
+        "offline_mode": True,
+        "thermal_printing": True,
+        "basic_reports": True,
+        "advanced_reports": plan_base in ("growth", "pro"),
+        "inventory": plan_base in ("growth", "pro"),
+        "expenses": plan_base in ("growth", "pro"),
+        "ai_menu": plan_base in ("growth", "pro"),
+        "qr_web_menu": plan_base == "pro",
+        "customer_ordering": plan_base == "pro",
+        "waiter_qr_confirmation": plan_base == "pro",
+        "advanced_permissions": plan_base == "pro",
+        "audit_logs": plan_base == "pro",
+        "api_access": plan_base == "pro",
+    }
+
+    return {
+        "plan": plan_base,
+        "plan_id": plan_id,
+        "status": status,
+        "staff_limit": staff_limit,
+        "features": features
+    }
+
+
 # ---------- RAZORPAY CHECKOUT ----------
 class CheckoutIn(BaseModel):
     plan_id: str
@@ -3094,7 +3179,78 @@ async def my_subscription(user: dict = Depends(get_current_user)):
             if datetime.now(timezone.utc) > ends_at:
                 sub["status"] = "expired"
                 await db.subscriptions.update_one({"id": sub["id"]}, {"$set": {"status": "expired"}})
+    else:
+        # Fallback default Starter plan expired state
+        sub = {
+            "id": "starter-default",
+            "tenant_id": tid or user["id"],
+            "user_id": user["id"],
+            "plan_id": "STARTER_MONTHLY",
+            "plan_name": "Starter",
+            "price": 299.0,
+            "interval": "month",
+            "status": "expired",
+            "auto_pay_enabled": False,
+            "cancel_at_period_end": False
+        }
+
+    # Add limits & features context
+    if tid:
+        limits = await get_tenant_plan_limits(tid)
+        sub["limits"] = {
+            "staff_limit": limits["staff_limit"],
+            "features": limits["features"]
+        }
+        
+        # Include payment history
+        history = await db.payment_orders.find(
+            {"tenant_id": tid, "status": "paid"},
+            {"_id": 0}
+        ).sort("paid_at", -1).to_list(100)
+        sub["payment_history"] = history
+    else:
+        sub["limits"] = {
+            "staff_limit": 1,
+            "features": {
+                "billing": True,
+                "menu_crud": True,
+                "table_crud": True,
+                "offline_mode": True,
+                "thermal_printing": True,
+                "basic_reports": True
+            }
+        }
+        sub["payment_history"] = []
+
     return sub
+
+
+@api.post("/subscriptions/cancel")
+async def cancel_subscription(user: dict = Depends(require_roles("owner", "manager"))):
+    tid = user.get("tenant_id") or user["id"]
+    latest = await db.subscriptions.find_one({"tenant_id": tid}, sort=[("created_at", -1)])
+    if not latest:
+        raise HTTPException(status_code=404, detail="No active subscription found")
+    
+    await db.subscriptions.update_one(
+        {"id": latest["id"]},
+        {"$set": {"cancel_at_period_end": True, "auto_pay_enabled": False}}
+    )
+    return {"success": True, "message": "AutoPay cancellation scheduled successfully"}
+
+
+@api.post("/subscriptions/reactivate")
+async def reactivate_subscription(user: dict = Depends(require_roles("owner", "manager"))):
+    tid = user.get("tenant_id") or user["id"]
+    latest = await db.subscriptions.find_one({"tenant_id": tid}, sort=[("created_at", -1)])
+    if not latest:
+        raise HTTPException(status_code=404, detail="No subscription found")
+    
+    await db.subscriptions.update_one(
+        {"id": latest["id"]},
+        {"$set": {"cancel_at_period_end": False, "auto_pay_enabled": True}}
+    )
+    return {"success": True, "message": "AutoPay restored successfully"}
 
 
 @api.post("/subscriptions/checkout")
@@ -3679,18 +3835,21 @@ async def seed_super_admin():
 
     # Seed default subscription plans idempotently
     defaults = [
-        {"name": "Monthly", "price": 499.0, "interval": "month", "valid_days": 30,
-         "features": ["Unlimited menu items", "Unlimited orders", "KDS", "Billing with UPI QR"]},
-        {"name": "Yearly", "price": 4999.0, "interval": "year", "valid_days": 365,
-         "features": ["Everything in Monthly", "2 months free", "Priority support"]},
+        {"id": "STARTER_MONTHLY", "name": "Starter", "price": 299.0, "interval": "month", "valid_days": 30,
+         "features": ["Owner + 1 staff", "Unlimited bills", "Unlimited menu items", "Table CRUD", "Menu CRUD", "Orders", "Offline/local-first billing", "Thermal printing", "GST billing", "Basic reports"]},
+        {"id": "STARTER_YEARLY", "name": "Starter", "price": 2999.0, "interval": "year", "valid_days": 365,
+         "features": ["Everything in Starter Monthly", "Save ₹589 annually"]},
+        {"id": "GROWTH_MONTHLY", "name": "Growth", "price": 599.0, "interval": "month", "valid_days": 30,
+         "features": ["Owner + 4 staff", "Everything in Starter", "Advanced analytics", "Inventory management", "Expenses", "AI Photo → Menu"]},
+        {"id": "GROWTH_YEARLY", "name": "Growth", "price": 5999.0, "interval": "year", "valid_days": 365,
+         "features": ["Everything in Growth Monthly", "Save ₹1,189 annually"]},
+        {"id": "PRO_MONTHLY", "name": "Pro", "price": 999.0, "interval": "month", "valid_days": 30,
+         "features": ["Owner + 14 staff", "Everything in Growth", "QR Web Menu", "Customer self-ordering", "Waiter QR confirmation", "Custom permissions", "Audit logs"]},
+        {"id": "PRO_YEARLY", "name": "Pro", "price": 9999.0, "interval": "year", "valid_days": 365,
+         "features": ["Everything in Pro Monthly", "Save ₹1,989 annually"]},
     ]
     for p in defaults:
-        exists = await db.plans.find_one({"name": p["name"], "interval": p["interval"]})
-        if not exists:
-            await db.plans.insert_one({
-                "id": str(uuid.uuid4()), **p, "is_active": True,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
+        await db.plans.replace_one({"id": p["id"]}, {**p, "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()}, upsert=True)
 @api.get("/health/memory")
 async def health_memory():
     import os, psutil

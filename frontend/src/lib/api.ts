@@ -534,8 +534,21 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     }
   }
 
+  const isLocalFirstMutation = !isGet && (
+    path === "/orders" ||
+    path.startsWith("/orders/") ||
+    path === "/bills" ||
+    path.startsWith("/bills/") ||
+    path === "/categories" ||
+    path.startsWith("/categories/") ||
+    path === "/menu-items" ||
+    path.startsWith("/menu-items/") ||
+    path === "/tables" ||
+    path.startsWith("/tables/")
+  );
+
   // Local-First Write Policy: ALWAYS update local cache instantly, queue action, sync in background
-  if (!isGet) {
+  if (isLocalFirstMutation) {
     const localResult = await handleOfflineMutation(path, opts);
     startSyncRunner().catch(() => {});
     return localResult;
@@ -773,6 +786,19 @@ export const api = {
   adminAssignSubscription: (tid: string, plan_id: string) =>
     req(`/admin/restaurants/${tid}/subscription`, { method: "POST", body: JSON.stringify({ plan_id, status: "active" }) }),
   adminCancelSubscription: (tid: string) => req(`/admin/restaurants/${tid}/subscription`, { method: "DELETE" }),
+  
+  cancelSubscription: async () => {
+    const res = await req("/subscriptions/cancel", { method: "POST" });
+    clearCachePrefix("/subscriptions/mine");
+    await delItem("cached_sub");
+    return res;
+  },
+  reactivateSubscription: async () => {
+    const res = await req("/subscriptions/reactivate", { method: "POST" });
+    clearCachePrefix("/subscriptions/mine");
+    await delItem("cached_sub");
+    return res;
+  },
   // Razorpay subscription flow (owner)
   mySubscription: async () => {
     const cacheKey = "/subscriptions/mine";
@@ -899,5 +925,22 @@ export const api = {
   },
   setCachedSummary: (summary: any) => {
     memoryCache["/dashboard/summary"] = summary;
+  },
+  hasFeature: (featureName: string): boolean => {
+    const sub = memoryCache["/subscriptions/mine"];
+    if (!sub) return false;
+    if (sub.status === "active") {
+      const features = sub.limits?.features;
+      if (features) {
+        return !!features[featureName];
+      }
+      const plan = String(sub.plan_id).toLowerCase();
+      if (plan.includes("pro")) return true;
+      if (plan.includes("growth")) {
+        return !["qr_web_menu", "customer_ordering", "waiter_qr_confirmation", "advanced_permissions", "audit_logs", "api_access"].includes(featureName);
+      }
+      return ["billing", "menu_crud", "table_crud", "offline_mode", "thermal_printing", "basic_reports"].includes(featureName);
+    }
+    return false;
   },
 };

@@ -73,15 +73,7 @@ export default function Index() {
             </View>
           </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.demoBtn, pressed && styles.btnPressed]}
-            onPress={() => router.push("/demo-billing")}
-          >
-            <View style={styles.btnRow}>
-              <Ionicons name="play-circle-outline" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
-              <Text style={styles.demoBtnText}>Try Interactive Demo</Text>
-            </View>
-          </Pressable>
+
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />

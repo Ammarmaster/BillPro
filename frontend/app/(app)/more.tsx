@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { api } from "@/src/lib/api";
 import { radius, spacing } from "@/src/theme";
 
 export default function More() {
@@ -200,7 +201,24 @@ export default function More() {
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
             {/* Sales Analytics */}
-            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/analytics")} testID="manage-analytics-btn">
+            <Pressable 
+              style={styles.rowItem} 
+              onPress={() => {
+                if (api.hasFeature("advanced_reports")) {
+                  router.push("/(app)/analytics");
+                } else {
+                  Alert.alert(
+                    "🔒 Upgrade Required", 
+                    "Sales Analytics is a Growth/Pro feature. Upgrade your subscription plan to access it.",
+                    [
+                      { text: "Later", style: "cancel" },
+                      { text: "View Plans", onPress: () => router.push("/(app)/subscribe") }
+                    ]
+                  );
+                }
+              }} 
+              testID="manage-analytics-btn"
+            >
               <View style={styles.iconBox}>
                 <Ionicons name="bar-chart" size={20} color="#635BFF" />
               </View>

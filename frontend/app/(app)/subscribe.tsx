@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, SafeAreaView, StatusBar, Modal,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, SafeAreaView, StatusBar, Modal, Alert,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -35,6 +35,10 @@ export default function Subscribe() {
   
   const [checkoutHtml, setCheckoutHtml] = useState<string | null>(null);
   const currentPlanRef = useRef<Plan | null>(null);
+
+  // Billing cycle toggle
+  const [isYearly, setIsYearly] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -100,18 +104,52 @@ export default function Subscribe() {
     }
   };
 
-  const remainingDays = useMemo(() => {
-    if (!sub || sub.status !== "active" || !sub.ends_at) return 0;
-    try {
-      const diff = new Date(sub.ends_at).getTime() - new Date().getTime();
-      return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-    } catch {
-      return 0;
-    }
-  }, [sub]);
+  const handleCancelAutoPay = () => {
+    Alert.alert(
+      "Cancel AutoPay?",
+      "Your current plan will remain active until the billing period ends. AutoPay will not renew.",
+      [
+        { text: "Keep AutoPay", style: "cancel" },
+        { 
+          text: "Cancel AutoPay", 
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true); setErr(null); setMsg(null);
+            try {
+              await api.cancelSubscription();
+              const freshSub = await api.mySubscription();
+              setSub(freshSub);
+              setMsg("AutoPay cancellation scheduled.");
+            } catch (e: any) {
+              setErr(e.message);
+            } finally {
+              setBusy(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
-  const activePlan = useMemo(() => sub?.status === "active" ? sub : null, [sub]);
-  const expiredPlan = useMemo(() => sub?.status === "expired" ? sub : null, [sub]);
+  const handleReactivateAutoPay = async () => {
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      await api.reactivateSubscription();
+      const freshSub = await api.mySubscription();
+      setSub(freshSub);
+      setMsg("AutoPay restored successfully!");
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const starterPlan = plans.find(p => p.id === (isYearly ? "STARTER_YEARLY" : "STARTER_MONTHLY"));
+  const growthPlan = plans.find(p => p.id === (isYearly ? "GROWTH_YEARLY" : "GROWTH_MONTHLY"));
+  const proPlan = plans.find(p => p.id === (isYearly ? "PRO_YEARLY" : "PRO_MONTHLY"));
+
+  const activePlanId = sub?.status === "active" ? sub.plan_id : null;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -122,7 +160,7 @@ export default function Subscribe() {
         <View style={styles.header}>
           <Pressable 
             onPress={() => {
-              if (activePlan) {
+              if (sub?.status === "active") {
                 router.push("/(app)/more");
               } else {
                 router.replace("/");
@@ -132,65 +170,35 @@ export default function Subscribe() {
             style={styles.backBtn}
             hitSlop={12}
           >
-            <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
+            <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
           </Pressable>
-          <Text style={[styles.title, { color: theme.onSurface }]}>Subscription</Text>
+          <Text style={[styles.title, { color: theme.onSurface }]}>EZBill Plans</Text>
           <View style={{ width: 40 }} />
         </View>
 
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg }} showsVerticalScrollIndicator={false}>
           
-          {/* Current Status Card */}
-          {activePlan ? (
-            <View style={[styles.statusCard, { backgroundColor: isDark ? "#11261B" : "#ECFDF5", borderColor: isDark ? "#064E3B" : "#A7F3D0" }]}>
-              <View style={styles.statusRow}>
-                <View style={[styles.iconBox, { backgroundColor: isDark ? "#064E3B" : "#D1FAE5" }]}>
-                  <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusTitle, { color: isDark ? "#34D399" : "#065F46" }]}>{activePlan.plan_name} Plan Active</Text>
-                  <Text style={[styles.statusSub, { color: isDark ? "#A7F3D0" : "#047857" }]}>
-                    Validity: {remainingDays} days remaining (expires {new Date(activePlan.ends_at).toLocaleDateString()})
-                  </Text>
-                </View>
-              </View>
-              <Pressable 
-                style={[styles.dashBtn, { backgroundColor: "#10B981" }]}
-                onPress={() => router.replace("/(app)/dashboard")}
-              >
-                <Text style={styles.dashBtnText}>Go to Dashboard</Text>
-                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          ) : expiredPlan ? (
-            <View style={[styles.statusCard, { backgroundColor: isDark ? "#2A1414" : "#FEF2F2", borderColor: isDark ? "#7F1D1D" : "#FCA5A5" }]}>
-              <View style={styles.statusRow}>
-                <View style={[styles.iconBox, { backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2" }]}>
-                  <Ionicons name="alert-circle" size={24} color="#EF4444" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusTitle, { color: isDark ? "#F87171" : "#991B1B" }]}>Subscription Expired</Text>
-                  <Text style={[styles.statusSub, { color: isDark ? "#FCA5A5" : "#B91C1C" }]}>
-                    Your previous plan has expired. Subscribe to one of the plans below to restore full access.
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : (
-            <View style={[styles.statusCard, { backgroundColor: isDark ? "#1C1D24" : "#F1F5F9", borderColor: theme.border }]}>
-              <View style={styles.statusRow}>
-                <View style={[styles.iconBox, { backgroundColor: isDark ? "#282A36" : "#E2E8F0" }]}>
-                  <Ionicons name="lock-closed" size={24} color={colors.onSurfaceSecondary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusTitle, { color: theme.onSurface }]}>Subscription Required</Text>
-                  <Text style={[styles.statusSub, { color: theme.onSurfaceSecondary }]}>
-                    Subscribe to unlock full POS features including Orders, Kitchen display, and Dashboard.
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
+          <View style={styles.heroTextContainer}>
+            <Text style={[styles.heroHeadline, { color: theme.onSurface }]}>Choose the right plan for your restaurant</Text>
+            <Text style={[styles.heroSubtext, { color: theme.onSurfaceSecondary }]}>Start simple. Upgrade when your restaurant grows.</Text>
+            <Text style={[styles.heroTagline, { color: colors.brand }]}>No per-order commission.</Text>
+          </View>
+
+          {/* Monthly / Yearly Toggle */}
+          <View style={[styles.toggleContainer, { backgroundColor: theme.surfaceSecondary }]}>
+            <Pressable 
+              style={[styles.toggleBtn, !isYearly && styles.toggleBtnActive]} 
+              onPress={() => setIsYearly(false)}
+            >
+              <Text style={[styles.toggleText, !isYearly && styles.toggleTextActive, { color: !isYearly ? "#FFFFFF" : theme.onSurfaceSecondary }]}>Monthly</Text>
+            </Pressable>
+            <Pressable 
+              style={[styles.toggleBtn, isYearly && styles.toggleBtnActive]} 
+              onPress={() => setIsYearly(true)}
+            >
+              <Text style={[styles.toggleText, isYearly && styles.toggleTextActive, { color: isYearly ? "#FFFFFF" : theme.onSurfaceSecondary }]}>Yearly (Save ~16%)</Text>
+            </Pressable>
+          </View>
 
           {err && (
             <View style={styles.errBox}>
@@ -206,78 +214,239 @@ export default function Subscribe() {
             </View>
           )}
 
-          <Text style={[styles.sectionHeading, { color: theme.onSurface }]}>Pricing Plans</Text>
+          {/* ACTIVE SUBSCRIPTION DETAILS */}
+          {sub && sub.status === "active" && (
+            <View style={[styles.activeSubCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <View style={styles.activeSubHeader}>
+                <Ionicons name="shield-checkmark" size={24} color="#10B981" />
+                <Text style={[styles.activeSubTitle, { color: theme.onSurface }]}>Your Active Subscription</Text>
+              </View>
 
+              <View style={styles.activeSubRow}>
+                <View>
+                  <Text style={[styles.activePlanNameText, { color: theme.onSurface }]}>{sub.plan_name} Plan</Text>
+                  <Text style={[styles.activePlanPrice, { color: theme.onSurfaceSecondary }]}>
+                    ₹{sub.price} / {sub.interval === "year" ? "year" : "month"}
+                  </Text>
+                </View>
+                <View style={styles.activeStatusBadge}>
+                  <Text style={styles.activeStatusText}>ACTIVE</Text>
+                </View>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+              <View style={styles.detailsGrid}>
+                <View style={styles.detailItem}>
+                  <Text style={[styles.detailLabel, { color: theme.onSurfaceTertiary }]}>AutoPay</Text>
+                  <Text style={[styles.detailValue, { color: sub.auto_pay_enabled ? "#10B981" : "#EF4444" }]}>
+                    {sub.auto_pay_enabled ? "✓ Enabled" : "✗ Disabled"}
+                  </Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={[styles.detailLabel, { color: theme.onSurfaceTertiary }]}>Next Billing</Text>
+                  <Text style={[styles.detailValue, { color: theme.onSurfaceSecondary }]}>
+                    {sub.ends_at ? new Date(sub.ends_at).toLocaleDateString() : "N/A"}
+                  </Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={[styles.detailLabel, { color: theme.onSurfaceTertiary }]}>Renewal Amount</Text>
+                  <Text style={[styles.detailValue, { color: theme.onSurface }]}>₹{sub.price}</Text>
+                </View>
+              </View>
+
+              <View style={styles.actionsRow}>
+                {sub.cancel_at_period_end ? (
+                  <Pressable 
+                    style={[styles.actionBtn, styles.actionBtnReactivate]} 
+                    onPress={handleReactivateAutoPay}
+                    disabled={busy}
+                  >
+                    <Text style={styles.actionBtnText}>Reactivate AutoPay</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable 
+                    style={[styles.actionBtn, styles.actionBtnCancel]} 
+                    onPress={handleCancelAutoPay}
+                    disabled={busy}
+                  >
+                    <Text style={styles.actionBtnText}>Cancel AutoPay</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* PLAN CARDS GRID */}
           {loading ? (
             <View style={styles.centerLoading}>
               <ActivityIndicator size="large" color={colors.brand} />
               <Text style={{ color: theme.onSurfaceSecondary, marginTop: 8 }}>Loading available plans...</Text>
             </View>
-          ) : plans.length === 0 ? (
-            <View style={styles.centerLoading}>
-              <Ionicons name="sad-outline" size={48} color={theme.onSurfaceTertiary} />
-              <Text style={{ color: theme.onSurfaceSecondary, marginTop: 8 }}>No subscription plans found.</Text>
-            </View>
           ) : (
-            plans.map(p => {
-              const isCurrent = activePlan?.plan_id === p.id;
-              const isPlanLoading = loadingPlanId === p.id;
-              const isYearly = p.interval === "year";
-              
-              return (
-                <View key={p.id} style={[styles.planCard, { backgroundColor: theme.surfaceSecondary, borderColor: isYearly ? colors.brand : theme.border }]}>
-                  {isYearly && (
-                    <View style={styles.popularBadge}>
-                      <Text style={styles.popularText}>BEST VALUE</Text>
+            <View style={styles.cardsStack}>
+              {/* STARTER */}
+              {starterPlan && (
+                <View style={[styles.planCard, { backgroundColor: theme.surfaceSecondary, borderColor: activePlanId === starterPlan.id ? "#10B981" : theme.border }]}>
+                  {activePlanId === starterPlan.id && (
+                    <View style={styles.activeCardBadge}>
+                      <Text style={styles.activeCardBadgeText}>✓ CURRENT PLAN</Text>
                     </View>
                   )}
-                  
-                  <View style={styles.planHead}>
+                  <Text style={[styles.cardTierName, { color: theme.onSurface }]}>STARTER</Text>
+                  <Text style={[styles.cardPriceText, { color: theme.onSurface }]}>₹{starterPlan.price}<Text style={styles.cardPricePeriod}>/{isYearly ? "yr" : "mo"}</Text></Text>
+                  {isYearly && <Text style={styles.saveBadge}>Save ₹589</Text>}
+                  <Text style={[styles.cardTagline, { color: theme.onSurfaceSecondary }]}>Simple Billing</Text>
+
+                  <Pressable 
+                    style={[styles.cardBtn, activePlanId === starterPlan.id && styles.cardBtnCurrent]}
+                    disabled={activePlanId === starterPlan.id || loadingPlanId !== null}
+                    onPress={() => startCheckout(starterPlan)}
+                  >
+                    <Text style={[styles.cardBtnText, activePlanId === starterPlan.id && styles.cardBtnTextCurrent]}>
+                      {activePlanId === starterPlan.id ? "Current Plan" : "Choose Starter"}
+                    </Text>
+                  </Pressable>
+
+                  <View style={[styles.divider, { backgroundColor: theme.border }]} />
+                  <Text style={[styles.cardFeaturesHeader, { color: theme.onSurface }]}>Starter features:</Text>
+                  {starterPlan.features.slice(0, 8).map((f, idx) => (
+                    <View key={idx} style={styles.featItem}>
+                      <Ionicons name="checkmark" size={16} color="#FF5E2B" />
+                      <Text style={[styles.featText, { color: theme.onSurfaceSecondary }]}>{f}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* GROWTH */}
+              {growthPlan && (
+                <View style={[styles.planCard, styles.planCardGrowth, { backgroundColor: theme.surfaceSecondary, borderColor: activePlanId === growthPlan.id ? "#10B981" : "#FF5E2B" }]}>
+                  <View style={styles.popularRibbon}>
+                    <Text style={styles.popularRibbonText}>⭐ MOST POPULAR</Text>
+                  </View>
+                  {activePlanId === growthPlan.id && (
+                    <View style={[styles.activeCardBadge, { top: 38 }]}>
+                      <Text style={styles.activeCardBadgeText}>✓ CURRENT PLAN</Text>
+                    </View>
+                  )}
+                  <Text style={[styles.cardTierName, { color: theme.onSurface, marginTop: 12 }]}>GROWTH</Text>
+                  <Text style={[styles.cardPriceText, { color: "#FF5E2B" }]}>₹{growthPlan.price}<Text style={styles.cardPricePeriod}>/{isYearly ? "yr" : "mo"}</Text></Text>
+                  {isYearly && <Text style={styles.saveBadge}>Save ₹1,189</Text>}
+                  <Text style={[styles.cardTagline, { color: theme.onSurfaceSecondary }]}>Restaurant Management</Text>
+
+                  <Pressable 
+                    style={[styles.cardBtn, { backgroundColor: "#FF5E2B" }, activePlanId === growthPlan.id && styles.cardBtnCurrent]}
+                    disabled={activePlanId === growthPlan.id || loadingPlanId !== null}
+                    onPress={() => startCheckout(growthPlan)}
+                  >
+                    <Text style={[styles.cardBtnText, { color: "#FFFFFF" }, activePlanId === growthPlan.id && styles.cardBtnTextCurrent]}>
+                      {activePlanId === growthPlan.id ? "Current Plan" : "Choose Growth"}
+                    </Text>
+                  </Pressable>
+
+                  <View style={[styles.divider, { backgroundColor: theme.border }]} />
+                  <Text style={[styles.cardFeaturesHeader, { color: theme.onSurface }]}>Everything in Starter +</Text>
+                  {growthPlan.features.slice(0, 8).map((f, idx) => (
+                    <View key={idx} style={styles.featItem}>
+                      <Ionicons name="checkmark" size={16} color="#FF5E2B" />
+                      <Text style={[styles.featText, { color: theme.onSurfaceSecondary }]}>{f}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* PRO */}
+              {proPlan && (
+                <View style={[styles.planCard, styles.planCardPro, { backgroundColor: "#11121A", borderColor: activePlanId === proPlan.id ? "#10B981" : "#635BFF" }]}>
+                  {activePlanId === proPlan.id && (
+                    <View style={styles.activeCardBadge}>
+                      <Text style={styles.activeCardBadgeText}>✓ CURRENT PLAN</Text>
+                    </View>
+                  )}
+                  <Text style={[styles.cardTierName, { color: "#FFFFFF" }]}>PRO</Text>
+                  <Text style={[styles.cardPriceText, { color: "#635BFF" }]}>₹{proPlan.price}<Text style={styles.cardPricePeriod}>/{isYearly ? "yr" : "mo"}</Text></Text>
+                  {isYearly && <Text style={[styles.saveBadge, { backgroundColor: "rgba(99,91,255,0.2)", color: "#635BFF" }]}>Save ₹1,989</Text>}
+                  <Text style={[styles.cardTagline, { color: "rgba(255,255,255,0.6)" }]}>Digital Restaurant</Text>
+
+                  <Pressable 
+                    style={[styles.cardBtn, { backgroundColor: "#635BFF" }, activePlanId === proPlan.id && styles.cardBtnCurrent]}
+                    disabled={activePlanId === proPlan.id || loadingPlanId !== null}
+                    onPress={() => startCheckout(proPlan)}
+                  >
+                    <Text style={[styles.cardBtnText, { color: "#FFFFFF" }, activePlanId === proPlan.id && styles.cardBtnTextCurrent]}>
+                      {activePlanId === proPlan.id ? "Current Plan" : "Choose Pro"}
+                    </Text>
+                  </Pressable>
+
+                  <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.1)" }]} />
+                  <Text style={[styles.cardFeaturesHeader, { color: "#FFFFFF" }]}>Everything in Growth +</Text>
+                  {proPlan.features.slice(0, 8).map((f, idx) => (
+                    <View key={idx} style={styles.featItem}>
+                      <Ionicons name="checkmark" size={16} color="#635BFF" />
+                      <Text style={[styles.featText, { color: "rgba(255,255,255,0.7)" }]}>{f}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* PLAN COMPARISON MATRIX */}
+          <Text style={[styles.matrixTitle, { color: theme.onSurface }]}>Compare all features</Text>
+          <View style={[styles.matrixContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <View style={styles.matrixRowHeader}>
+              <Text style={[styles.matrixLabelCol, { color: theme.onSurfaceTertiary }]}>Feature</Text>
+              <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Starter</Text>
+              <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Growth</Text>
+              <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Pro</Text>
+            </View>
+            {[
+              { name: "Max Users", starter: "2", growth: "5", pro: "15" },
+              { name: "GST Billing", starter: "✓", growth: "✓", pro: "✓" },
+              { name: "Offline Mode", starter: "✓", growth: "✓", pro: "✓" },
+              { name: "Thermal Print", starter: "✓", growth: "✓", pro: "✓" },
+              { name: "Reports", starter: "Basic", growth: "Advanced", pro: "Advanced" },
+              { name: "Inventory", starter: "✗", growth: "✓", pro: "✓" },
+              { name: "AI Photo Menu", starter: "Limited", growth: "✓", pro: "Advanced" },
+              { name: "QR Web Menu", starter: "✗", growth: "✗", pro: "✓" },
+              { name: "Self-Ordering", starter: "✗", growth: "✗", pro: "✓" },
+              { name: "Audit Logs", starter: "✗", growth: "✗", pro: "✓" },
+            ].map((row, idx) => (
+              <View key={idx} style={[styles.matrixRow, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.matrixLabelCol, { color: theme.onSurface }]}>{row.name}</Text>
+                <Text style={[styles.matrixValueCol, { color: row.starter === "✗" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.starter}</Text>
+                <Text style={[styles.matrixValueCol, { color: row.growth === "✗" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.growth}</Text>
+                <Text style={[styles.matrixValueCol, { color: row.pro === "✗" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.pro}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* PAYMENT HISTORY */}
+          {sub && sub.payment_history && sub.payment_history.length > 0 && (
+            <View style={[styles.historyCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Text style={[styles.historyTitle, { color: theme.onSurface }]}>Payment History</Text>
+              <View style={styles.historyList}>
+                {sub.payment_history.map((h: any, idx: number) => (
+                  <View key={h.id || idx} style={[styles.historyRow, idx > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}>
                     <View>
-                      <Text style={[styles.planName, { color: theme.onSurface }]}>{p.name}</Text>
-                      <Text style={[styles.planValidity, { color: theme.onSurfaceSecondary }]}>
-                        Validity: {p.valid_days ?? (isYearly ? 365 : 30)} Days
+                      <Text style={[styles.historyPlanNameText, { color: theme.onSurface }]}>
+                        {h.plan_id.includes("STARTER") ? "Starter Plan" : h.plan_id.includes("GROWTH") ? "Growth Plan" : "Pro Plan"}
+                      </Text>
+                      <Text style={[styles.historyDateText, { color: theme.onSurfaceTertiary }]}>
+                        {h.paid_at ? new Date(h.paid_at).toLocaleDateString() : new Date(h.created_at).toLocaleDateString()}
                       </Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
-                      <Text style={[styles.planPrice, { color: isYearly ? colors.brand : theme.onSurface }]}>₹{p.price}</Text>
-                      <Text style={[styles.perUnit, { color: theme.onSurfaceSecondary }]}>per {p.interval}</Text>
+                      <Text style={[styles.historyAmountText, { color: theme.onSurface }]}>₹{h.amount / 100}</Text>
+                      <Text style={[styles.historyPaidBadge, { color: "#10B981" }]}>✓ Paid</Text>
                     </View>
                   </View>
-
-                  <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-                  <View style={styles.featuresList}>
-                    {p.features?.map((f, idx) => (
-                      <View key={idx} style={styles.featureRow}>
-                        <Ionicons name="checkmark-circle-outline" size={18} color={colors.brand} />
-                        <Text style={[styles.featureText, { color: theme.onSurfaceSecondary }]}>{f}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.subBtn,
-                      { backgroundColor: isCurrent ? theme.border : colors.brand },
-                      (isCurrent || loadingPlanId !== null) && { opacity: 0.5 },
-                      pressed && styles.btnPressed
-                    ]}
-                    onPress={() => startCheckout(p)}
-                    disabled={isCurrent || loadingPlanId !== null}
-                  >
-                    {isPlanLoading ? (
-                      <ActivityIndicator color={colors.onBrand} />
-                    ) : (
-                      <Text style={[styles.subBtnText, { color: isCurrent ? theme.onSurfaceSecondary : colors.onBrand }]}>
-                        {isCurrent ? "Active Plan" : `Subscribe Now • ₹${p.price}`}
-                      </Text>
-                    )}
-                  </Pressable>
-                </View>
-              );
-            })
+                ))}
+              </View>
+            </View>
           )}
+
         </ScrollView>
       </View>
 
@@ -313,12 +482,12 @@ function buildCheckoutHtml(co: any): string {
     name: "EzBill ERP",
     description: (`${co.plan_name} Subscription`).replace(/[^a-zA-Z0-9 ]/g, ""),
     prefill: co.prefill,
-    theme: { color: "#635BFF" },
+    theme: { color: "#FF5E2B" },
   };
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>
     body { font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:#0D0D0D; color:#F7F7F7; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
     .card { text-align:center; }
-    button { background:#635BFF; color:#FFFFFF; border:none; padding:14px 28px; font-size:16px; border-radius:12px; font-weight:600; }
+    button { background:#FF5E2B; color:#FFFFFF; border:none; padding:14px 28px; font-size:16px; border-radius:12px; font-weight:600; }
   </style></head><body>
     <div class="card"><p>Loading Razorpay Autopay Mandate Setup…</p><button id="pay">Authorize Mandate</button></div>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
@@ -344,45 +513,51 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   backBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.02)" },
   title: { fontSize: 22, fontWeight: "900" },
-  statusCard: {
-    padding: spacing.xl,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    gap: spacing.md,
-  },
-  statusRow: {
-    flexDirection: "row",
+  heroTextContainer: {
     alignItems: "center",
-    gap: spacing.md,
+    textAlign: "center",
+    paddingVertical: spacing.sm,
+    gap: 4,
   },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
+  heroHeadline: {
+    fontSize: 22,
+    fontWeight: "900",
+    textAlign: "center",
+    lineHeight: 28,
   },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  statusSub: {
-    fontSize: 13,
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  dashBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: radius.lg,
-    marginTop: spacing.xs,
-  },
-  dashBtnText: {
-    color: "#FFFFFF",
+  heroSubtext: {
     fontSize: 14,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  heroTagline: {
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  toggleContainer: {
+    flexDirection: "row",
+    padding: 4,
+    borderRadius: radius.xl,
+    marginHorizontal: spacing.xl,
+    marginVertical: spacing.xs,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggleBtnActive: {
+    backgroundColor: "#FF5E2B",
+  },
+  toggleText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  toggleTextActive: {
     fontWeight: "800",
   },
   errBox: {
@@ -413,15 +588,93 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     flex: 1,
   },
-  sectionHeading: {
+  activeSubCard: {
+    padding: spacing.xl,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    gap: spacing.sm,
+  },
+  activeSubHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  activeSubTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  activeSubRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.xs,
+  },
+  activePlanNameText: {
     fontSize: 18,
     fontWeight: "900",
-    marginTop: spacing.sm,
   },
-  centerLoading: {
-    paddingVertical: 60,
+  activePlanPrice: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  activeStatusBadge: {
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  activeStatusText: {
+    color: "#065F46",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  detailsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.xs,
+  },
+  detailItem: {
+    gap: 2,
+  },
+  detailLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  detailValue: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.lg,
     alignItems: "center",
     justifyContent: "center",
+  },
+  actionBtnCancel: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  actionBtnReactivate: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
+  },
+  actionBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FF5E2B",
+  },
+  cardsStack: {
+    gap: spacing.xl,
+    marginTop: spacing.xs,
   },
   planCard: {
     padding: spacing.xl,
@@ -429,79 +682,196 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     position: "relative",
     overflow: "hidden",
+    gap: spacing.sm,
   },
-  popularBadge: {
+  planCardGrowth: {
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  planCardPro: {
+    shadowColor: "#635BFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  popularRibbon: {
     position: "absolute",
-    top: 12,
+    top: 14,
     right: -32,
-    backgroundColor: colors.brand,
+    backgroundColor: "#FF5E2B",
     transform: [{ rotate: "45deg" }],
-    paddingHorizontal: 32,
+    paddingHorizontal: 28,
     paddingVertical: 4,
     width: 120,
     alignItems: "center",
   },
-  popularText: {
-    color: colors.onBrand,
+  popularRibbonText: {
+    color: "#FFFFFF",
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  activeCardBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    backgroundColor: "#10B981",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
+  activeCardBadgeText: {
+    color: "#FFFFFF",
     fontSize: 9,
     fontWeight: "900",
-    letterSpacing: 0.5,
   },
-  planHead: {
+  cardTierName: {
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  cardPriceText: {
+    fontSize: 32,
+    fontWeight: "900",
+  },
+  cardPricePeriod: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  saveBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,94,43,0.1)",
+    color: "#FF5E2B",
+    fontSize: 11,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
+  cardTagline: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: spacing.xs,
+  },
+  cardBtn: {
+    backgroundColor: "#FF5E2B",
+    paddingVertical: 12,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xs,
+  },
+  cardBtnCurrent: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+  cardBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  cardBtnTextCurrent: {
+    color: "#10B981",
+  },
+  cardFeaturesHeader: {
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: spacing.xs,
+  },
+  featItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  featText: {
+    fontSize: 13,
+    fontWeight: "500",
+    flex: 1,
+  },
+  matrixTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: spacing.lg,
+  },
+  matrixContainer: {
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  matrixRowHeader: {
+    flexDirection: "row",
+    padding: spacing.md,
+    backgroundColor: "rgba(0,0,0,0.02)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+  },
+  matrixRow: {
+    flexDirection: "row",
+    padding: spacing.md,
+    borderBottomWidth: 1,
+  },
+  matrixLabelCol: {
+    flex: 2,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  matrixValueCol: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  historyCard: {
+    padding: spacing.xl,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  historyList: {
+    gap: 0,
+  },
+  historyRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
+    paddingVertical: spacing.md,
   },
-  planName: {
-    fontSize: 20,
-    fontWeight: "900",
+  historyPlanNameText: {
+    fontSize: 14,
+    fontWeight: "800",
   },
-  planValidity: {
+  historyDateText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "500",
     marginTop: 2,
   },
-  planPrice: {
-    fontSize: 24,
-    fontWeight: "900",
+  historyAmountText: {
+    fontSize: 14,
+    fontWeight: "800",
   },
-  perUnit: {
+  historyPaidBadge: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     marginTop: 2,
   },
   divider: {
     height: 1,
-    marginVertical: spacing.lg,
+    marginVertical: spacing.sm,
   },
-  featuresList: {
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  featureText: {
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-    lineHeight: 18,
-  },
-  subBtn: {
-    paddingVertical: 14,
-    borderRadius: radius.lg,
+  centerLoading: {
+    paddingVertical: 60,
     alignItems: "center",
     justifyContent: "center",
-  },
-  subBtnText: {
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: 0.2,
-  },
-  btnPressed: {
-    opacity: 0.85,
   },
   webviewHeader: { 
     flexDirection: "row", 
@@ -524,5 +894,8 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     fontWeight: "800", 
     color: "#111111" 
+  },
+  btnPressed: {
+    opacity: 0.85,
   },
 });
