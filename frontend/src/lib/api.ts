@@ -195,49 +195,48 @@ export async function startSyncRunner() {
   if (isSyncing || outboxQueue.length === 0) return;
   isSyncing = true;
   try {
-    while (outboxQueue.length > 0) {
-      const action = outboxQueue[0];
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "X-Operation-ID": action.operationId
-      };
-      const t = await getAccess();
-      if (t) headers["Authorization"] = `Bearer ${t}`;
+    const payloadActions = outboxQueue.map(a => ({
+      path: a.path,
+      method: a.method,
+      body: a.body,
+      tempId: a.tempId,
+      operationId: a.operationId
+    }));
 
-      const res = await fetch(`${BASE}/api${action.path}`, {
-        method: action.method,
-        headers,
-        body: action.body ? JSON.stringify(action.body) : undefined
-      });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json"
+    };
+    const t = await getAccess();
+    if (t) headers["Authorization"] = `Bearer ${t}`;
 
-      if (!res.ok) {
-        if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403) {
-          console.warn("Outbox item failed with client error, skipping:", action.path, res.status);
-          outboxQueue.shift();
-          await saveOutbox();
-          continue;
-        }
-        break;
-      }
+    const res = await fetch(`${BASE}/api/sync/batch`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ actions: payloadActions })
+    });
 
-      const serverData = await res.json();
-      if (action.tempId && serverData && serverData.id) {
-        tempIdMap[action.tempId] = serverData.id;
-        for (const queued of outboxQueue) {
-          if (queued.body) {
-            let bodyStr = JSON.stringify(queued.body);
-            bodyStr = bodyStr.split(action.tempId).join(serverData.id);
-            queued.body = JSON.parse(bodyStr);
-          }
-        }
-        rewriteCacheTempIds(action.tempId, serverData.id);
-      }
-
-      outboxQueue.shift();
-      await saveOutbox();
+    if (!res.ok) {
+      console.warn("Batch sync failed:", res.status);
+      return;
     }
+
+    const batchData = await res.json();
+    const results = batchData.results || [];
+    const idMapping = batchData.id_mapping || {};
+
+    // Apply resolved temp IDs mapping to the local mappings
+    for (const [tempId, realId] of Object.entries(idMapping)) {
+      tempIdMap[tempId] = realId as string;
+      rewriteCacheTempIds(tempId, realId as string);
+    }
+
+    // Process outbox queue results
+    const processedIds = new Set(results.map((r: any) => r.operationId));
+    outboxQueue = outboxQueue.filter(a => !processedIds.has(a.operationId));
+    
+    await saveOutbox();
   } catch (err) {
-    console.warn("Sync runner network failure:", err);
+    console.warn("Sync runner batch failure:", err);
   } finally {
     isSyncing = false;
   }
@@ -716,11 +715,11 @@ export const api = {
     return res;
   },
   listOrders: (status?: string) => req(`/orders${status ? `?status_filter=${status}` : ""}`),
-  updateOrderStatus: (id: string, status: string) => {
+  updateOrderStatus: async (id: string, status: string) => {
     const resolvedId = tempIdMap[id] || id;
-    clearCachePrefix("/orders");
+    const res = await req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
     clearCachePrefix("/dashboard/summary");
-    return req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+    return res;
   },
   
   createBill: async (payload: any) => {

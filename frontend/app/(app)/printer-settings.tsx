@@ -249,7 +249,7 @@ export default function PrinterSettingsScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border }]}>
+        <Pressable onPress={() => router.replace("/(app)/more")} style={[styles.backBtn, { borderColor: theme.border }]}>
           <Ionicons name="chevron-back" size={20} color={theme.onSurface} />
         </Pressable>
         <View style={{ marginLeft: spacing.md, flex: 1 }}>

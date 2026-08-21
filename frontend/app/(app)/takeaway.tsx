@@ -148,7 +148,7 @@ export default function TakeawayScreen() {
       // 4. Reset cart and redirect instantly (0ms transition lag!)
       const cartItems = [...cart];
       setCart([]);
-      router.push({ pathname: "/(app)/billing", params: { orderId: tempOrderId } });
+      router.push({ pathname: "/(app)/billing", params: { orderId: tempOrderId, backTo: "/(app)/takeaway" } });
       
       // 5. Sync with server silently in the background
       api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" }).then(realOrder => {

@@ -154,8 +154,7 @@ export default function SettingsDetails() {
   };
 
   const handleBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.push("/(app)/more");
+    router.replace("/(app)/more");
   };
 
   const field = (key: keyof typeof form, label: string, placeholder: string, opts: any = {}) => (

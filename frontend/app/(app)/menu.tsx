@@ -113,7 +113,12 @@ export default function MenuScreen() {
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="menu-screen">
       <View style={styles.header}>
-        <Text style={styles.title}>Menu</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+          <Pressable onPress={() => router.replace("/(app)/more")} style={styles.backBtn} hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
+          </Pressable>
+          <Text style={styles.title}>Menu</Text>
+        </View>
         <View style={{ flexDirection: "row", gap: spacing.xs, alignItems: "center" }}>
 
           <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
@@ -286,6 +291,7 @@ const styles = StyleSheet.create({
   ghostBtnText: { color: colors.onSurface, fontWeight: "600" },
   primaryBtn: { flex: 1, paddingVertical: 14, borderRadius: radius.md, alignItems: "center", backgroundColor: colors.brand },
   primaryText: { color: colors.onBrand, fontWeight: "700" },
+  backBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
   imgPickerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
   imgPreview: { width: 56, height: 56, borderRadius: radius.md },
   imgPlaceholder: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },

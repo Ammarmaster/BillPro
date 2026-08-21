@@ -1378,9 +1378,31 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
     return doc
 
 
+async def _auto_clear_kitchen_orders(tid: str):
+    try:
+        now = datetime.now(timezone.utc)
+        if now.hour >= 1:
+            cutoff = now.replace(hour=1, minute=0, second=0, microsecond=0)
+        else:
+            cutoff = (now - timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
+            
+        cutoff_str = cutoff.isoformat()
+        res = await db.orders.update_many({
+            "tenant_id": tid,
+            "status": {"$in": ["placed", "in_kitchen", "ready"]},
+            "created_at": {"$lt": cutoff_str}
+        }, {"$set": {"status": "cancelled", "cancelled_at": now.isoformat(), "cancel_reason": "Daily 1 AM kitchen reset"}})
+        if res.modified_count > 0:
+            logger.info("Cleared %d pending orders for tenant %s based on 1 AM daily reset rule.", res.modified_count, tid)
+            dashboard_summary_cache.pop(tid, None)
+    except Exception as e:
+        logger.error("Error running daily 1 AM kitchen order clear: %s", str(e))
+
+
 @api.get("/orders")
 async def list_orders(status_filter: Optional[str] = None, user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
+    await _auto_clear_kitchen_orders(tid)
     q = {"tenant_id": tid}
     if status_filter:
         if status_filter != "all":
@@ -2713,6 +2735,7 @@ async def test_push_notification(payload: dict, user: dict = Depends(get_current
 @api.get("/dashboard/summary")
 async def dashboard_summary(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
+    await _auto_clear_kitchen_orders(tid)
     
     # 5-second in-memory response cache for <1ms dashboard boots
     cached = dashboard_summary_cache.get(tid)
@@ -3147,6 +3170,69 @@ async def get_tenant_plan_limits(tid: str) -> dict:
         "staff_limit": staff_limit,
         "features": features
     }
+
+
+# ---------- BATCH SYNC ----------
+class BatchAction(BaseModel):
+    path: str
+    method: str
+    body: Optional[dict] = None
+    tempId: Optional[str] = None
+    operationId: str
+
+class BatchSyncIn(BaseModel):
+    actions: List[BatchAction]
+
+from httpx import AsyncClient
+
+@api.post("/sync/batch")
+async def batch_sync(payload: BatchSyncIn, request: Request, user: dict = Depends(get_current_user)):
+    results = []
+    id_mapping = {}
+    
+    headers = {"Authorization": request.headers.get("Authorization", "")}
+    
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        for action in payload.actions:
+            resolved_path = action.path
+            for temp_id, real_id in id_mapping.items():
+                resolved_path = resolved_path.replace(temp_id, real_id)
+            
+            body = action.body or {}
+            if body:
+                body_str = json.dumps(body)
+                for temp_id, real_id in id_mapping.items():
+                    body_str = body_str.replace(temp_id, real_id)
+                body = json.loads(body_str)
+                
+            headers["X-Operation-ID"] = action.operationId
+            
+            if action.method.upper() == "POST":
+                res = await ac.post(f"/api{resolved_path}", json=body, headers=headers)
+            elif action.method.upper() == "PATCH":
+                res = await ac.patch(f"/api{resolved_path}", json=body, headers=headers)
+            elif action.method.upper() == "DELETE":
+                res = await ac.delete(f"/api{resolved_path}", headers=headers)
+            else:
+                res = await ac.request(action.method, f"/api{resolved_path}", json=body, headers=headers)
+                
+            status_code = res.status_code
+            try:
+                res_data = res.json()
+            except Exception:
+                res_data = res.text
+                
+            if 200 <= status_code < 300 and action.tempId and isinstance(res_data, dict) and "id" in res_data:
+                id_mapping[action.tempId] = res_data["id"]
+                
+            results.append({
+                "operationId": action.operationId,
+                "status": status_code,
+                "data": res_data,
+                "tempId": action.tempId
+            })
+            
+    return {"results": results, "id_mapping": id_mapping}
 
 
 # ---------- RAZORPAY CHECKOUT ----------

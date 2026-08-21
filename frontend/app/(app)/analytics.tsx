@@ -176,8 +176,7 @@ export default function Analytics() {
   const maxDishAmt = realTopDishes.length > 0 ? realTopDishes[0].amt : 1;
 
   const handleBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.push("/(app)/more");
+    router.replace("/(app)/more");
   };
 
   const handleExport = async (format: "pdf" | "excel" | "docx") => {

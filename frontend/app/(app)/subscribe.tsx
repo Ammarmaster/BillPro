@@ -160,10 +160,10 @@ export default function Subscribe() {
         <View style={styles.header}>
           <Pressable 
             onPress={() => {
-              if (sub?.status === "active") {
-                router.push("/(app)/more");
+              if (router.canGoBack()) {
+                router.back();
               } else {
-                router.replace("/");
+                router.replace("/(app)/more");
               }
             }} 
             testID="subscribe-back-btn" 

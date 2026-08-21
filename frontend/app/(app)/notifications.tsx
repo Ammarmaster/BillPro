@@ -133,7 +133,7 @@ export default function NotificationCentreScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Pressable onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border }]}>
+          <Pressable onPress={() => router.replace("/(app)/more")} style={[styles.backBtn, { borderColor: theme.border }]}>
             <Ionicons name="chevron-back" size={20} color={theme.onSurface} />
           </Pressable>
           <View style={{ marginLeft: spacing.md }}>

@@ -544,7 +544,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
 
                         <Pressable
                           style={[styles.guestActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
-                          onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id } })}
+                          onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id, backTo: "/(app)/waiter" } })}
                         >
                           <Ionicons name="receipt-outline" size={14} color="#FFF" />
                           <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
@@ -570,7 +570,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             <Pressable
               style={styles.genBillBtn}
               onPress={() => {
-                router.push({ pathname: "/(app)/billing", params: { tableNumber: selectedTableObj.label } });
+                router.push({ pathname: "/(app)/billing", params: { tableNumber: selectedTableObj.label, backTo: "/(app)/waiter" } });
               }}
             >
               <View>

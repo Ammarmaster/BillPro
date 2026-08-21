@@ -61,7 +61,7 @@ export default function Billing() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
-  const { orderId, tableNumber } = useLocalSearchParams<{ orderId?: string; tableNumber?: string }>();
+  const { orderId, tableNumber, backTo } = useLocalSearchParams<{ orderId?: string; tableNumber?: string; backTo?: string }>();
 
   // Synchronous cache lookup helper
   const computeInitialState = () => {
@@ -427,7 +427,20 @@ export default function Billing() {
         
         {/* Header Bar matching Image 2 & 3 */}
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} testID="billing-back-btn" hitSlop={12}>
+          <Pressable 
+            onPress={() => {
+              if (backTo) {
+                router.replace(backTo as any);
+              } else if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/(app)/waiter");
+              }
+            }} 
+            style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} 
+            testID="billing-back-btn" 
+            hitSlop={12}
+          >
             <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
           </Pressable>
           <View style={{ flex: 1, marginLeft: spacing.sm }}>
