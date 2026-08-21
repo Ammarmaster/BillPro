@@ -9,7 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/context/ThemeContext";
 import { exportAnalyticsPDF, exportAnalyticsExcel, exportAnalyticsDocx } from "@/src/lib/exportAnalytics";
-import { spacing } from "@/src/theme";
+import { spacing, radius } from "@/src/theme";
 
 export default function Analytics() {
   const insets = useSafeAreaInsets();
@@ -198,6 +198,39 @@ export default function Analytics() {
       setExportModal(false);
     }
   };
+
+  const showLock = !api.hasFeature("analytics");
+
+  if (showLock) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
+        <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]}>
+          <View style={styles.header}>
+            <Pressable onPress={handleBack} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
+            </Pressable>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={[styles.title, { color: theme.onSurface }]}>Sales Analytics</Text>
+            </View>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <View style={styles.lockContainer}>
+            <Ionicons name="bar-chart-outline" size={64} color="#FF5E2B" />
+            <Text style={[styles.lockTitle, { color: theme.onSurface }]}>Sales Analytics</Text>
+            <Text style={[styles.lockDescription, { color: theme.onSurfaceSecondary }]}>
+              Track daily, weekly, monthly and yearly{"\n"}
+              restaurant performance with Growth.
+            </Text>
+            <Pressable style={styles.upgradeBtn} onPress={() => router.push("/(app)/subscribe")}>
+              <Text style={styles.upgradeBtnText}>Upgrade to Growth</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -567,4 +600,9 @@ const styles = StyleSheet.create({
 
   cancelBtn: { paddingVertical: 14, alignItems: "center" },
   cancelBtnText: { color: "#64748B", fontWeight: "800", fontSize: 14 },
+  lockContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xxl, gap: spacing.lg, textAlign: "center" },
+  lockTitle: { fontSize: 20, fontWeight: "900", textAlign: "center" },
+  lockDescription: { fontSize: 14, fontWeight: "500", textAlign: "center", lineHeight: 20, paddingHorizontal: spacing.md },
+  upgradeBtn: { backgroundColor: "#FF5E2B", paddingHorizontal: 24, paddingVertical: 14, borderRadius: radius.lg, marginTop: spacing.md },
+  upgradeBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
 });

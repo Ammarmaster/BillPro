@@ -45,6 +45,34 @@ export default function StaffScreen() {
 
   const del = async (id: string) => { try { await api.deleteWaiter(id); await load(); } catch (e: any) { setErr(e.message); } };
 
+  const showLock = !api.hasFeature("staff_management");
+
+  if (showLock) {
+    return (
+      <View style={[styles.wrap, { paddingTop: insets.top }]} testID="staff-screen">
+        <View style={styles.header}>
+          <Pressable onPress={() => router.push("/(app)/more")} testID="staff-back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
+          </Pressable>
+          <Text style={styles.title}>Waiters</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <View style={styles.lockContainer}>
+          <Ionicons name="lock-closed" size={64} color="#FF5E2B" />
+          <Text style={[styles.lockTitle, { color: colors.onSurface }]}>Manage Your Team</Text>
+          <Text style={[styles.lockDescription, { color: colors.onSurfaceSecondary }]}>
+            Starter is designed for owner-only operation.{"\n\n"}
+            Upgrade to Growth to add up to 4 staff members and keep your restaurant synchronized across devices.
+          </Text>
+          <Pressable style={styles.upgradeBtn} onPress={() => router.push("/(app)/subscribe")}>
+            <Text style={styles.upgradeBtnText}>Upgrade to Growth</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="staff-screen">
       <View style={styles.header}>
@@ -161,4 +189,9 @@ const styles = StyleSheet.create({
   ghostBtnText: { color: colors.onSurface, fontWeight: "600" },
   primaryBtn: { flex: 1, paddingVertical: 14, borderRadius: radius.md, alignItems: "center", backgroundColor: colors.brand },
   primaryText: { color: colors.onBrand, fontWeight: "700" },
+  lockContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xxl, gap: spacing.lg, textAlign: "center" },
+  lockTitle: { fontSize: 20, fontWeight: "900", textAlign: "center" },
+  lockDescription: { fontSize: 14, fontWeight: "500", textAlign: "center", lineHeight: 20, paddingHorizontal: spacing.md },
+  upgradeBtn: { backgroundColor: "#FF5E2B", paddingHorizontal: 24, paddingVertical: 14, borderRadius: radius.lg, marginTop: spacing.md },
+  upgradeBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
 });

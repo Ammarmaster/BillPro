@@ -1274,10 +1274,16 @@ async def create_waiter(payload: WaiterIn, user: dict = Depends(require_roles("o
     current_waiters = await db.users.count_documents({"tenant_id": tid, "role": "waiter"})
     if current_waiters >= limits["staff_limit"]:
         plan_display = limits["plan"].capitalize()
-        raise HTTPException(
-            status_code=403,
-            detail=f"You've reached your {plan_display} plan limit of {limits['staff_limit']} staff. Upgrade to add more staff."
-        )
+        if limits["staff_limit"] == 0:
+            raise HTTPException(
+                status_code=403,
+                detail="Starter allows owner-only access. Upgrade to Growth to add staff."
+            )
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You've reached your {plan_display} plan limit of {limits['staff_limit']} staff. Upgrade to Pro to add more staff."
+            )
 
     if not payload.pin.isdigit():
         raise HTTPException(status_code=400, detail="PIN must be digits")
@@ -3106,10 +3112,10 @@ async def get_tenant_plan_limits(tid: str) -> dict:
         elif "pro" in plan_id.lower():
             plan_base = "pro"
 
-    # Starter: 1 waiter limit (2 users total: Owner + 1 Staff)
+    # Starter: 0 waiters limit (Owner only)
     # Growth: 4 waiters limit (5 users total: Owner + 4 Staff)
     # Pro: 14 waiters limit (15 users total: Owner + 14 Staff)
-    staff_limit = 1
+    staff_limit = 0
     if plan_base == "growth":
         staff_limit = 4
     elif plan_base == "pro":
@@ -3836,15 +3842,15 @@ async def seed_super_admin():
     # Seed default subscription plans idempotently
     defaults = [
         {"id": "STARTER_MONTHLY", "name": "Starter", "price": 299.0, "interval": "month", "valid_days": 30,
-         "features": ["Owner + 1 staff", "Unlimited bills", "Unlimited menu items", "Table CRUD", "Menu CRUD", "Orders", "Offline/local-first billing", "Thermal printing", "GST billing", "Basic reports"]},
+         "features": ["Owner account", "Basic billing", "Menu CRUD", "Table CRUD", "Basic order creation", "Cloud data backup", "Local-first billing", "Offline bill generation", "Thermal printing", "GST billing", "Logo on bill", "Bill reprint", "Basic settings", "Light/Dark mode", "Password reset"]},
         {"id": "STARTER_YEARLY", "name": "Starter", "price": 2999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Starter Monthly", "Save ₹589 annually"]},
         {"id": "GROWTH_MONTHLY", "name": "Growth", "price": 599.0, "interval": "month", "valid_days": 30,
-         "features": ["Owner + 4 staff", "Everything in Starter", "Advanced analytics", "Inventory management", "Expenses", "AI Photo → Menu"]},
+         "features": ["Everything in Starter", "Up to 5 users total (Owner + 4 staff)", "Staff management & roles", "Multi-device realtime sync", "Background & offline-first sync", "Role-based notifications", "Sales Analytics Dashboard", "Inventory management & alerts", "Expense tracking", "AI Photo → Menu"]},
         {"id": "GROWTH_YEARLY", "name": "Growth", "price": 5999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Growth Monthly", "Save ₹1,189 annually"]},
         {"id": "PRO_MONTHLY", "name": "Pro", "price": 999.0, "interval": "month", "valid_days": 30,
-         "features": ["Owner + 14 staff", "Everything in Growth", "QR Web Menu", "Customer self-ordering", "Waiter QR confirmation", "Custom permissions", "Audit logs"]},
+         "features": ["Everything in Growth", "Up to 15 users total (Owner + 14 staff)", "Customer QR Web Menu", "Customer self-ordering", "Table QR codes", "Waiter QR confirmation", "Custom permissions", "Audit logs", "Advanced AI features", "API & Webhook integrations"]},
         {"id": "PRO_YEARLY", "name": "Pro", "price": 9999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Pro Monthly", "Save ₹1,989 annually"]},
     ]

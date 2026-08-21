@@ -535,8 +535,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
   }
 
   const isLocalFirstMutation = !isGet && (
-    path === "/orders" ||
-    path.startsWith("/orders/") ||
+    (path === "/orders" || (path.startsWith("/orders/") && !path.startsWith("/orders/qr/"))) ||
     path === "/bills" ||
     path.startsWith("/bills/") ||
     path === "/categories" ||
@@ -747,8 +746,18 @@ export const api = {
       return o;
     });
     
+    // Instantly update dashboard summary in cache
+    const summary = memoryCache["/dashboard/summary"];
+    if (summary) {
+      summary.revenue_today = Number((Number(summary.revenue_today || 0) + Number(res.total || 0)).toFixed(2));
+      summary.revenue_total = Number((Number(summary.revenue_total || 0) + Number(res.total || 0)).toFixed(2));
+      summary.orders_total = (summary.orders_total || 0) + 1;
+      summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
+      memoryCache["/dashboard/summary"] = { ...summary };
+      notifyCacheUpdate("/dashboard/summary", memoryCache["/dashboard/summary"]);
+    }
+
     clearCachePrefix("/tables");
-    clearCachePrefix("/dashboard/summary");
     return res;
   },
   settleTable: async (tableNumber: string, paymentMethod = "UPI") => {
@@ -760,8 +769,19 @@ export const api = {
       }
       return o;
     });
+
+    // Instantly update dashboard summary in cache
+    const summary = memoryCache["/dashboard/summary"];
+    if (summary) {
+      summary.revenue_today = Number((Number(summary.revenue_today || 0) + Number(res.total || 0)).toFixed(2));
+      summary.revenue_total = Number((Number(summary.revenue_total || 0) + Number(res.total || 0)).toFixed(2));
+      summary.orders_total = (summary.orders_total || 0) + 1;
+      summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
+      memoryCache["/dashboard/summary"] = { ...summary };
+      notifyCacheUpdate("/dashboard/summary", memoryCache["/dashboard/summary"]);
+    }
+
     clearCachePrefix("/tables");
-    clearCachePrefix("/dashboard/summary");
     clearCachePrefix("/bills");
     return res;
   },
@@ -930,16 +950,24 @@ export const api = {
     const sub = memoryCache["/subscriptions/mine"];
     if (!sub) return false;
     if (sub.status === "active") {
-      const features = sub.limits?.features;
-      if (features) {
-        return !!features[featureName];
-      }
       const plan = String(sub.plan_id).toLowerCase();
-      if (plan.includes("pro")) return true;
-      if (plan.includes("growth")) {
-        return !["qr_web_menu", "customer_ordering", "waiter_qr_confirmation", "advanced_permissions", "audit_logs", "api_access"].includes(featureName);
+      if (plan.includes("pro")) {
+        return [
+          "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup",
+          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "inventory", "expenses", "ai_menu",
+          "qr_web_menu", "customer_ordering", "table_qr", "waiter_qr_confirmation", "advanced_permissions", "audit_logs", "advanced_ai", "api_integrations"
+        ].includes(featureName);
       }
-      return ["billing", "menu_crud", "table_crud", "offline_mode", "thermal_printing", "basic_reports"].includes(featureName);
+      if (plan.includes("growth")) {
+        return [
+          "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup",
+          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "inventory", "expenses", "ai_menu"
+        ].includes(featureName);
+      }
+      // Starter
+      return [
+        "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup"
+      ].includes(featureName);
     }
     return false;
   },

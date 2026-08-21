@@ -394,33 +394,98 @@ export default function Subscribe() {
 
           {/* PLAN COMPARISON MATRIX */}
           <Text style={[styles.matrixTitle, { color: theme.onSurface }]}>Compare all features</Text>
-          <View style={[styles.matrixContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-            <View style={styles.matrixRowHeader}>
-              <Text style={[styles.matrixLabelCol, { color: theme.onSurfaceTertiary }]}>Feature</Text>
-              <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Starter</Text>
-              <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Growth</Text>
-              <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Pro</Text>
-            </View>
-            {[
-              { name: "Max Users", starter: "2", growth: "5", pro: "15" },
-              { name: "GST Billing", starter: "✓", growth: "✓", pro: "✓" },
-              { name: "Offline Mode", starter: "✓", growth: "✓", pro: "✓" },
-              { name: "Thermal Print", starter: "✓", growth: "✓", pro: "✓" },
-              { name: "Reports", starter: "Basic", growth: "Advanced", pro: "Advanced" },
-              { name: "Inventory", starter: "✗", growth: "✓", pro: "✓" },
-              { name: "AI Photo Menu", starter: "Limited", growth: "✓", pro: "Advanced" },
-              { name: "QR Web Menu", starter: "✗", growth: "✗", pro: "✓" },
-              { name: "Self-Ordering", starter: "✗", growth: "✗", pro: "✓" },
-              { name: "Audit Logs", starter: "✗", growth: "✗", pro: "✓" },
-            ].map((row, idx) => (
-              <View key={idx} style={[styles.matrixRow, { borderBottomColor: theme.border }]}>
-                <Text style={[styles.matrixLabelCol, { color: theme.onSurface }]}>{row.name}</Text>
-                <Text style={[styles.matrixValueCol, { color: row.starter === "✗" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.starter}</Text>
-                <Text style={[styles.matrixValueCol, { color: row.growth === "✗" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.growth}</Text>
-                <Text style={[styles.matrixValueCol, { color: row.pro === "✗" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.pro}</Text>
+          
+          {[
+            {
+              category: "Billing",
+              features: [
+                { name: "Billing", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "Menu CRUD", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "Tables", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "Thermal printing", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "GST", starter: "✓", growth: "✓", pro: "✓" },
+              ]
+            },
+            {
+              category: "Users",
+              features: [
+                { name: "Owner", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "Staff", starter: "❌", growth: "4 additional", pro: "14 additional" },
+                { name: "Staff management", starter: "❌", growth: "✓", pro: "✓" },
+                { name: "Advanced permissions", starter: "❌", growth: "❌", pro: "✓" },
+              ]
+            },
+            {
+              category: "Operations",
+              features: [
+                { name: "Offline billing", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "Cloud backup", starter: "✓", growth: "✓", pro: "✓" },
+                { name: "Realtime sync", starter: "❌", growth: "✓", pro: "✓" },
+                { name: "Notifications", starter: "❌", growth: "✓", pro: "Advanced" },
+              ]
+            },
+            {
+              category: "Analytics",
+              features: [
+                { name: "Basic sales", starter: "❌", growth: "✓", pro: "✓" },
+                { name: "Advanced analytics", starter: "❌", growth: "✓", pro: "✓" },
+                { name: "Advanced reports", starter: "❌", growth: "✓", pro: "✓" },
+              ]
+            },
+            {
+              category: "Inventory",
+              features: [
+                { name: "Inventory", starter: "❌", growth: "✓", pro: "✓" },
+                { name: "Advanced inventory", starter: "❌", growth: "❌", pro: "✓" },
+              ]
+            },
+            {
+              category: "AI",
+              features: [
+                { name: "AI Photo → Menu", starter: "❌", growth: "✓", pro: "✓" },
+                { name: "Advanced AI", starter: "❌", growth: "❌", pro: "✓" },
+              ]
+            },
+            {
+              category: "QR Ordering",
+              features: [
+                { name: "QR Web Menu", starter: "❌", growth: "❌", pro: "✓" },
+                { name: "Customer ordering", starter: "❌", growth: "❌", pro: "✓" },
+                { name: "Table QR", starter: "❌", growth: "❌", pro: "✓" },
+                { name: "Waiter QR confirmation", starter: "❌", growth: "❌", pro: "✓" },
+              ]
+            },
+            {
+              category: "Advanced",
+              features: [
+                { name: "Audit logs", starter: "❌", growth: "❌", pro: "✓" },
+                { name: "API", starter: "❌", growth: "❌", pro: "✓" },
+                { name: "Integrations", starter: "❌", growth: "❌", pro: "✓" },
+              ]
+            }
+          ].map((catGroup, catIdx) => (
+            <View key={catIdx} style={{ marginBottom: spacing.md }}>
+              <Text style={{ color: colors.brand, marginTop: spacing.sm, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 }}>
+                {catGroup.category.toUpperCase()}
+              </Text>
+              <View style={[styles.matrixContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <View style={styles.matrixRowHeader}>
+                  <Text style={[styles.matrixLabelCol, { color: theme.onSurfaceTertiary }]}>Feature</Text>
+                  <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Starter</Text>
+                  <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Growth</Text>
+                  <Text style={[styles.matrixValueCol, { color: theme.onSurfaceTertiary }]}>Pro</Text>
+                </View>
+                {catGroup.features.map((row, idx) => (
+                  <View key={idx} style={[styles.matrixRow, { borderBottomColor: theme.border }]}>
+                    <Text style={[styles.matrixLabelCol, { color: theme.onSurface }]}>{row.name}</Text>
+                    <Text style={[styles.matrixValueCol, { color: row.starter === "❌" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.starter}</Text>
+                    <Text style={[styles.matrixValueCol, { color: row.growth === "❌" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.growth}</Text>
+                    <Text style={[styles.matrixValueCol, { color: row.pro === "❌" ? "#EF4444" : theme.onSurfaceSecondary }]}>{row.pro}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            </View>
+          ))}
 
           {/* PAYMENT HISTORY */}
           {sub && sub.payment_history && sub.payment_history.length > 0 && (

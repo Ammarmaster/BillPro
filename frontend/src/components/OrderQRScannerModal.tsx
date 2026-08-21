@@ -293,7 +293,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
 
               <View style={[styles.previewItemsCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
                 <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={true}>
-                  {previewOrder.items.map((it: any, idx: number) => (
+                  {(previewOrder.items || []).map((it: any, idx: number) => (
                     <View key={idx} style={styles.previewItemRow}>
                       <Text style={styles.previewItemQty}>{it.quantity}×</Text>
                       <Text style={[styles.previewItemName, { color: theme.onSurface }]}>{it.name}</Text>

@@ -577,7 +577,20 @@ function OwnerDashboard() {
             <View style={{ flexDirection: "row", gap: 10, marginVertical: spacing.md }}>
               <Pressable
                 style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}
-                onPress={() => setShowScanner(true)}
+                onPress={() => {
+                  if (api.hasFeature("qr_web_menu")) {
+                    setShowScanner(true);
+                  } else {
+                    Alert.alert(
+                      "🔒 Customer QR Ordering",
+                      "Let customers scan their table, browse your menu and place orders directly from their phones.\n\nAvailable with Pro.",
+                      [
+                        { text: "Later", style: "cancel" },
+                        { text: "Upgrade to Pro", onPress: () => router.push("/(app)/subscribe") }
+                      ]
+                    );
+                  }
+                }}
               >
                 <Ionicons name="qr-code-outline" size={18} color="#635BFF" />
                 <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Web Order</Text>
