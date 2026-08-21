@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Switch, SafeAreaView, StatusBar, Alert,
 } from "react-native";
@@ -8,12 +9,14 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/lib/api";
 import { radius, spacing } from "@/src/theme";
+import FeatureLockModal from "@/src/components/FeatureLockModal";
 
 export default function More() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { isDark, toggleTheme, theme } = useTheme();
   const router = useRouter();
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -207,14 +210,7 @@ export default function More() {
                 if (api.hasFeature("advanced_reports")) {
                   router.push("/(app)/analytics");
                 } else {
-                  Alert.alert(
-                    "🔒 Upgrade Required", 
-                    "Sales Analytics is a Growth/Pro feature. Upgrade your subscription plan to access it.",
-                    [
-                      { text: "Later", style: "cancel" },
-                      { text: "View Plans", onPress: () => router.push("/(app)/subscribe") }
-                    ]
-                  );
+                  setShowUpgradeModal(true);
                 }
               }} 
               testID="manage-analytics-btn"
@@ -242,6 +238,17 @@ export default function More() {
 
         </ScrollView>
       </View>
+      <FeatureLockModal
+        visible={showUpgradeModal}
+        title="Sales Analytics"
+        description="Track daily, weekly, monthly and yearly restaurant performance with Growth."
+        requiredPlan="Growth"
+        onUpgrade={() => {
+          setShowUpgradeModal(false);
+          router.push("/(app)/subscribe");
+        }}
+        onCancel={() => setShowUpgradeModal(false)}
+      />
     </SafeAreaView>
   );
 }

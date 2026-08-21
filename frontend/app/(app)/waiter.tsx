@@ -326,6 +326,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       };
       
       // Optimistic State Updates (0ms UI latency)
+      api.injectCachedOrder(localOrder);
       if (isEdit) {
         setOrders(prev => prev.map(o => o.id === tempId ? localOrder : o));
       } else {
@@ -346,6 +347,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       // Dispatch backend sync in background without blocking UI
       if (isEdit) {
         api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "", customer_name: guestName }).then(async realOrder => {
+          api.setTempIdMapping(tempId, realOrder.id);
+          api.updateCachedOrder(tempId, realOrder);
           setActiveOrder(realOrder);
           setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
           const settings = await getPrinterSettings("kitchen");
@@ -357,6 +360,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
         });
       } else {
         api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "", session_id: sessId, customer_name: guestName }).then(async realOrder => {
+          api.setTempIdMapping(tempId, realOrder.id);
+          api.updateCachedOrder(tempId, realOrder);
           setActiveOrder(realOrder);
           setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
           const settings = await getPrinterSettings("kitchen");

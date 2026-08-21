@@ -18,20 +18,24 @@ export default function AppLayout() {
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/");
-    } else if (!loading && user && user.role === "owner") {
-      if (pathname && pathname.includes("subscribe")) {
-        return;
-      }
+    } else if (!loading && user) {
       api.mySubscription().then(sub => {
-        if (!sub) {
-          router.replace("/demo-billing");
-        } else if (sub.status === "expired" || sub.status !== "active") {
-          router.replace("/(app)/subscribe");
-        } else if (!user.tenant_id) {
-          router.replace("/onboarding");
+        if (user.role === "owner") {
+          if (pathname && pathname.includes("subscribe")) {
+            return;
+          }
+          if (!sub) {
+            router.replace("/demo-billing");
+          } else if (sub.status === "expired" || sub.status !== "active") {
+            router.replace("/(app)/subscribe");
+          } else if (!user.tenant_id) {
+            router.replace("/onboarding");
+          }
         }
       }).catch(() => {
-        router.replace("/(app)/subscribe");
+        if (user.role === "owner") {
+          router.replace("/(app)/subscribe");
+        }
       });
     }
   }, [user, loading, router, pathname]);

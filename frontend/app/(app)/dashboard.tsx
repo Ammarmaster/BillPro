@@ -12,6 +12,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
+import FeatureLockModal from "@/src/components/FeatureLockModal";
 
 const formatAmount = (num: number, detailed: boolean = false) => {
   if (detailed) return `₹${num.toLocaleString("en-IN")}`;
@@ -374,6 +375,7 @@ function OwnerDashboard() {
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingSync, setPendingSync] = useState(0);
+  const [showProLockModal, setShowProLockModal] = useState(false);
 
   const hasTenant = !!user?.tenant_id;
 
@@ -581,14 +583,7 @@ function OwnerDashboard() {
                   if (api.hasFeature("qr_web_menu")) {
                     setShowScanner(true);
                   } else {
-                    Alert.alert(
-                      "🔒 Customer QR Ordering",
-                      "Let customers scan their table, browse your menu and place orders directly from their phones.\n\nAvailable with Pro.",
-                      [
-                        { text: "Later", style: "cancel" },
-                        { text: "Upgrade to Pro", onPress: () => router.push("/(app)/subscribe") }
-                      ]
-                    );
+                    setShowProLockModal(true);
                   }
                 }}
               >
@@ -846,6 +841,18 @@ function OwnerDashboard() {
         visible={showScanner}
         onClose={() => setShowScanner(false)}
         onScanSuccess={handleScanImport}
+      />
+
+      <FeatureLockModal
+        visible={showProLockModal}
+        title="Customer QR Ordering"
+        description="Let customers scan their table, browse your menu and place orders directly from their phones."
+        requiredPlan="Pro"
+        onUpgrade={() => {
+          setShowProLockModal(false);
+          router.push("/(app)/subscribe");
+        }}
+        onCancel={() => setShowProLockModal(false)}
       />
     </View>
   );

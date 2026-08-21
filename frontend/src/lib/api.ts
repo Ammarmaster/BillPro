@@ -925,19 +925,27 @@ export const api = {
   },
   injectCachedOrder: (order: any) => {
     const list = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = [order, ...list.filter((o: any) => o.id !== order.id)];
+    const updated = [order, ...list.filter((o: any) => o.id !== order.id)];
+    memoryCache["/orders"] = updated;
+    notifyCacheUpdate("/orders", updated);
   },
   injectCachedBill: (bill: any) => {
     const list = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = [bill, ...list.filter((b: any) => b.id !== bill.id)];
+    const updated = [bill, ...list.filter((b: any) => b.id !== bill.id)];
+    memoryCache["/bills"] = updated;
+    notifyCacheUpdate("/bills", updated);
   },
   updateCachedOrder: (id: string, realOrder: any) => {
     const list = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = list.map((o: any) => o.id === id ? realOrder : o);
+    const updated = list.map((o: any) => o.id === id ? realOrder : o);
+    memoryCache["/orders"] = updated;
+    notifyCacheUpdate("/orders", updated);
   },
   updateCachedBill: (id: string, realBill: any) => {
     const list = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = list.map((b: any) => b.id === id ? realBill : b);
+    const updated = list.map((b: any) => b.id === id ? realBill : b);
+    memoryCache["/bills"] = updated;
+    notifyCacheUpdate("/bills", updated);
   },
   setCachedOrders: (orders: any[]) => {
     memoryCache["/orders"] = orders;
