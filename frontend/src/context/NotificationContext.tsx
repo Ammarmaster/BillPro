@@ -110,6 +110,8 @@ const getRoleDefaultPrefs = (role: string | undefined): NotificationPreferences 
   };
 };
 
+const processedEventIds = new Set<string>();
+
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -279,6 +281,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
       }
+      // Re-hydrate local caches with a silent refresh on reconnection to catch up on any missed events
+      api.listTables().catch(() => {});
+      api.listOrders().catch(() => {});
+      api.listBills().catch(() => {});
+      api.dashboardSummary().catch(() => {});
+      
       // Keep connection active with 20s heartbeat ping
       pingInterval = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
@@ -353,19 +361,87 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const handleIncomingNotification = (notif: Notification) => {
     const currentPrefs = preferencesRef.current;
     
-    // Invalidate stale in-memory cache so next read gets fresh data
-    clearCachePrefix("/orders");
-    clearCachePrefix("/tables");
-    clearCachePrefix("/dashboard/summary");
-    clearCachePrefix("/bills");
-    clearCachePrefix("/menu-items");
+    // Deduplication check to prevent duplicate order / billing / UI alerts
+    if (processedEventIds.has(notif.id)) {
+      console.log("[WS] Ignored duplicate event:", notif.id);
+      return;
+    }
+    processedEventIds.add(notif.id);
+    if (processedEventIds.size > 200) {
+      const first = processedEventIds.values().next().value;
+      if (first !== undefined) processedEventIds.delete(first);
+    }
 
-    // Perform quiet background fetch of updated data to populate local cache reactively
-    api.listTables().catch(() => {});
-    api.listMenu().catch(() => {});
-    api.listOrders().catch(() => {});
-    api.dashboardSummary().catch(() => {});
-    api.listBills().catch(() => {});
+    // Direct Real-Time Cache Updates (0ms latency, NO full API refresh)
+    const data = notif.data;
+    if (data) {
+      const eventName = data.event || notif.category;
+      
+      // 1. Inject order directly if present
+      if (data.order) {
+        api.injectCachedOrder(data.order);
+        
+        // Mark corresponding table status as occupied instantly
+        if (data.table_number) {
+          const tList = api.getCachedTables() || [];
+          const updated = tList.map((t: any) => 
+            String(t.label).toLowerCase().trim() === String(data.table_number).toLowerCase().trim()
+              ? { ...t, status: "occupied" }
+              : t
+          );
+          api.setCachedTables(updated);
+          api.notifyCacheUpdate("/tables", updated);
+        }
+      }
+
+      // 2. Inject bill directly if present
+      if (data.bill) {
+        api.injectCachedBill(data.bill);
+      }
+
+      // 3. Handle order status updates in cache directly
+      if (data.order_id && data.status) {
+        api.updateOrderStatusInCache(data.order_id, data.status);
+        
+        // Also update table to Available if no active orders remain
+        if (data.active_orders_remaining === 0 && data.table_number) {
+          const tList = api.getCachedTables() || [];
+          const updated = tList.map((t: any) => 
+            String(t.label).toLowerCase().trim() === String(data.table_number).toLowerCase().trim()
+              ? { ...t, status: "available" }
+              : t
+          );
+          api.setCachedTables(updated);
+          api.notifyCacheUpdate("/tables", updated);
+        }
+      }
+
+      // 4. Settle tables in cache directly
+      if (eventName === "TABLE_SETTLED") {
+        api.settleTableInCache(data.table_number);
+      }
+
+      // 5. Instantly increment dashboard totals on payment / creation
+      if (eventName === "order.created") {
+        const summary = api.getCachedSummary();
+        if (summary) {
+          summary.total_orders = (summary.total_orders || 0) + 1;
+          summary.active_tables_count = (summary.active_tables_count || 0) + 1;
+          api.setCachedSummary(summary);
+          api.notifyCacheUpdate("/dashboard/summary", summary);
+        }
+      }
+      if (data.status === "served" || data.status === "paid") {
+        const summary = api.getCachedSummary();
+        if (summary) {
+          if (data.total) {
+            summary.total_sales = (summary.total_sales || 0) + data.total;
+          }
+          api.setCachedSummary(summary);
+          api.notifyCacheUpdate("/dashboard/summary", summary);
+        }
+      }
+    }
 
     // Notify all active screen subscribers immediately
     listeners.current.forEach(fn => {

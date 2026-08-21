@@ -950,8 +950,41 @@ export const api = {
   setCachedOrders: (orders: any[]) => {
     memoryCache["/orders"] = orders;
   },
+  setCachedTables: (tables: any[]) => {
+    memoryCache["/tables"] = tables;
+  },
   setCachedSummary: (summary: any) => {
     memoryCache["/dashboard/summary"] = summary;
+  },
+  updateOrderStatusInCache: (orderId: string, status: string) => {
+    const list = memoryCache["/orders"] || [];
+    const resolvedId = tempIdMap[orderId] || orderId;
+    const updated = list.map((o: any) => o.id === resolvedId ? { ...o, status } : o);
+    memoryCache["/orders"] = updated;
+    notifyCacheUpdate("/orders", updated);
+  },
+  settleTableInCache: (tableNumber: string) => {
+    const list = memoryCache["/orders"] || [];
+    const updated = list.map((o: any) => 
+      String(o.table_number).toLowerCase().trim() === String(tableNumber).toLowerCase().trim()
+        ? { ...o, status: "served" }
+        : o
+    );
+    memoryCache["/orders"] = updated;
+    notifyCacheUpdate("/orders", updated);
+    
+    // Also mark bills as paid
+    const billsList = memoryCache["/bills"] || [];
+    const updatedBills = billsList.map((b: any) => 
+      updated.some((o: any) => o.id === b.order_id && o.status === "served")
+        ? { ...b, status: "paid" }
+        : b
+    );
+    memoryCache["/bills"] = updatedBills;
+    notifyCacheUpdate("/bills", updatedBills);
+  },
+  notifyCacheUpdate: (path: string, data: any) => {
+    notifyCacheUpdate(path, data);
   },
   hasFeature: (featureName: string): boolean => {
     const sub = memoryCache["/subscriptions/mine"];

@@ -1368,12 +1368,28 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
     }
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
+    order_payload = {
+        "event": "order.created",
+        "order_id": doc["id"],
+        "table_number": doc.get("table_number", "-"),
+        "customer_name": cust_name,
+        "session_id": sess_id,
+        "order_source": "waiter",
+        "order": doc
+    }
     await notify_tenant(
         tid,
         "kitchen",
         "New KOT Placed",
         f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
-        {"order_id": doc["id"], "table_number": doc.get("table_number", "-"), "customer_name": cust_name, "session_id": sess_id, "order_source": "waiter"}
+        order_payload
+    )
+    await notify_tenant(
+        tid,
+        "waiter",
+        "New KOT Placed",
+        f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
+        order_payload
     )
     return doc
 
@@ -1466,20 +1482,34 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     })
     tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
 
+    updated_order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    bill = await db.bills.find_one({"order_id": oid}, {"_id": 0})
+    event_name = f"order.{payload.status}"
+    status_payload = {
+        "event": event_name,
+        "order_id": oid,
+        "status": payload.status,
+        "table_number": tbl_num,
+        "active_orders_remaining": remaining,
+        "table_status": tbl_status,
+        "total": float(order.get("subtotal", 0.0)),
+        "order": updated_order,
+        "bill": bill
+    }
     await notify_tenant(
         tid,
         "payment" if payload.status == "served" else "waiter",
         "Order Status Updated",
         f"Order for Table {tbl_num} is now {payload.status.replace('_', ' ').upper()}",
-        {
-            "order_id": oid,
-            "status": payload.status,
-            "table_number": tbl_num,
-            "active_orders_remaining": remaining,
-            "table_status": tbl_status,
-            "total": float(order.get("subtotal", 0.0)),
-            "event": "ORDER_SERVED" if payload.status == "served" else "ORDER_UPDATED"
-        }
+        status_payload
+    )
+    # Also notify kitchen
+    await notify_tenant(
+        tid,
+        "kitchen",
+        "Order Status Updated",
+        f"Order for Table {tbl_num} is now {payload.status.replace('_', ' ').upper()}",
+        status_payload
     )
     return {
         **order,
@@ -1534,14 +1564,28 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
                 "upi_url": upi_url
             }}
         )
+    updated_order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    updated_payload = {
+        "event": "order.updated",
+        "order_id": oid,
+        "table_number": order.get("table_number", "-"),
+        "order": updated_order
+    }
     await notify_tenant(
         tid,
         "kitchen",
         "KOT Order Modified",
         f"Items updated for Table {order.get('table_number', '-')}",
-        {"order_id": oid, "table_number": order.get("table_number", "-")}
+        updated_payload
     )
-    return await db.orders.find_one({"id": oid}, {"_id": 0})
+    await notify_tenant(
+        tid,
+        "waiter",
+        "KOT Order Modified",
+        f"Items updated for Table {order.get('table_number', '-')}",
+        updated_payload
+    )
+    return updated_order
 
 
 # ---------- public guest api ----------
@@ -1693,22 +1737,28 @@ async def public_create_order(payload: PublicOrderIn):
         }
         await db.bills.insert_one(bill_doc)
     
-        await notify_tenant(
-            payload.tenant_id,
-            "kitchen",
-            "New Customer Order",
-            f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
-            {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
-        )
-        
-        await notify_tenant(
-            payload.tenant_id,
-            "waiter",
-            "New Customer Order",
-            f"New order for Table {payload.table_number or '-'} ({cust_name})",
-            {"order_id": order_id, "table_number": payload.table_number or "-", "customer_name": cust_name, "session_id": sess_id}
-        )
-    
+    cust_payload = {
+        "event": "order.created",
+        "order_id": order_id,
+        "table_number": payload.table_number or "-",
+        "customer_name": cust_name,
+        "session_id": sess_id,
+        "order": doc
+    }
+    await notify_tenant(
+        payload.tenant_id,
+        "kitchen",
+        "New Customer Order" if is_online_paid else "Pending QR Order",
+        f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
+        cust_payload
+    )
+    await notify_tenant(
+        payload.tenant_id,
+        "waiter",
+        "New Customer Order" if is_online_paid else "Pending QR Order",
+        f"New order for Table {payload.table_number or '-'} ({cust_name})",
+        cust_payload
+    )
     return doc
 
 
@@ -1774,8 +1824,15 @@ async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(
     updated_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
 
     # Broadcast to Kitchen, Waiter, and Owner Dashboard
-    await notify_tenant(tid, "kitchen", "Order Imported", f"Table {table_num} updated", updated_order)
-    await notify_tenant(tid, "waiter", "Order Imported", f"Table {table_num} updated", updated_order)
+    confirm_payload = {
+        "event": "order.confirmed",
+        "order_id": updated_order["id"],
+        "status": "placed",
+        "table_number": table_num,
+        "order": updated_order
+    }
+    await notify_tenant(tid, "kitchen", "Order Imported", f"Table {table_num} updated", confirm_payload)
+    await notify_tenant(tid, "waiter", "Order Imported", f"Table {table_num} updated", confirm_payload)
 
     return {
         "success": True,
@@ -1957,8 +2014,15 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
 
     updated_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
 
-    await notify_tenant(tid, "kitchen", "Order Confirmed", f"Table {table_num} updated", updated_order)
-    await notify_tenant(tid, "waiter", "Order Confirmed", f"Table {table_num} updated", updated_order)
+    confirm_payload = {
+        "event": "order.confirmed",
+        "order_id": updated_order["id"],
+        "status": "placed",
+        "table_number": table_num,
+        "order": updated_order
+    }
+    await notify_tenant(tid, "kitchen", "Order Confirmed", f"Table {table_num} updated", confirm_payload)
+    await notify_tenant(tid, "waiter", "Order Confirmed", f"Table {table_num} updated", confirm_payload)
 
     res = {
         "success": True,
