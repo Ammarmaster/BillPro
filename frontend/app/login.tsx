@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
   Platform, ActivityIndicator, ScrollView, SafeAreaView, StatusBar,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
@@ -20,6 +20,18 @@ export default function Login() {
   const { theme, isDark } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { resetSuccess } = useLocalSearchParams<{ resetSuccess?: string }>();
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+
+  useEffect(() => {
+    if (resetSuccess === "true") {
+      setShowSuccessBanner(true);
+      const timer = setTimeout(() => {
+        setShowSuccessBanner(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [resetSuccess]);
 
   const submit = async () => {
     setErr(null);
@@ -34,40 +46,50 @@ export default function Login() {
     }
   };
 
-  const forgotStyle = { color: theme.brand, fontSize: 13, fontWeight: "600" as const };
+  const forgotStyle = { color: "#FF5E2B", fontSize: 13, fontWeight: "600" as const };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: theme.surface }]}>
-        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: theme.surface }]} bounces={false} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: "#FF5E2B" }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: "#0D0D0D" }]}>
+        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: "#0D0D0D" }]} bounces={false} showsVerticalScrollIndicator={false}>
           
           {/* Solid Orange Header Section */}
-          <View style={[styles.headerSection, { paddingTop: insets.top + 32, backgroundColor: isDark ? theme.surface : "#FF5E2B" }]}>
+          <View style={[styles.headerSection, { paddingTop: insets.top + 32, backgroundColor: "#FF5E2B" }]}>
             {/* Cutlery Plate Logo box */}
-            <View style={[styles.logoBox, { backgroundColor: isDark ? "rgba(255, 94, 43, 0.2)" : "rgba(255, 255, 255, 0.2)" }]}>
-              <Ionicons name="restaurant" size={34} color={isDark ? "#FF5E2B" : "#FFFFFF"} />
+            <View style={[styles.logoBox, { backgroundColor: "rgba(255, 255, 255, 0.2)" }]}>
+              <Ionicons name="restaurant" size={34} color="#FFFFFF" />
             </View>
-            <Text style={[styles.appTitle, { color: theme.onSurface }]}>ProDevOpz ERP</Text>
-            <Text style={[styles.appSubtitle, { color: theme.onSurfaceSecondary }]}>Restaurant Management Platform</Text>
+            <Text style={styles.appTitle}>ProDevOpz ERP</Text>
+            <Text style={styles.appSubtitle}>Restaurant Management Platform</Text>
           </View>
 
           {/* Dark Bottom Card Section */}
-          <View style={[styles.cardSection, { backgroundColor: theme.surfaceSecondary }]}>
-            <Text style={[styles.welcomeText, { color: theme.onSurface }]}>Welcome back</Text>
-            <Text style={[styles.subtext, { color: theme.onSurfaceSecondary }]}>Sign in to manage your restaurant</Text>
+          <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
+            <Text style={styles.welcomeText}>Welcome back</Text>
+            <Text style={styles.subtext}>Sign in to manage your restaurant</Text>
+
+            {/* Success Banner */}
+            {showSuccessBanner && (
+              <View style={styles.successBanner}>
+                <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" style={{ marginRight: 8 }} />
+                <Text style={styles.successBannerText}>
+                  Password reset successfully. Please log in with your new password.
+                </Text>
+              </View>
+            )}
 
             {/* Email Field */}
             <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Email</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
-                <Ionicons name="mail-outline" size={20} color={theme.onSurfaceTertiary} style={styles.inputIcon} />
+              <Text style={styles.label}>Email</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
+                <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
                 <TextInput
                   value={email}
                   onChangeText={setEmail}
-                  style={[styles.input, { color: theme.onSurface }]}
+                  style={[styles.input, { color: "#FFFFFF" }]}
                   placeholder="owner@yourplace.com"
-                  placeholderTextColor={theme.onSurfaceTertiary}
+                  placeholderTextColor="#64748B"
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -78,15 +100,15 @@ export default function Login() {
 
             {/* Password Field */}
             <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Password</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
-                <Ionicons name="lock-closed-outline" size={20} color={theme.onSurfaceTertiary} style={styles.inputIcon} />
+              <Text style={styles.label}>Password</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
+                <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
                 <TextInput
                   value={password}
                   onChangeText={setPassword}
-                  style={[styles.input, { paddingRight: 44, color: theme.onSurface }]}
+                  style={[styles.input, { paddingRight: 44, color: "#FFFFFF" }]}
                   placeholder="••••••••"
-                  placeholderTextColor={theme.onSurfaceTertiary}
+                  placeholderTextColor="#64748B"
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   testID="login-password-input"
@@ -99,7 +121,7 @@ export default function Login() {
                   <Ionicons
                     name={showPassword ? "eye-off-outline" : "eye-outline"}
                     size={20}
-                    color={theme.onSurfaceTertiary}
+                    color="#94A3B8"
                   />
                 </Pressable>
               </View>
@@ -111,7 +133,7 @@ export default function Login() {
 
             {/* Error Message */}
             {err && (
-              <View style={[styles.errBox, { backgroundColor: isDark ? "rgba(239, 68, 68, 0.1)" : "rgba(239, 68, 68, 0.1)" }]}>
+              <View style={[styles.errBox, { backgroundColor: "rgba(239, 68, 68, 0.1)", borderColor: "rgba(239, 68, 68, 0.2)", borderWidth: 1 }]}>
                 <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
                 <Text style={styles.errText} testID="login-error">{err}</Text>
               </View>
@@ -119,7 +141,7 @@ export default function Login() {
 
             {/* Submit Button */}
             <Pressable
-              style={({ pressed }) => [styles.submitBtn, { backgroundColor: theme.brand }, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
+              style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
               onPress={submit}
               disabled={busy}
               testID="login-submit-btn"
@@ -133,13 +155,13 @@ export default function Login() {
 
             {/* Navigation Footers */}
             <Pressable onPress={() => router.push("/register")} testID="login-goto-register" style={styles.footerBtn}>
-              <Text style={[styles.footerText, { color: theme.onSurfaceSecondary }]}>
+              <Text style={styles.footerText}>
                 New restaurant? <Text style={styles.footerAccent}>Create account</Text>
               </Text>
             </Pressable>
 
             <Pressable onPress={() => router.push("/staff-login")} style={styles.staffBtn}>
-              <Text style={[styles.staffText, { color: theme.onSurfaceSecondary }]}>
+              <Text style={styles.staffText}>
                 Are you an employee? <Text style={styles.staffAccent}>Staff PIN Login</Text>
               </Text>
             </Pressable>
@@ -273,5 +295,20 @@ const styles = StyleSheet.create({
   staffAccent: { color: "#FF5E2B", fontWeight: "700" },
 
   forgotBtn: { alignSelf: "flex-end", marginTop: 4, marginBottom: 8 },
-  forgotAccent: { color: "#FF5E2B", fontSize: 13, fontWeight: "600" },
+  successBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: "rgba(16, 185, 129, 0.2)",
+    borderWidth: 1.5,
+    padding: spacing.md,
+    borderRadius: 14,
+    marginBottom: spacing.lg,
+  },
+  successBannerText: {
+    color: "#10B981",
+    fontSize: 13,
+    flex: 1,
+    fontWeight: "600",
+  },
 });
