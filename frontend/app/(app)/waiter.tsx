@@ -62,7 +62,20 @@ export default function WaiterScreen() {
     const timer = setInterval(() => {
       setPendingSync(api.getPendingSyncCount());
     }, 1000);
-    return () => clearInterval(timer);
+
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/categories" && data) setCats(data);
+      if (path === "/menu-items" && data) setItems(data);
+      if (path === "/tables" && data) setTables(data);
+      if (path === "/orders" && data) setOrders(data);
+      if (path === "/bills" && data) setBills(data);
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   // Guest session tracking for multi-customer tables

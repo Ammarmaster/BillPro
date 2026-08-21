@@ -170,6 +170,32 @@ export default function Billing() {
     setBill(initialBill);
   }, [orderId, tableNumber]);
 
+  useEffect(() => {
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/restaurant" && data) setRestaurant(data);
+      if (path === "/orders" || path === "/bills") {
+        const oList = api.getCachedOrders() || [];
+        const bList = api.getCachedBills() || [];
+        if (orderId) {
+          const foundO = oList.find((o: any) => o.id === orderId);
+          if (foundO) setOrder(foundO);
+        } else if (tableNumber) {
+          const activeO = oList.find((o: any) => String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase() && o.status !== "served" && o.status !== "completed");
+          if (activeO) setOrder(activeO);
+        }
+        if (orderId || tableNumber) {
+          const targetOrdId = orderId || (order ? order.id : null);
+          if (targetOrdId) {
+            const foundB = bList.find((b: any) => b.order_id === targetOrdId || (b.order_ids && b.order_ids.includes(targetOrdId)));
+            if (foundB) setBill(foundB);
+          }
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [orderId, tableNumber, order]);
+
   const load = useCallback(async () => {
     setErr(null);
     try {

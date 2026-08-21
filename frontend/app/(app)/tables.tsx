@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Modal, Keyboard,
 } from "react-native";
@@ -16,7 +16,7 @@ export default function TablesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
-  const [tables, setTables] = useState<Table[]>([]);
+  const [tables, setTables] = useState<Table[]>(() => api.getCachedTables() || []);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
@@ -25,6 +25,15 @@ export default function TablesScreen() {
   const [label, setLabel] = useState("");
   const [seats, setSeats] = useState("4");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/tables" && data) setTables(data);
+      if (path === "/restaurant" && data) setTenantId(data.id);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);

@@ -358,6 +358,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     clearCachePrefix("/tables");
     clearCachePrefix("/dashboard/summary");
     clearCachePrefix("/bills");
+    clearCachePrefix("/menu-items");
+
+    // Perform quiet background fetch of updated data to populate local cache reactively
+    api.listTables().catch(() => {});
+    api.listMenu().catch(() => {});
+    api.listOrders().catch(() => {});
+    api.dashboardSummary().catch(() => {});
+    api.listBills().catch(() => {});
 
     // Notify all active screen subscribers immediately
     listeners.current.forEach(fn => {

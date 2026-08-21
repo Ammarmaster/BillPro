@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, Modal,
   ActivityIndicator, FlatList,
@@ -21,8 +21,8 @@ export default function MenuScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark } = useTheme();
-  const [cats, setCats] = useState<Cat[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
+  const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
   const [selCat, setSelCat] = useState<string | "all">("all");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -38,6 +38,14 @@ export default function MenuScreen() {
   const [iCat, setICat] = useState<string>("");
   const [iImg, setIImg] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/categories" && data) setCats(data);
+      if (path === "/menu-items" && data) setItems(data);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);

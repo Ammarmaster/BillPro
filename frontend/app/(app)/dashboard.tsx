@@ -375,11 +375,24 @@ function OwnerDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [pendingSync, setPendingSync] = useState(0);
 
+  const hasTenant = !!user?.tenant_id;
+
   useEffect(() => {
     const timer = setInterval(() => {
       setPendingSync(api.getPendingSyncCount());
     }, 1000);
-    return () => clearInterval(timer);
+
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/restaurant" && data) setRestaurant(data);
+      if (path === "/dashboard/summary" && data) setSummary(data);
+      if (path === "/dashboard/feedback" && data) setFeedbacks(data);
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   // Scanner modal state for Customer Web Order QR handoff
@@ -514,7 +527,7 @@ function OwnerDashboard() {
           </View>
         </View>
 
-        {!restaurant ? (
+        {!hasTenant && !restaurant ? (
           <Pressable style={styles.onboardCard} onPress={() => router.push("/(app)/more")} testID="dashboard-onboard-cta">
             <Ionicons name="storefront" size={28} color={colors.brand} />
             <View style={{ flex: 1 }}>

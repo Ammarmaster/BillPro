@@ -92,7 +92,7 @@ export default function Register() {
           {/* Header Title section */}
           <View style={styles.header}>
             <Text style={styles.title}>Create account</Text>
-            <Text style={styles.subtitle}>Start your 14-day free trial — no card required</Text>
+            <Text style={styles.subtitle}>Create your business account to get started</Text>
           </View>
 
           {/* Form Content */}
@@ -293,7 +293,7 @@ export default function Register() {
               {busy ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.submitBtnText}>Create Account & Start Trial</Text>
+                <Text style={styles.submitBtnText}>Create Account</Text>
               )}
             </Pressable>
 

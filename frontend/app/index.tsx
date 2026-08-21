@@ -73,6 +73,16 @@ export default function Index() {
             </View>
           </Pressable>
 
+          <Pressable
+            style={({ pressed }) => [styles.demoBtn, pressed && styles.btnPressed]}
+            onPress={() => router.push("/demo-billing")}
+          >
+            <View style={styles.btnRow}>
+              <Ionicons name="play-circle-outline" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
+              <Text style={styles.demoBtnText}>Try Interactive Demo</Text>
+            </View>
+          </Pressable>
+
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>or</Text>
@@ -220,6 +230,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#1C1C21",
   },
   secondaryBtnText: { color: "#FF5E2B", fontSize: 15, fontWeight: "700" },
+  demoBtn: {
+    height: 54,
+    borderColor: "#6C5CE7",
+    borderWidth: 1.5,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#13131A",
+    marginTop: 8,
+  },
+  demoBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   
   dividerRow: {
     flexDirection: "row",

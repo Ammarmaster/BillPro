@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useState, useMemo, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, SafeAreaView, StatusBar, ScrollView,
 } from "react-native";
@@ -45,6 +45,15 @@ export default function TakeawayScreen() {
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, [cats.length, items.length]);
+
+  useEffect(() => {
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/categories" && data) setCats(data);
+      if (path === "/menu-items" && data) setItems(data);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

@@ -9,6 +9,23 @@ const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
 // In-memory cache for ultra-fast instant UI rendering
 const memoryCache: Record<string, any> = {};
 
+// Cache subscription list for local-first reactive rendering
+type CacheListener = (path: string, data: any) => void;
+const cacheListeners: Set<CacheListener> = new Set();
+
+export function subscribeToCache(cb: CacheListener) {
+  cacheListeners.add(cb);
+  return () => {
+    cacheListeners.delete(cb);
+  };
+}
+
+export function notifyCacheUpdate(path: string, data: any) {
+  for (const cb of cacheListeners) {
+    try { cb(path, data); } catch {}
+  }
+}
+
 // Synchronous disk hydration on Web and startup
 if (Platform.OS === "web" && typeof window !== "undefined") {
   try {
@@ -38,6 +55,7 @@ export function clearCachePrefix(prefix: string) {
     if (k.startsWith(prefix)) {
       memoryCache[k] = null;
       delItem("disk_cache_" + k).catch(() => {});
+      notifyCacheUpdate(k, null);
     }
   }
 }
@@ -239,6 +257,7 @@ function rewriteCacheTempIds(tempId: string, realId: string) {
       });
       memoryCache[k] = updated;
       setItem("disk_cache_" + k, JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate(k, updated);
     }
   }
 }
@@ -269,8 +288,10 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     await saveOutbox();
 
     const oList = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = [newOrder, ...oList.filter((o: any) => o.id !== tempId)];
-    await setItem("disk_cache_/orders", JSON.stringify(memoryCache["/orders"]));
+    const updated = [newOrder, ...oList.filter((o: any) => o.id !== tempId)];
+    memoryCache["/orders"] = updated;
+    await setItem("disk_cache_/orders", JSON.stringify(updated));
+    notifyCacheUpdate("/orders", updated);
     clearCachePrefix("/tables");
     return newOrder;
   }
@@ -291,6 +312,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     });
     memoryCache["/orders"] = updated;
     await setItem("disk_cache_/orders", JSON.stringify(updated));
+    notifyCacheUpdate("/orders", updated);
     clearCachePrefix("/tables");
     return updated.find((o: any) => o.id === orderId) || { id: orderId, ...body };
   }
@@ -347,8 +369,10 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     await saveOutbox();
 
     const bList = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = [newBill, ...bList.filter((b: any) => b.id !== tempId)];
-    await setItem("disk_cache_/bills", JSON.stringify(memoryCache["/bills"]));
+    const updated = [newBill, ...bList.filter((b: any) => b.id !== tempId)];
+    memoryCache["/bills"] = updated;
+    await setItem("disk_cache_/bills", JSON.stringify(updated));
+    notifyCacheUpdate("/bills", updated);
     return newBill;
   }
 
@@ -364,6 +388,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     });
     memoryCache["/bills"] = updated;
     await setItem("disk_cache_/bills", JSON.stringify(updated));
+    notifyCacheUpdate("/bills", updated);
     return updated.find((b: any) => b.id === billId) || { id: billId, status: "paid" };
   }
 
@@ -379,6 +404,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     });
     memoryCache["/orders"] = updatedOrders;
     await setItem("disk_cache_/orders", JSON.stringify(updatedOrders));
+    notifyCacheUpdate("/orders", updatedOrders);
 
     const bList = memoryCache["/bills"] || [];
     const updatedBills = bList.map((b: any) => {
@@ -387,6 +413,7 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     });
     memoryCache["/bills"] = updatedBills;
     await setItem("disk_cache_/bills", JSON.stringify(updatedBills));
+    notifyCacheUpdate("/bills", updatedBills);
     clearCachePrefix("/tables");
     return { success: true };
   }
@@ -398,8 +425,10 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     await saveOutbox();
 
     const cList = memoryCache["/categories"] || [];
-    memoryCache["/categories"] = [...cList, newCat];
-    await setItem("disk_cache_/categories", JSON.stringify(memoryCache["/categories"]));
+    const updated = [...cList, newCat];
+    memoryCache["/categories"] = updated;
+    await setItem("disk_cache_/categories", JSON.stringify(updated));
+    notifyCacheUpdate("/categories", updated);
     return newCat;
   }
 
@@ -409,8 +438,10 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     await saveOutbox();
 
     const cList = memoryCache["/categories"] || [];
-    memoryCache["/categories"] = cList.filter((c: any) => c.id !== catId);
-    await setItem("disk_cache_/categories", JSON.stringify(memoryCache["/categories"]));
+    const updated = cList.filter((c: any) => c.id !== catId);
+    memoryCache["/categories"] = updated;
+    await setItem("disk_cache_/categories", JSON.stringify(updated));
+    notifyCacheUpdate("/categories", updated);
     return { success: true };
   }
 
@@ -430,8 +461,10 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     await saveOutbox();
 
     const mList = memoryCache["/menu-items"] || [];
-    memoryCache["/menu-items"] = [...mList, newItem];
-    await setItem("disk_cache_/menu-items", JSON.stringify(memoryCache["/menu-items"]));
+    const updated = [...mList, newItem];
+    memoryCache["/menu-items"] = updated;
+    await setItem("disk_cache_/menu-items", JSON.stringify(updated));
+    notifyCacheUpdate("/menu-items", updated);
     return newItem;
   }
 
@@ -441,12 +474,48 @@ async function handleOfflineMutation(path: string, opts: RequestInit): Promise<a
     await saveOutbox();
 
     const mList = memoryCache["/menu-items"] || [];
+    let updated: any[];
     if (method === "DELETE") {
-      memoryCache["/menu-items"] = mList.filter((m: any) => m.id !== itemId);
+      updated = mList.filter((m: any) => m.id !== itemId);
     } else {
-      memoryCache["/menu-items"] = mList.map((m: any) => m.id === itemId ? { ...m, ...body } : m);
+      updated = mList.map((m: any) => m.id === itemId ? { ...m, ...body } : m);
     }
-    await setItem("disk_cache_/menu-items", JSON.stringify(memoryCache["/menu-items"]));
+    memoryCache["/menu-items"] = updated;
+    await setItem("disk_cache_/menu-items", JSON.stringify(updated));
+    notifyCacheUpdate("/menu-items", updated);
+    return { success: true };
+  }
+
+  if (path === "/tables" && method === "POST") {
+    const tempId = "temp-tbl-" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+    const newTbl = {
+      id: tempId,
+      label: body.label || "Table",
+      seats: body.seats || 4,
+      status: "OPEN",
+      created_at: new Date().toISOString()
+    };
+    outboxQueue.push({ operationId, path, method, body, timestamp: Date.now(), tempId });
+    await saveOutbox();
+
+    const tList = memoryCache["/tables"] || [];
+    const updated = [...tList, newTbl];
+    memoryCache["/tables"] = updated;
+    await setItem("disk_cache_/tables", JSON.stringify(updated));
+    notifyCacheUpdate("/tables", updated);
+    return newTbl;
+  }
+
+  if (path.startsWith("/tables/") && method === "DELETE") {
+    const tblId = path.split("/")[2];
+    outboxQueue.push({ operationId, path, method, timestamp: Date.now() });
+    await saveOutbox();
+
+    const tList = memoryCache["/tables"] || [];
+    const updated = tList.filter((t: any) => t.id !== tblId);
+    memoryCache["/tables"] = updated;
+    await setItem("disk_cache_/tables", JSON.stringify(updated));
+    notifyCacheUpdate("/tables", updated);
     return { success: true };
   }
 
@@ -465,6 +534,13 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     }
   }
 
+  // Local-First Write Policy: ALWAYS update local cache instantly, queue action, sync in background
+  if (!isGet) {
+    const localResult = await handleOfflineMutation(path, opts);
+    startSyncRunner().catch(() => {});
+    return localResult;
+  }
+
   const execute = async () => {
     const headers: Record<string, string> = {
       ...((opts.headers as any) || {}),
@@ -477,8 +553,23 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
       if (t) headers["Authorization"] = `Bearer ${t}`;
     }
 
-    // Fast cache check for GET requests
+    // Local-First Read Policy: return immediately but trigger quiet background fetch delta sync
     if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
+      (async () => {
+        try {
+          const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+          if (res.ok) {
+            const text = await res.text();
+            const freshData = text ? JSON.parse(text) : null;
+            if (freshData && JSON.stringify(freshData) !== JSON.stringify(memoryCache[path])) {
+              memoryCache[path] = freshData;
+              await setItem("disk_cache_" + path, JSON.stringify(freshData));
+              notifyCacheUpdate(path, freshData);
+            }
+          }
+        } catch {}
+      })();
+
       return memoryCache[path];
     }
 
@@ -486,7 +577,6 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     try {
       res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
     } catch (netErr: any) {
-      // Network drop / offline: return cached data if available for GET
       if (isGet) {
         if (memoryCache[path]) return memoryCache[path];
         throw new Error(netErr.message || "Network connection unavailable.");
@@ -523,7 +613,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
       if (data) {
         setItem("disk_cache_" + path, JSON.stringify(data)).catch(() => {});
       }
-      // Replay outbox changes reactively
+      notifyCacheUpdate(path, data);
       startSyncRunner().catch(() => {});
     }
     return data;
