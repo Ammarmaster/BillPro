@@ -179,121 +179,170 @@ async def websocket_endpoint(websocket: WebSocket, tenant_id: str):
         manager.disconnect(tenant_id, websocket)
 
 
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import secrets
+import requests
 import random
 
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 465
-SMTP_USER = "contactprodevopz@gmail.com"
-SMTP_PASSWORD = "ydqm zvap zecd xsql"
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "contactprodevopz@gmail.com")
+BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "EZBill")
+
+
+class EmailService:
+    @staticmethod
+    def send_password_reset_otp(email: str, name: str, otp: str):
+        if not BREVO_API_KEY:
+            raise Exception("Brevo API key is not configured.")
+        
+        url = "https://api.brevo.com/v3/smtp/email"
+        headers = {
+            "api-key": BREVO_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your EZBill OTP</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #F8FAFC;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }}
+        .wrapper {{
+            width: 100%;
+            background-color: #F8FAFC;
+            padding: 40px 0;
+        }}
+        .container {{
+            max-width: 500px;
+            margin: 0 auto;
+            background: #FFFFFF;
+            border-radius: 16px;
+            border: 1px solid #E2E8F0;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }}
+        .content {{
+            padding: 40px 32px;
+            text-align: center;
+        }}
+        .brand {{
+            font-size: 24px;
+            font-weight: 800;
+            color: #635BFF;
+            margin-bottom: 24px;
+            letter-spacing: -0.5px;
+        }}
+        .title {{
+            font-size: 20px;
+            font-weight: 700;
+            color: #0F172A;
+            margin-bottom: 8px;
+        }}
+        .subtitle {{
+            font-size: 14px;
+            color: #475569;
+            line-height: 1.5;
+            margin-bottom: 32px;
+        }}
+        .otp-container {{
+            background-color: #F1F5F9;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 24px 0;
+            border: 1px solid #E2E8F0;
+            display: inline-block;
+        }}
+        .otp-code {{
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: 8px;
+            color: #0F172A;
+            margin: 0;
+            padding-left: 8px;
+        }}
+        .expiry {{
+            font-size: 12px;
+            color: #64748B;
+            margin-top: 16px;
+            font-weight: 500;
+        }}
+        .footer {{
+            padding: 24px 32px;
+            background-color: #F8FAFC;
+            border-top: 1px solid #E2E8F0;
+            text-align: center;
+        }}
+        .footer-text {{
+            font-size: 11px;
+            color: #94A3B8;
+            line-height: 1.6;
+        }}
+        .warning-text {{
+            font-size: 12px;
+            color: #94A3B8;
+            margin-top: 24px;
+            line-height: 1.5;
+        }}
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="content">
+                <div class="brand">EZBill</div>
+                <div class="title">Password Reset Request</div>
+                <p class="subtitle">We received a request to reset your EZBill account password. Use the verification code below to proceed.</p>
+                <div class="otp-container">
+                    <p class="otp-code">{otp}</p>
+                </div>
+                <p class="expiry">This code expires in 10 minutes.</p>
+                <p class="warning-text">If you did not request this, you can safely ignore this email. Never share this OTP with anyone.</p>
+            </div>
+            <div class="footer">
+                <div class="brand" style="font-size: 16px; margin-bottom: 8px; color: #94A3B8;">EZBill</div>
+                <p class="footer-text">Restaurant Management Made Simple<br>&copy; 2026 EZBill. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+        
+        payload = {
+            "sender": {
+                "name": BREVO_SENDER_NAME,
+                "email": BREVO_SENDER_EMAIL
+            },
+            "to": [
+                {
+                    "email": email,
+                    "name": name
+                }
+            ],
+            "subject": "Your EZBill Password Reset OTP",
+            "htmlContent": html_content
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code not in (200, 201, 202):
+            print(f"[EmailService Error] status_code={response.status_code} response={response.text}")
+            raise Exception("Failed to send transactional email through Brevo API.")
 
 
 def send_reset_pin_email(to_email: str, pin: str, name: str):
+    # Backward compatible wrapper redirecting to EmailService
     try:
-        subject = "Reset Your ProDevOpz POS Password"
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Reset Password</title>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background-color: #f8fafc;
-                    margin: 0;
-                    padding: 0;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 40px auto;
-                    background: #ffffff;
-                    border-radius: 16px;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-                    overflow: hidden;
-                    border: 1px solid #e2e8f0;
-                }}
-                .header {{
-                    background-color: #FF5E2B;
-                    padding: 30px;
-                    text-align: center;
-                }}
-                .header h1 {{
-                    color: #ffffff;
-                    margin: 0;
-                    font-size: 24px;
-                    font-weight: 700;
-                }}
-                .content {{
-                    padding: 40px 30px;
-                    color: #334155;
-                    line-height: 1.6;
-                }}
-                .content h2 {{
-                    color: #0f172a;
-                    font-size: 20px;
-                    margin-top: 0;
-                }}
-                .pin-box {{
-                    background-color: #f1f5f9;
-                    border-radius: 12px;
-                    padding: 20px;
-                    text-align: center;
-                    margin: 30px 0;
-                    border: 1px dashed #cbd5e1;
-                }}
-                .pin-code {{
-                    font-size: 32px;
-                    font-weight: 800;
-                    letter-spacing: 6px;
-                    color: #FF5E2B;
-                    margin: 0;
-                }}
-                .footer {{
-                    background-color: #f8fafc;
-                    padding: 20px;
-                    text-align: center;
-                    font-size: 12px;
-                    color: #64748b;
-                    border-top: 1px solid #e2e8f0;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>ProDevOpz ERP</h1>
-                </div>
-                <div class="content">
-                    <h2>Hello {name},</h2>
-                    <p>We received a request to reset the password for your account. Use the verification code below to set a new password. This code is valid for 15 minutes.</p>
-                    <div class="pin-box">
-                        <p class="pin-code">{pin}</p>
-                    </div>
-                    <p>If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
-                    <p>Best regards,<br><strong>ProDevOpz Support Team</strong></p>
-                </div>
-                <div class="footer">
-                    <p>This is an automated email. Please do not reply to this message.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"ProDevOpz POS <{SMTP_USER}>"
-        msg["To"] = to_email
-        part_html = MIMEText(html_content, "html")
-        msg.attach(part_html)
-        
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, to_email, msg.as_string())
+        EmailService.send_password_reset_otp(to_email, name, pin)
     except Exception as e:
-        print("Failed to send reset PIN email:", e)
+        print("Failed to send reset PIN email via EmailService wrapper:", e)
 
 
 # ---------- helpers ----------
@@ -422,12 +471,13 @@ async def log_consent_event(user_id: str, tenant_id: Optional[str], consent_type
     await db.consent_records.insert_one(record)
 
 
-def make_token(sub: str, role: str, tenant_id: Optional[str], refresh: bool = False) -> str:
+def make_token(sub: str, role: str, tenant_id: Optional[str], refresh: bool = False, token_version: int = 0) -> str:
     now = datetime.now(timezone.utc)
     exp = now + (timedelta(days=REFRESH_TTL_DAYS) if refresh else timedelta(minutes=ACCESS_TTL_MIN))
     payload = {
         "sub": sub, "role": role, "tenant_id": tenant_id,
         "iat": int(now.timestamp()), "exp": int(exp.timestamp()), "refresh": refresh,
+        "tv": token_version
     }
     return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
@@ -481,6 +531,8 @@ async def get_current_user(authorization: Optional[str] = Header(default=None)) 
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if "tv" in payload and payload["tv"] != user.get("token_version", 0):
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
     return user
 
 
@@ -725,6 +777,7 @@ async def register(payload: RegisterIn, request: Request = None):
         "terms_accepted_at": now_iso,
         "privacy_consent": True,
         "marketing_consent": bool(payload.marketing_consent),
+        "token_version": 0,
         "created_at": now_iso,
     }
     await db.users.insert_one(doc)
@@ -739,8 +792,8 @@ async def register(payload: RegisterIn, request: Request = None):
         
     user_out = {k: v for k, v in doc.items() if k not in ("password", "_id")}
     return TokenOut(
-        access_token=make_token(uid, payload.role, None),
-        refresh_token=make_token(uid, payload.role, None, refresh=True),
+        access_token=make_token(uid, payload.role, None, token_version=0),
+        refresh_token=make_token(uid, payload.role, None, refresh=True, token_version=0),
         user=user_out,
     )
 
@@ -751,46 +804,195 @@ async def login(payload: LoginIn):
     if not user or not verify_pw(payload.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     user_out = {k: v for k, v in user.items() if k not in ("password", "_id")}
+    tv = user.get("token_version", 0)
     return TokenOut(
-        access_token=make_token(user["id"], user["role"], user.get("tenant_id")),
-        refresh_token=make_token(user["id"], user["role"], user.get("tenant_id"), refresh=True),
+        access_token=make_token(user["id"], user["role"], user.get("tenant_id"), token_version=tv),
+        refresh_token=make_token(user["id"], user["role"], user.get("tenant_id"), refresh=True, token_version=tv),
         user=user_out,
     )
 
 
+class VerifyResetOtpIn(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class ResetPasswordIn(BaseModel):
+    email: EmailStr
+    reset_token: str
+    new_password: str
+
+
 @api.post("/auth/forgot-password")
-async def forgot_password(payload: ForgotPasswordIn, background_tasks: BackgroundTasks):
+async def forgot_password(payload: ForgotPasswordIn):
     user = await db.users.find_one({"email": payload.email.lower()})
-    if not user:
-        raise HTTPException(status_code=404, detail="Email address not found")
     
-    # Generate 6-digit PIN
-    pin = f"{random.randint(100000, 999999)}"
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    # Account enumeration prevention: return same response even if user doesn't exist
+    generic_success = {
+        "message": "If the email is registered, a verification code has been sent."
+    }
+    
+    if not user:
+        return generic_success
+        
+    now = datetime.now(timezone.utc)
+    
+    # 60-second resend cooldown protection
+    if user.get("reset_otp") and user["reset_otp"].get("cooldown_until"):
+        try:
+            cooldown_time = datetime.fromisoformat(user["reset_otp"]["cooldown_until"])
+            if now < cooldown_time:
+                return generic_success
+        except Exception:
+            pass
+            
+    # Generate secure 6-digit OTP using secrets module
+    otp_code = f"{secrets.randbelow(1000000):06d}"
+    otp_hash = hash_pw(otp_code)
+    
+    expires_at = (now + timedelta(minutes=10)).isoformat()
+    cooldown_until = (now + timedelta(seconds=60)).isoformat()
     
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {
-            "reset_pin": pin,
-            "reset_pin_expires_at": expires_at.isoformat()
+            "reset_otp": {
+                "hash": otp_hash,
+                "expires_at": expires_at,
+                "cooldown_until": cooldown_until,
+                "attempts": 0,
+                "created_at": now.isoformat()
+            }
         }}
     )
     
-    # Send email in background task
-    background_tasks.add_task(
-        send_reset_pin_email,
-        user["email"],
-        pin,
-        user.get("full_name", "User")
+    # Send email using Brevo HTTPS API
+    try:
+        EmailService.send_password_reset_otp(
+            user["email"],
+            user.get("full_name", "User"),
+            otp_code
+        )
+    except Exception as e:
+        print("Failed to send verification email via Brevo:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="We couldn't send the verification code right now. Please try again later."
+        )
+        
+    return generic_success
+
+
+@api.post("/auth/verify-reset-otp")
+async def verify_reset_otp(payload: VerifyResetOtpIn):
+    user = await db.users.find_one({"email": payload.email.lower()})
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid verification request.")
+        
+    reset_otp = user.get("reset_otp")
+    if not reset_otp:
+        raise HTTPException(status_code=400, detail="No reset code requested.")
+        
+    now = datetime.now(timezone.utc)
+    
+    # Expiration check
+    try:
+        expiry = datetime.fromisoformat(reset_otp["expires_at"])
+        if now > expiry:
+            await db.users.update_one({"id": user["id"]}, {"$unset": {"reset_otp": ""}})
+            raise HTTPException(status_code=400, detail="OTP expired. Please request a new code.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+        
+    # Attempt limits check
+    attempts = reset_otp.get("attempts", 0)
+    if attempts >= 5:
+        await db.users.update_one({"id": user["id"]}, {"$unset": {"reset_otp": ""}})
+        raise HTTPException(status_code=400, detail="Too many incorrect attempts. Please request a new OTP.")
+        
+    # OTP verification
+    if not verify_pw(payload.otp, reset_otp["hash"]):
+        await db.users.update_one({"id": user["id"]}, {"$inc": {"reset_otp.attempts": 1}})
+        new_attempts = attempts + 1
+        if new_attempts >= 5:
+            await db.users.update_one({"id": user["id"]}, {"$unset": {"reset_otp": ""}})
+            raise HTTPException(status_code=400, detail="Too many incorrect attempts. Please request a new OTP.")
+        raise HTTPException(status_code=400, detail="Invalid verification code.")
+        
+    # Generate secure reset token
+    reset_token = secrets.token_urlsafe(32)
+    token_hash = hash_pw(reset_token)
+    token_expires_at = (now + timedelta(minutes=10)).isoformat()
+    
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {
+                "reset_token_hash": token_hash,
+                "reset_token_expires_at": token_expires_at
+            },
+            "$unset": {"reset_otp": ""}
+        }
     )
     
-    return {
-        "message": "Verification code sent successfully"
-    }
+    return {"reset_token": reset_token}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(payload: ResetPasswordIn):
+    user = await db.users.find_one({"email": payload.email.lower()})
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid reset request.")
+        
+    token_hash = user.get("reset_token_hash")
+    expires_str = user.get("reset_token_expires_at")
+    
+    if not token_hash or not expires_str:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token. Please request a new verification code.")
+        
+    now = datetime.now(timezone.utc)
+    try:
+        expiry = datetime.fromisoformat(expires_str)
+        if now > expiry:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$unset": {"reset_token_hash": "", "reset_token_expires_at": ""}}
+            )
+            raise HTTPException(status_code=400, detail="Reset token expired. Please request a new verification code.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+        
+    if not verify_pw(payload.reset_token, token_hash):
+        raise HTTPException(status_code=400, detail="Invalid reset token.")
+        
+    # Update password and invalidate all active sessions
+    hashed_pwd = hash_pw(payload.new_password)
+    tv = user.get("token_version", 0) + 1
+    
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {
+                "password": hashed_pwd,
+                "token_version": tv
+            },
+            "$unset": {
+                "reset_token_hash": "",
+                "reset_token_expires_at": ""
+            }
+        }
+    )
+    
+    return {"message": "Password changed successfully."}
 
 
 @api.post("/auth/reset-password-with-pin")
 async def reset_password_with_pin(payload: ResetPasswordWithPinIn):
+    # Backward compatible wrapper route
     user = await db.users.find_one({"email": payload.email.lower()})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -808,12 +1010,15 @@ async def reset_password_with_pin(payload: ResetPasswordWithPinIn):
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=400, detail="Verification code has expired")
         
-    # Update password
     hashed_pwd = hash_pw(payload.new_password)
+    tv = user.get("token_version", 0) + 1
     await db.users.update_one(
         {"id": user["id"]},
         {
-            "$set": {"password": hashed_pwd},
+            "$set": {
+                "password": hashed_pwd,
+                "token_version": tv
+            },
             "$unset": {"reset_pin": "", "reset_pin_expires_at": ""}
         }
     )
@@ -1115,9 +1320,10 @@ async def staff_login(payload: StaffLoginIn):
     )
     if not waiter:
         raise HTTPException(status_code=401, detail="Invalid PIN")
+    tv = waiter.get("token_version", 0)
     return TokenOut(
-        access_token=make_token(waiter["id"], "waiter", tid),
-        refresh_token=make_token(waiter["id"], "waiter", tid, refresh=True),
+        access_token=make_token(waiter["id"], "waiter", tid, token_version=tv),
+        refresh_token=make_token(waiter["id"], "waiter", tid, refresh=True, token_version=tv),
         user={k: v for k, v in waiter.items() if k != "pin"},
     )
 

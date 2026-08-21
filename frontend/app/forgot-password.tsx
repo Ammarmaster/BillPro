@@ -6,12 +6,14 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "@/src/context/ThemeContext";
 import { spacing, radius } from "@/src/theme";
 
 // Helper to handle API requests manually to avoid changing AuthContext
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-g1th.onrender.com";
 
 export default function ForgotPassword() {
+  const { theme, isDark } = useTheme();
   const [step, setStep] = useState<1 | 2>(1);
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
@@ -68,19 +70,37 @@ export default function ForgotPassword() {
     setErr(null);
     setBusy(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/reset-password-with-pin`, {
+      // 1. Verify OTP to get secure reset token
+      const verifyRes = await fetch(`${BACKEND_URL}/api/auth/verify-reset-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
-          pin: pin.trim(),
+          otp: pin.trim(),
+        }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) {
+        throw new Error(verifyData.detail || "Invalid or expired verification code");
+      }
+      
+      const resetToken = verifyData.reset_token;
+
+      // 2. Perform password reset using the token
+      const resetRes = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          reset_token: resetToken,
           new_password: newPassword,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Failed to reset password");
+      const resetData = await resetRes.json();
+      if (!resetRes.ok) {
+        throw new Error(resetData.detail || "Failed to reset password");
       }
+      
       Alert.alert("Success", "Your password has been reset successfully. You can now log in.", [
         { text: "OK", onPress: () => router.replace("/login") }
       ]);
@@ -92,13 +112,13 @@ export default function ForgotPassword() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.wrap}>
-        <ScrollView contentContainerStyle={styles.scrollContainer} bounces={false} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDark ? theme.surface : "#FF5E2B" }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "light-content"} backgroundColor={isDark ? theme.surface : "#FF5E2B"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: theme.surface }]}>
+        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: theme.surface }]} bounces={false} showsVerticalScrollIndicator={false}>
           
           {/* Header Section */}
-          <View style={[styles.headerSection, { paddingTop: insets.top + 24 }]}>
+          <View style={[styles.headerSection, { paddingTop: insets.top + 24, backgroundColor: isDark ? theme.surface : "#FF5E2B" }]}>
             <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={15}>
               <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
             </Pressable>
@@ -107,23 +127,23 @@ export default function ForgotPassword() {
           </View>
 
           {/* Bottom Card Section */}
-          <View style={styles.cardSection}>
+          <View style={[styles.cardSection, { backgroundColor: theme.surface }]}>
             {step === 1 ? (
               <>
-                <Text style={styles.welcomeText}>Verify your Email</Text>
-                <Text style={styles.subtext}>Enter your email address to receive a 6-digit reset code.</Text>
+                <Text style={[styles.welcomeText, { color: theme.onSurface }]}>Verify your Email</Text>
+                <Text style={[styles.subtext, { color: theme.onSurfaceSecondary }]}>Enter your email address to receive a 6-digit reset code.</Text>
 
                 {/* Email Field */}
                 <View style={styles.field}>
-                  <Text style={styles.label}>Email Address</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="mail-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Email Address</Text>
+                  <View style={[styles.inputWrapper, { backgroundColor: isDark ? "#16161A" : "#F8FAFC", borderColor: theme.border }]}>
+                    <Ionicons name="mail-outline" size={20} color={isDark ? "#64748B" : "#94A3B8"} style={styles.inputIcon} />
                     <TextInput
                       value={email}
                       onChangeText={setEmail}
-                      style={styles.input}
+                      style={[styles.input, { color: theme.onSurface }]}
                       placeholder="owner@yourplace.com"
-                      placeholderTextColor="#475569"
+                      placeholderTextColor={isDark ? "#475569" : "#94A3B8"}
                       keyboardType="email-address"
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -139,7 +159,7 @@ export default function ForgotPassword() {
                 )}
 
                 <Pressable
-                  style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
+                  style={({ pressed }) => [styles.submitBtn, { backgroundColor: theme.brand }, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
                   onPress={handleRequestPin}
                   disabled={busy}
                 >
@@ -148,20 +168,20 @@ export default function ForgotPassword() {
               </>
             ) : (
               <>
-                <Text style={styles.welcomeText}>Set New Password</Text>
-                <Text style={styles.subtext}>Enter the 6-digit code sent to {email} and choose a new password.</Text>
+                <Text style={[styles.welcomeText, { color: theme.onSurface }]}>Set New Password</Text>
+                <Text style={[styles.subtext, { color: theme.onSurfaceSecondary }]}>Enter the 6-digit code sent to {email} and choose a new password.</Text>
 
                 {/* PIN Code Field */}
                 <View style={styles.field}>
-                  <Text style={styles.label}>Verification Code</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="key-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Verification Code</Text>
+                  <View style={[styles.inputWrapper, { backgroundColor: isDark ? "#16161A" : "#F8FAFC", borderColor: theme.border }]}>
+                    <Ionicons name="key-outline" size={20} color={isDark ? "#64748B" : "#94A3B8"} style={styles.inputIcon} />
                     <TextInput
                       value={pin}
                       onChangeText={setPin}
-                      style={styles.input}
+                      style={[styles.input, { color: theme.onSurface }]}
                       placeholder="123456"
-                      placeholderTextColor="#475569"
+                      placeholderTextColor={isDark ? "#475569" : "#94A3B8"}
                       keyboardType="number-pad"
                       maxLength={6}
                       autoCapitalize="none"
@@ -171,15 +191,15 @@ export default function ForgotPassword() {
 
                 {/* New Password Field */}
                 <View style={styles.field}>
-                  <Text style={styles.label}>New Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>New Password</Text>
+                  <View style={[styles.inputWrapper, { backgroundColor: isDark ? "#16161A" : "#F8FAFC", borderColor: theme.border }]}>
+                    <Ionicons name="lock-closed-outline" size={20} color={isDark ? "#64748B" : "#94A3B8"} style={styles.inputIcon} />
                     <TextInput
                       value={newPassword}
                       onChangeText={setNewPassword}
-                      style={[styles.input, { paddingRight: 44 }]}
+                      style={[styles.input, { paddingRight: 44, color: theme.onSurface }]}
                       placeholder="••••••••"
-                      placeholderTextColor="#475569"
+                      placeholderTextColor={isDark ? "#475569" : "#94A3B8"}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                     />
@@ -191,7 +211,7 @@ export default function ForgotPassword() {
                       <Ionicons
                         name={showPassword ? "eye-off-outline" : "eye-outline"}
                         size={20}
-                        color="#64748B"
+                        color={isDark ? "#64748B" : "#94A3B8"}
                       />
                     </Pressable>
                   </View>
@@ -199,15 +219,15 @@ export default function ForgotPassword() {
 
                 {/* Confirm Password Field */}
                 <View style={styles.field}>
-                  <Text style={styles.label}>Confirm New Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Confirm New Password</Text>
+                  <View style={[styles.inputWrapper, { backgroundColor: isDark ? "#16161A" : "#F8FAFC", borderColor: theme.border }]}>
+                    <Ionicons name="lock-closed-outline" size={20} color={isDark ? "#64748B" : "#94A3B8"} style={styles.inputIcon} />
                     <TextInput
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
-                      style={styles.input}
+                      style={[styles.input, { color: theme.onSurface }]}
                       placeholder="••••••••"
-                      placeholderTextColor="#475569"
+                      placeholderTextColor={isDark ? "#475569" : "#94A3B8"}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                     />
@@ -222,7 +242,7 @@ export default function ForgotPassword() {
                 )}
 
                 <Pressable
-                  style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
+                  style={({ pressed }) => [styles.submitBtn, { backgroundColor: theme.brand }, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
                   onPress={handleResetPassword}
                   disabled={busy}
                 >
@@ -230,7 +250,7 @@ export default function ForgotPassword() {
                 </Pressable>
 
                 <Pressable onPress={() => setStep(1)} style={styles.backLink}>
-                  <Text style={styles.backLinkText}>Resend code / Change email</Text>
+                  <Text style={[styles.backLinkText, { color: theme.brand }]}>Resend code / Change email</Text>
                 </Pressable>
               </>
             )}
