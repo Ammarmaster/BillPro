@@ -70,7 +70,7 @@ interface NotificationContextProps {
 const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
 
 const PREFS_KEY = "lumina_notification_preferences";
-const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-g1th.onrender.com").replace(/\/$/, "");
 const KITCHEN_ALERT_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
 const PAYMENT_MONEY_SOUND_URL = `${BACKEND_BASE}/static/sounds/payment-money.wav`;
 const GENERAL_NOTIFICATION_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
@@ -155,14 +155,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [user]);
 
+  const hasRegisteredPushRef = useRef(false);
   const registerForPushNotificationsAsync = async () => {
     if (Platform.OS === "web") return;
+    if (hasRegisteredPushRef.current) return;
     if (!Notifications) {
       console.warn("Notifications module is null! Expo-notifications is not compiled in the native build.");
-      Alert.alert(
-        "Setup Warning",
-        "Notifications module is missing from the native build. Please rebuild the app using: npx expo run:android"
-      );
       return;
     }
     try {
@@ -173,15 +171,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         finalStatus = status;
       }
       if (finalStatus !== "granted") {
-        Alert.alert("Permission Blocked", "Notification permissions were denied. Please enable them in your Android Settings.");
         return;
       }
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: "a99f95ae-d53d-4601-9b28-eb2305abab3e",
+      }).catch((e: any) => {
+        console.warn("Expo push token get error (non-fatal):", e?.message);
+        return null;
       });
-      const pushToken = tokenData.data;
+      const pushToken = tokenData?.data;
       if (pushToken) {
-        await api.savePushToken(pushToken);
+        hasRegisteredPushRef.current = true;
+        await api.savePushToken(pushToken).catch(() => {});
       }
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("default", {
@@ -190,11 +191,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           vibrationPattern: [0, 250, 250, 250],
           lightColor: "#FF5E2B",
           sound: "default",
-        });
+        }).catch(() => {});
       }
     } catch (e: any) {
-      console.warn("Error setting up expo-notifications:", e);
-      Alert.alert("Push Registration Error", e.message || "Failed to retrieve push token");
+      console.warn("Error setting up expo-notifications (non-fatal):", e?.message);
     }
   };
 
@@ -260,7 +260,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (!user) return;
     if (ws.current) return;
 
-    const base = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000")
+    const base = BACKEND_BASE
       .replace(/\/$/, "")
       .replace(/^http/, "ws");
     

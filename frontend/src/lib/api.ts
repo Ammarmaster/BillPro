@@ -1,8 +1,9 @@
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { BillingEngine } from "./billingEngine";
 
-const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-g1th.onrender.com").replace(/\/$/, "");
 
 const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
 
@@ -26,6 +27,30 @@ export function notifyCacheUpdate(path: string, data: any) {
   }
 }
 
+// Disk cache helper using AsyncStorage (supports unlimited size on Android, Web, and iOS)
+async function setDiskCache(k: string, v: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try { window.localStorage.setItem(k, v); } catch {}
+    return;
+  }
+  try { await AsyncStorage.setItem(k, v); } catch {}
+}
+
+async function getDiskCache(k: string): Promise<string | null> {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try { return window.localStorage.getItem(k); } catch { return null; }
+  }
+  try { return await AsyncStorage.getItem(k); } catch { return null; }
+}
+
+async function delDiskCache(k: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try { window.localStorage.removeItem(k); } catch {}
+    return;
+  }
+  try { await AsyncStorage.removeItem(k); } catch {}
+}
+
 // Synchronous disk hydration on Web and startup
 if (Platform.OS === "web" && typeof window !== "undefined") {
   try {
@@ -39,9 +64,12 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
   // Asynchronous pre-hydration on Native
   const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants"];
   for (const k of keys) {
-    SecureStore.getItemAsync("disk_cache_" + k).then(v => {
+    AsyncStorage.getItem("disk_cache_" + k).then(v => {
       if (v) {
-        try { memoryCache[k] = JSON.parse(v); } catch {}
+        try {
+          memoryCache[k] = JSON.parse(v);
+          notifyCacheUpdate(k, memoryCache[k]);
+        } catch {}
       }
     }).catch(() => {});
   }
@@ -54,32 +82,42 @@ export function clearCachePrefix(prefix: string) {
   for (const k in memoryCache) {
     if (k.startsWith(prefix)) {
       memoryCache[k] = null;
-      delItem("disk_cache_" + k).catch(() => {});
+      delDiskCache("disk_cache_" + k).catch(() => {});
       notifyCacheUpdate(k, null);
     }
   }
 }
 
-// SecureStore is unreliable on web -> fallback to localStorage
+// Robust auth token storage with AsyncStorage and SecureStore fallback
 async function setItem(k: string, v: string) {
   if (Platform.OS === "web") {
     try { window.localStorage.setItem(k, v); } catch {}
     return;
   }
-  await SecureStore.setItemAsync(k, v);
+  try { await AsyncStorage.setItem(k, v); } catch {}
+  try { await SecureStore.setItemAsync(k, v); } catch {}
 }
 async function getItem(k: string): Promise<string | null> {
   if (Platform.OS === "web") {
     try { return window.localStorage.getItem(k); } catch { return null; }
   }
-  return await SecureStore.getItemAsync(k);
+  try {
+    const val = await AsyncStorage.getItem(k);
+    if (val) return val;
+  } catch {}
+  try {
+    return await SecureStore.getItemAsync(k);
+  } catch {
+    return null;
+  }
 }
 async function delItem(k: string) {
   if (Platform.OS === "web") {
     try { window.localStorage.removeItem(k); } catch {}
     return;
   }
-  await SecureStore.deleteItemAsync(k);
+  try { await AsyncStorage.removeItem(k); } catch {}
+  try { await SecureStore.deleteItemAsync(k); } catch {}
 }
 
 export async function saveTokens(access: string, refresh: string, user?: any) {
@@ -194,31 +232,11 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
       if (t) headers["Authorization"] = `Bearer ${t}`;
     }
 
-    // Local-First Read Policy: return immediately but trigger quiet background fetch delta sync
-    if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
-      (async () => {
-        try {
-          const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
-          if (res.ok) {
-            const text = await res.text();
-            const freshData = text ? JSON.parse(text) : null;
-            if (freshData && JSON.stringify(freshData) !== JSON.stringify(memoryCache[path])) {
-              memoryCache[path] = freshData;
-              await setItem("disk_cache_" + path, JSON.stringify(freshData));
-              notifyCacheUpdate(path, freshData);
-            }
-          }
-        } catch {}
-      })();
-
-      return memoryCache[path];
-    }
-
     let res: Response;
     try {
       res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
     } catch (netErr: any) {
-      if (isGet && memoryCache[path]) {
+      if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
         return memoryCache[path];
       }
       throw new Error(netErr.message || "Network connection unavailable.");
@@ -244,16 +262,18 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
           onUnauthorizedCallback();
         }
       }
+      if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
+        return memoryCache[path];
+      }
       throw err;
     }
 
     if (isGet) {
       memoryCache[path] = data;
       if (data) {
-        setItem("disk_cache_" + path, JSON.stringify(data)).catch(() => {});
+        setDiskCache("disk_cache_" + path, JSON.stringify(data)).catch(() => {});
       }
       notifyCacheUpdate(path, data);
-      startSyncRunner().catch(() => {});
     }
     return data;
   };

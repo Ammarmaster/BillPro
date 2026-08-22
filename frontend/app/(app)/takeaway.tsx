@@ -145,30 +145,30 @@ export default function TakeawayScreen() {
       api.injectCachedOrder(localOrder);
       api.injectCachedBill(localBill);
       
-      // 4. Reset cart and redirect instantly (0ms transition lag!)
+      // 4. Fire 0ms Instant KOT auto-print
+      (async () => {
+        try {
+          const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
+          const kSettings = await getPrinterSettings("kitchen");
+          const cSettings = await getPrinterSettings("cashier");
+          const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                              (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+          if (shouldPrint) {
+            await printKitchenKOT(localOrder);
+          }
+        } catch {}
+      })();
+
+      // 5. Reset cart and redirect instantly (0ms transition lag!)
       const cartItems = [...cart];
       setCart([]);
       router.push({ pathname: "/(app)/billing", params: { orderId: tempOrderId, backTo: "/(app)/takeaway" } });
       
-      // 5. Sync with server silently in the background
+      // 6. Sync with server silently in the background
       api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" }).then(realOrder => {
         // Set ID mapping and update cached values
         api.setTempIdMapping(tempOrderId, realOrder.id);
         api.updateCachedOrder(tempOrderId, realOrder);
-        
-        // Auto-print KOT if enabled
-        (async () => {
-          try {
-            const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
-            const kSettings = await getPrinterSettings("kitchen");
-            const cSettings = await getPrinterSettings("cashier");
-            const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
-                                (cSettings && cSettings.type !== "none" && cSettings.auto_print);
-            if (shouldPrint) {
-              await printKitchenKOT(realOrder);
-            }
-          } catch {}
-        })();
 
         // Auto-create bill for the real order on the backend
         api.createBill({ order_id: realOrder.id, tax_percent: gstRate, discount: 0 }).then(realBill => {

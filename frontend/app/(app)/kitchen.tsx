@@ -249,7 +249,7 @@ export default function Kitchen() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const isRingingRef = useRef(false);
 
-  const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+  const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-g1th.onrender.com").replace(/\/$/, "");
   const KITCHEN_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
   
   // Keep separate Audio players for Native vs Web

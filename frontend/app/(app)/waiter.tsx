@@ -18,6 +18,7 @@ import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { getPrinterSettings, printKitchenKOT } from "@/src/lib/print";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
+import { isTodayBusinessDay } from "@/src/lib/dateUtils";
 type Cat = { id: string; name: string };
 type Item = { id: string; category_id: string; name: string; price: number; description: string; image_base64?: string; image_url?: string };
 type Table = { id: string; label: string; seats: number };
@@ -225,30 +226,11 @@ const isSameTable = (a: string | undefined | null, b: string | undefined | null)
   return na.length > 0 && na === nb;
 };
 
-// Restaurant Business Day matching (Only current business cycle >= 1:00 AM)
-const isCurrentDayOrder = (ts?: string) => {
-  if (!ts) return false;
-  try {
-    const orderDate = new Date(ts);
-    const now = new Date();
-    const cutoff = new Date(now);
-    if (now.getHours() >= 1) {
-      cutoff.setHours(1, 0, 0, 0);
-    } else {
-      cutoff.setDate(cutoff.getDate() - 1);
-      cutoff.setHours(1, 0, 0, 0);
-    }
-    return orderDate.getTime() >= cutoff.getTime();
-  } catch {
-    return false;
-  }
-};
-
 // Helper to determine table status & matching active orders (kitchen status NEVER clears table until paid)
 const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[]) => {
   const matchingOrders = ordersList.filter((o: any) => {
     if (!isSameTable(o.table_number, tblLabel)) return false;
-    if (!isCurrentDayOrder(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
+    if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
     if (o.status === "cancelled" || o.status === "pending_scan") return false;
     if (o.status === "paid" || o.status === "completed") return false;
     const isPaid = billsList.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");
@@ -370,7 +352,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
         created_at: activeOrder?.created_at || new Date().toISOString(),
       };
 
-      // 0ms Instant UI Transition
+      // 0ms Instant UI Transition & 0ms KOT Printing
       setLines([]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
@@ -380,7 +362,23 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       setActiveOrder(optimisticOrder);
       setTables(prev => prev.map(t => isSameTable(t.label, tblLabel) ? { ...t, status: "occupied" } : t));
       setOrders(prev => [optimisticOrder, ...prev.filter(o => o.id !== tempId)]);
+      api.injectCachedOrder(optimisticOrder);
       setViewMode("order_details");
+
+      // Fire 0ms Instant Kitchen KOT Auto-Print
+      (async () => {
+        try {
+          const kSettings = await getPrinterSettings("kitchen");
+          const cSettings = await getPrinterSettings("cashier");
+          const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                              (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+          if (shouldPrint) {
+            await printKitchenKOT(optimisticOrder);
+          }
+        } catch (printErr) {
+          console.warn("Instant KOT auto-print error:", printErr);
+        }
+      })();
 
       // API sync in background without freezing UI
       (async () => {
@@ -396,21 +394,6 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             api.updateCachedOrder(tempId, realOrder);
             setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
             setActiveOrder((prev: any) => (prev && prev.id === tempId) ? realOrder : prev);
-            
-            // Fire-and-forget background KOT auto-print
-            (async () => {
-              try {
-                const kSettings = await getPrinterSettings("kitchen");
-                const cSettings = await getPrinterSettings("cashier");
-                const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
-                                    (cSettings && cSettings.type !== "none" && cSettings.auto_print);
-                if (shouldPrint) {
-                  await printKitchenKOT(realOrder);
-                }
-              } catch (printErr) {
-                console.warn("Background KOT auto-print error:", printErr);
-              }
-            })();
           }
         } catch (e: any) {
           console.warn("Order placement background sync error:", e);
@@ -432,7 +415,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const tableOrders = selectedTableObj
     ? orders.filter((o: any) => {
         if (!isSameTable(o.table_number, selectedTableObj.label)) return false;
-        if (!isCurrentDayOrder(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
+        if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
         if (o.status === "cancelled" || o.status === "pending_scan") return false;
         if (o.status === "paid" || o.status === "completed") return false;
         const isPaid = bills.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");

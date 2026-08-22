@@ -471,12 +471,16 @@ function OwnerDashboard() {
     });
   }, [subscribe]);
 
-  const [animatedRevenue, setAnimatedRevenue] = useState(() => summary?.revenue_today || 0);
+  const [animatedRevenue, setAnimatedRevenue] = useState(() => Number(summary?.revenue_today || 0));
 
   useEffect(() => {
     if (summary?.revenue_today !== undefined) {
-      const target = summary.revenue_today;
-      const steps = 30;
+      const target = Number(summary.revenue_today || 0);
+      if (target === 0) {
+        setAnimatedRevenue(0);
+        return;
+      }
+      const steps = 15;
       const increment = target / steps;
       let stepCount = 0;
 
@@ -488,7 +492,7 @@ function OwnerDashboard() {
         } else {
           setAnimatedRevenue(Math.round(increment * stepCount));
         }
-      }, 20);
+      }, 16);
 
       return () => clearInterval(timer);
     }
@@ -559,13 +563,13 @@ function OwnerDashboard() {
                   </View>
 
                   <Text style={{ color: "#FFFFFF", fontSize: 44, fontWeight: "900", marginVertical: 8, letterSpacing: -0.5 }}>
-                    ₹{animatedRevenue.toLocaleString("en-IN")}
+                    ₹{(summary?.revenue_today ?? summary?.revenue_total ?? 0).toLocaleString("en-IN")}
                   </Text>
 
                   <View style={{ flexDirection: "row", alignItems: "center", marginTop: 12, gap: 32 }}>
                     <View>
                       <Text style={{ color: "#FFFFFF", fontSize: 22, fontWeight: "900" }} testID="metric-orders-open">
-                        {summary?.orders_total ?? summary?.orders_open ?? 0}
+                        {summary?.orders_today ?? summary?.orders_total ?? summary?.orders_open ?? 0}
                       </Text>
                       <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Orders</Text>
                     </View>

@@ -10,6 +10,7 @@ import { printBill, sharePdf } from "@/src/lib/print";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import * as Haptics from "expo-haptics";
+import { isTodayBusinessDay, formatDateTime } from "@/src/lib/dateUtils";
 
 export default function BillsHistory() {
   const insets = useSafeAreaInsets();
@@ -50,44 +51,12 @@ export default function BillsHistory() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const formatTimestamp = (ts: string) => {
-    if (!ts) return "";
-    try {
-      const d = new Date(ts);
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      const time = d.toTimeString().split(' ')[0];
-      return `${day}/${month}/${year}, ${time}`;
-    } catch { return ts; }
-  };
-
-  // Restaurant Business Day matching (Daily shift resets after 1:00 AM local time)
-  const isToday = (ts?: string) => {
-    if (!ts) return false;
-    try {
-      const billDate = new Date(ts);
-      const now = new Date();
-      
-      // Calculate 1:00 AM cutoff for current business cycle
-      const cutoff = new Date(now);
-      if (now.getHours() >= 1) {
-        cutoff.setHours(1, 0, 0, 0);
-      } else {
-        cutoff.setDate(cutoff.getDate() - 1);
-        cutoff.setHours(1, 0, 0, 0);
-      }
-      
-      return billDate.getTime() >= cutoff.getTime();
-    } catch {
-      return false;
-    }
-  };
+  const formatTimestamp = (ts: string) => formatDateTime(ts);
 
   const isPaidStatus = (status?: string) => String(status || "").toLowerCase() === "paid";
 
   const todayPaidBills = useMemo(() => {
-    return bills.filter(b => isPaidStatus(b.status) && isToday(b.paid_at || b.created_at));
+    return bills.filter(b => isPaidStatus(b.status) && (b.is_today === true || isTodayBusinessDay(b.paid_at || b.created_at)));
   }, [bills]);
 
   const filteredBills = useMemo(() => {
