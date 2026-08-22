@@ -1689,21 +1689,22 @@ async def public_create_order(payload: PublicOrderIn):
         }
         await db.bills.insert_one(bill_doc)
     
-    cust_payload = {
-        "event": "order.created",
-        "order_id": order_id,
-        "table_number": payload.table_number or "-",
-        "customer_name": cust_name,
-        "session_id": sess_id,
-        "order": doc
-    }
-    await notify_tenant(
-        payload.tenant_id,
-        "kitchen" if is_online_paid else "waiter",
-        "New Customer Order" if is_online_paid else "Pending QR Order",
-        f"New order for Table {payload.table_number or '-'} ({cust_name})",
-        cust_payload
-    )
+    if is_online_paid:
+        cust_payload = {
+            "event": "order.created",
+            "order_id": order_id,
+            "table_number": payload.table_number or "-",
+            "customer_name": cust_name,
+            "session_id": sess_id,
+            "order": doc
+        }
+        await notify_tenant(
+            payload.tenant_id,
+            "kitchen",
+            "New Customer Order",
+            f"New paid order for Table {payload.table_number or '-'} ({cust_name})",
+            cust_payload
+        )
     return doc
 
 

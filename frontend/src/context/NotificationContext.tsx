@@ -417,7 +417,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           (notif.title && notif.title.includes("now READY")) ||
           (notif.title && notif.title.includes("now SERVED"));
 
-        if (isNewOrderCreation && isPlacedStatus && !isStatusChange && data.order) {
+        const isPendingScan = data.order?.status === "pending_scan";
+        const hasItems = Array.isArray(data.order?.items) && data.order.items.length > 0;
+
+        if (isNewOrderCreation && isPlacedStatus && !isStatusChange && !isPendingScan && hasItems && data.order) {
           (async () => {
             try {
               const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
