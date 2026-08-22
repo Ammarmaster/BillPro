@@ -84,14 +84,16 @@ export default function BillsHistory() {
     }
   };
 
-  const filteredBills = useMemo(() => {
-    if (activeFilter === "all") return bills;
-    return bills.filter(b => b.status === "paid" && isToday(b.paid_at || b.created_at));
-  }, [bills, activeFilter]);
+  const isPaidStatus = (status?: string) => String(status || "").toLowerCase() === "paid";
 
   const todayPaidBills = useMemo(() => {
-    return bills.filter(b => b.status === "paid" && isToday(b.paid_at || b.created_at));
+    return bills.filter(b => isPaidStatus(b.status) && isToday(b.paid_at || b.created_at));
   }, [bills]);
+
+  const filteredBills = useMemo(() => {
+    if (activeFilter === "all") return bills;
+    return todayPaidBills;
+  }, [bills, activeFilter, todayPaidBills]);
 
   const todayTotal = useMemo(() => {
     return todayPaidBills.reduce((sum, b) => sum + Number(b.total || 0), 0);

@@ -113,7 +113,7 @@ export default function Billing() {
 
       const tOrders = oList.filter((x: any) => 
         (targetOrderIds.length > 0 ? targetOrderIds.includes(x.id) : isSameTable(x.table_number, tableNumber)) &&
-        x.status !== "served" && x.status !== "cancelled"
+        x.status !== "paid" && x.status !== "completed" && x.status !== "cancelled" && x.status !== "pending_scan"
       );
 
       if (tOrders.length > 0) {
@@ -192,7 +192,7 @@ export default function Billing() {
           const foundO = oList.find((o: any) => o.id === orderId);
           if (foundO) setOrder(foundO);
         } else if (tableNumber) {
-          const activeO = oList.find((o: any) => String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase() && o.status !== "served" && o.status !== "completed");
+          const activeO = oList.find((o: any) => String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase() && o.status !== "paid" && o.status !== "completed" && o.status !== "cancelled");
           if (activeO) setOrder(activeO);
         }
         if (orderId || tableNumber) {
@@ -266,7 +266,7 @@ export default function Billing() {
         // Combined table billing for Settle Entire Table
         const tableOrders = (orders || []).filter((x: any) => 
           (targetOrderIds.length > 0 ? targetOrderIds.includes(x.id) : isSameTable(x.table_number, tableNumber)) &&
-          x.status !== "served" && x.status !== "cancelled"
+          x.status !== "paid" && x.status !== "completed" && x.status !== "cancelled" && x.status !== "pending_scan"
         );
         const subtotalToBill = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
 
