@@ -61,7 +61,7 @@ export default function Billing() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
-  const { orderId, tableNumber, backTo } = useLocalSearchParams<{ orderId?: string; tableNumber?: string; backTo?: string }>();
+  const { orderId, tableNumber, orderIds, backTo } = useLocalSearchParams<{ orderId?: string; tableNumber?: string; orderIds?: string; backTo?: string }>();
 
   // Synchronous cache lookup helper
   const computeInitialState = () => {
@@ -78,7 +78,7 @@ export default function Billing() {
       const targetOrderId = api.resolveTempId(orderId);
       const o = oList.find((x: any) => x.id === targetOrderId);
       initialOrder = o || null;
-      const existing = bList.find((x: any) => x.order_id === targetOrderId);
+      const existing = bList.find((x: any) => x.order_id === targetOrderId && x.status === "pending");
       if (existing) {
         initialBill = existing;
       } else if (o) {
@@ -108,7 +108,14 @@ export default function Billing() {
         };
       }
     } else if (tableNumber) {
-      const tOrders = oList.filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
+      let targetOrderIds: string[] = [];
+      try { if (orderIds) targetOrderIds = JSON.parse(orderIds); } catch {}
+
+      const tOrders = oList.filter((x: any) => 
+        (targetOrderIds.length > 0 ? targetOrderIds.includes(x.id) : isSameTable(x.table_number, tableNumber)) &&
+        x.status !== "served" && x.status !== "cancelled"
+      );
+
       if (tOrders.length > 0) {
         const itemsToBill = tOrders.flatMap((o: any) => o.items || []);
         const subtotalToBill = tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
@@ -118,7 +125,11 @@ export default function Billing() {
           subtotal: subtotalToBill,
           id: tOrders[0].id
         };
-        const existingTableBill = bList.find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
+        const existingTableBill = bList.find((x: any) => 
+          isSameTable(x.table_number, tableNumber) && 
+          x.status === "pending" &&
+          Math.abs(Number(x.subtotal || 0) - subtotalToBill) < 0.01
+        );
         if (existingTableBill) {
           initialBill = existingTableBill;
         } else {
@@ -168,7 +179,7 @@ export default function Billing() {
     const { initialOrder, initialBill } = computeInitialState();
     setOrder(initialOrder);
     setBill(initialBill);
-  }, [orderId, tableNumber]);
+  }, [orderId, tableNumber, orderIds]);
 
   useEffect(() => {
     const { subscribeToCache } = require("@/src/lib/api");
@@ -249,11 +260,27 @@ export default function Billing() {
           setErr("Order not found or already settled.");
         }
       } else if (tableNumber) {
+        let targetOrderIds: string[] = [];
+        try { if (orderIds) targetOrderIds = JSON.parse(orderIds); } catch {}
+
         // Combined table billing for Settle Entire Table
-        const tableOrders = (orders || []).filter((x: any) => isSameTable(x.table_number, tableNumber) && x.status !== "served" && x.status !== "cancelled");
-        let b = (bills || []).find((x: any) => isSameTable(x.table_number, tableNumber) && x.status === "pending");
+        const tableOrders = (orders || []).filter((x: any) => 
+          (targetOrderIds.length > 0 ? targetOrderIds.includes(x.id) : isSameTable(x.table_number, tableNumber)) &&
+          x.status !== "served" && x.status !== "cancelled"
+        );
+        const subtotalToBill = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+
+        let b = (bills || []).find((x: any) => 
+          isSameTable(x.table_number, tableNumber) && 
+          x.status === "pending" &&
+          Math.abs(Number(x.subtotal || 0) - subtotalToBill) < 0.01
+        );
+
         if (!b && tableOrders.length > 0) {
-          b = await api.createBill({ table_number: tableNumber }).catch(() => {
+          b = await api.createBill({
+            table_number: tableNumber,
+            order_ids: tableOrders.map((o: any) => o.id)
+          }).catch(() => {
             // Local offline calculation fallback for entire table
             const combinedItems = tableOrders.flatMap((o: any) => o.items || []);
             const calc = BillingEngine.calculate({
@@ -285,10 +312,9 @@ export default function Billing() {
         }
         if (b) {
           setBill(b);
-          setOrder({ table_number: tableNumber, items: b.items || [], subtotal: b.subtotal || 0, id: b.order_id || targetOrderId });
+          setOrder({ table_number: tableNumber, items: b.items || [], subtotal: b.subtotal || 0, id: b.order_id || (tableOrders[0] ? tableOrders[0].id : targetOrderId) });
         } else if (tableOrders.length > 0) {
-          const subtotal = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
-          setOrder({ table_number: tableNumber, items: tableOrders.flatMap((o: any) => o.items || []), subtotal, id: tableOrders[0].id });
+          setOrder({ table_number: tableNumber, items: tableOrders.flatMap((o: any) => o.items || []), subtotal: subtotalToBill, id: tableOrders[0].id });
         } else {
           setErr(`No active orders found on Table ${tableNumber}`);
         }
@@ -298,11 +324,11 @@ export default function Billing() {
     } catch (e: any) { 
       setErr(e.message || "Failed to load bill details."); 
     }
-  }, [orderId, tableNumber]);
+  }, [orderId, tableNumber, orderIds]);
 
   useEffect(() => {
     load();
-  }, [orderId, tableNumber, load]);
+  }, [orderId, tableNumber, orderIds, load]);
 
   const handleMarkPaidWithMethod = async (method: string) => {
     if (!bill) return;
@@ -341,8 +367,9 @@ export default function Billing() {
       });
     } else {
       // 2. SETTLE ENTIRE TABLE: Update all active orders on that table!
+      const targetOrderIds = bill?.order_ids || (order?.id ? [order.id] : undefined);
       const updatedOrders = oList.map((o: any) => {
-        if (targetTbl && isSameTable(o.table_number, targetTbl)) {
+        if ((targetOrderIds && targetOrderIds.includes(o.id)) || (targetTbl && isSameTable(o.table_number, targetTbl))) {
           return { ...o, status: "served" };
         }
         return o;
@@ -351,7 +378,8 @@ export default function Billing() {
 
       // Perform single table settlement mutation
       if (targetTbl && targetTbl !== "Takeaway") {
-        api.settleTable(targetTbl, method).catch((e: any) => {
+        const finalAmt = Number(bill?.total || order?.subtotal || 0);
+        api.settleTable(targetTbl, method, targetOrderIds, finalAmt).catch((e: any) => {
           console.warn("Table settlement sync failed:", e.message);
         });
       } else {

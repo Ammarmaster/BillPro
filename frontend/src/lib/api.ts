@@ -387,11 +387,19 @@ export const api = {
     clearCachePrefix("/tables");
     return res;
   },
-  settleTable: async (tableNumber: string, paymentMethod = "UPI") => {
-    const res = await req("/bills/settle-table", { method: "POST", body: JSON.stringify({ table_number: tableNumber, payment_method: paymentMethod }) });
+  settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number) => {
+    const res = await req("/bills/settle-table", {
+      method: "POST",
+      body: JSON.stringify({
+        table_number: tableNumber,
+        payment_method: paymentMethod,
+        order_ids: orderIds,
+        total
+      })
+    });
     const oList = memoryCache["/orders"] || [];
     memoryCache["/orders"] = oList.map((o: any) => {
-      if (String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase()) {
+      if ((orderIds && orderIds.includes(o.id)) || (!orderIds && String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase())) {
         return { ...o, status: "served" };
       }
       return o;

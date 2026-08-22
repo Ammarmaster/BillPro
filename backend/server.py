@@ -2448,6 +2448,8 @@ class PayIn(BaseModel):
 class SettleTableIn(BaseModel):
     table_number: str
     payment_method: str = "UPI"
+    order_ids: Optional[List[str]] = None
+    total: Optional[float] = None
 
 
 @api.post("/bills/settle-table")
@@ -2461,13 +2463,20 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
         tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
 
     # 1. Find all active orders being settled for this table
-    active_orders = await db.orders.find({
-        "tenant_id": tid,
-        "table_number": {"$in": tbl_patterns},
-        "status": {"$nin": ["served", "cancelled"]}
-    }, {"_id": 0}).to_list(100)
+    if payload.order_ids and len(payload.order_ids) > 0:
+        active_orders = await db.orders.find({
+            "id": {"$in": payload.order_ids},
+            "tenant_id": tid,
+            "status": {"$nin": ["served", "cancelled"]}
+        }, {"_id": 0}).to_list(100)
+    else:
+        active_orders = await db.orders.find({
+            "tenant_id": tid,
+            "table_number": {"$in": tbl_patterns},
+            "status": {"$nin": ["served", "cancelled"]}
+        }, {"_id": 0}).to_list(100)
     
-    total_settled = sum(float(o.get("subtotal", 0.0)) for o in active_orders)
+    total_settled = payload.total if payload.total is not None and payload.total > 0 else sum(float(o.get("subtotal", 0.0)) for o in active_orders)
 
     # 2. For any active order that does not have a bill, create a paid bill in db.bills to guarantee revenue tracking
     for o in active_orders:
@@ -2499,27 +2508,46 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
             }
             await db.bills.insert_one(bill_doc)
 
-    # 3. Settle all existing pending bills for this table
-    await db.bills.update_many({
+    # 3. Settle all matching pending bills for these orders or this table
+    order_id_list = [o["id"] for o in active_orders]
+    bill_filter: dict = {
         "tenant_id": tid,
-        "table_number": {"$in": tbl_patterns},
         "status": "pending"
-    }, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+    }
+    if order_id_list:
+        bill_filter["$or"] = [
+            {"order_id": {"$in": order_id_list}},
+            {"order_ids": {"$in": order_id_list}},
+            {"table_number": {"$in": tbl_patterns}}
+        ]
+    else:
+        bill_filter["table_number"] = {"$in": tbl_patterns}
 
-    # 4. Mark all active orders for this table as served
-    res = await db.orders.update_many({
+    await db.bills.update_many(bill_filter, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+
+    # 4. Mark active orders for this table as served
+    target_order_filter = {"id": {"$in": order_id_list}, "tenant_id": tid} if order_id_list else {
         "tenant_id": tid,
         "table_number": {"$in": tbl_patterns},
         "status": {"$nin": ["served", "cancelled"]}
-    }, {"$set": {"status": "served"}})
+    }
+    res = await db.orders.update_many(target_order_filter, {"$set": {"status": "served"}})
+
+    # Check remaining active orders on this table
+    remaining = await db.orders.count_documents({
+        "tenant_id": tid,
+        "table_number": {"$in": tbl_patterns},
+        "status": {"$nin": ["served", "cancelled"]}
+    })
+    tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
 
     dashboard_summary_cache.pop(tid, None)
 
     settle_payload = {
         "table_number": payload.table_number,
         "status": "served",
-        "table_status": "AVAILABLE",
-        "active_orders_remaining": 0,
+        "table_status": tbl_status,
+        "active_orders_remaining": remaining,
         "total": float(total_settled),
         "event": "TABLE_SETTLED"
     }
@@ -2533,8 +2561,8 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
     return {
         "ok": True,
         "table_number": payload.table_number,
-        "table_status": "AVAILABLE",
-        "active_orders_remaining": 0,
+        "table_status": tbl_status,
+        "active_orders_remaining": remaining,
         "settled_count": res.modified_count,
         "total": float(total_settled)
     }

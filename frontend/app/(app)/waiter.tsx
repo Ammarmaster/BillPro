@@ -306,33 +306,64 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       const guestName = currentGuestName || activeOrder?.customer_name || "Guest 1";
       const sessId = currentSessionId || activeOrder?.session_id || "tsess_" + Math.random().toString(36).substring(2, 9);
       const tblLabel = table.trim();
+      const orderSubtotal = lines.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+      const tempId = activeOrder?.id || "temp-" + Date.now();
 
-      let realOrder: any;
-      if (isEdit) {
-        realOrder = await api.updateOrder(activeOrder.id, { items: lines, notes: "", customer_name: guestName });
-      } else {
-        realOrder = await api.createOrder({ table_number: tblLabel, items: lines, notes: "", session_id: sessId, customer_name: guestName });
-      }
+      // Instant optimistic order
+      const optimisticOrder = {
+        id: tempId,
+        order_number: activeOrder?.order_number || String(Math.floor(100 + Math.random() * 900)),
+        table_number: tblLabel,
+        session_id: sessId,
+        customer_name: guestName,
+        items: [...lines],
+        subtotal: orderSubtotal,
+        status: activeOrder?.status || "placed",
+        created_at: activeOrder?.created_at || new Date().toISOString(),
+      };
 
-      setOrders(prev => [realOrder, ...prev.filter(o => o.id !== realOrder.id && !String(o.id).startsWith("temp-"))]);
-      setTables(prev => prev.map(t => isSameTable(t.label, tblLabel) ? { ...t, status: "occupied" } : t));
-      
+      // 0ms Instant UI Transition
       setLines([]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
       const tblObj = tables.find(t => isSameTable(t.label, tblLabel)) || { id: "temp-tbl", label: tblLabel, status: "occupied", seats: 4 };
       setSelectedTableObj(tblObj);
       setTable(tblLabel);
-      setActiveOrder(realOrder);
+      setActiveOrder(optimisticOrder);
+      setTables(prev => prev.map(t => isSameTable(t.label, tblLabel) ? { ...t, status: "occupied" } : t));
+      setOrders(prev => [optimisticOrder, ...prev.filter(o => o.id !== tempId)]);
       setViewMode("order_details");
 
-      const settings = await getPrinterSettings("kitchen");
-      if (settings && settings.type !== "none" && settings.auto_print) {
-        await printKitchenKOT(realOrder);
-      }
+      // API sync in background without freezing UI
+      (async () => {
+        try {
+          let realOrder: any;
+          if (isEdit) {
+            realOrder = await api.updateOrder(activeOrder.id, { items: optimisticOrder.items, notes: "", customer_name: guestName });
+          } else {
+            realOrder = await api.createOrder({ table_number: tblLabel, items: optimisticOrder.items, notes: "", session_id: sessId, customer_name: guestName });
+          }
+          if (realOrder && realOrder.id) {
+            api.setTempIdMapping(tempId, realOrder.id);
+            api.updateCachedOrder(tempId, realOrder);
+            setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
+            setActiveOrder((prev: any) => (prev && prev.id === tempId) ? realOrder : prev);
+            
+            // Fire-and-forget background print
+            getPrinterSettings("kitchen").then(settings => {
+              if (settings && settings.type !== "none" && settings.auto_print) {
+                printKitchenKOT(realOrder).catch(() => {});
+              }
+            }).catch(() => {});
+          }
+        } catch (e: any) {
+          console.warn("Order placement background sync error:", e);
+        } finally {
+          setBusy(false);
+        }
+      })();
     } catch (e: any) {
       setErr(e.message || "Failed to place order.");
-    } finally {
       setBusy(false);
     }
   };
@@ -537,7 +568,15 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             <Pressable
               style={styles.genBillBtn}
               onPress={() => {
-                router.push({ pathname: "/(app)/billing", params: { tableNumber: selectedTableObj.label, backTo: "/(app)/waiter" } });
+                const activeIds = tableOrders.map((o: any) => o.id);
+                router.push({
+                  pathname: "/(app)/billing",
+                  params: {
+                    tableNumber: selectedTableObj.label,
+                    orderIds: JSON.stringify(activeIds),
+                    backTo: "/(app)/waiter"
+                  }
+                });
               }}
             >
               <View>
