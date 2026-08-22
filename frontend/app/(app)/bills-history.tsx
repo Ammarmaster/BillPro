@@ -62,38 +62,41 @@ export default function BillsHistory() {
     } catch { return ts; }
   };
 
-  // IST Date String matching for Indian restaurants
-  const todayDateStr = useMemo(() => {
-    const d = new Date();
-    return d.toISOString().split("T")[0];
-  }, []);
+  // Local Date matching to accurately show all today's bills in IST/local time
+  const isToday = (ts?: string) => {
+    if (!ts) return false;
+    try {
+      const d = new Date(ts);
+      const now = new Date();
+      return (
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear()
+      );
+    } catch {
+      return false;
+    }
+  };
 
   const filteredBills = useMemo(() => {
     if (activeFilter === "all") return bills;
-    return bills.filter(b => {
-      const ts = b.paid_at || b.created_at || "";
-      return b.status === "paid" && ts.startsWith(todayDateStr);
-    });
-  }, [bills, activeFilter, todayDateStr]);
+    return bills.filter(b => isToday(b.created_at || b.paid_at));
+  }, [bills, activeFilter]);
+
+  const todayPaidBills = useMemo(() => {
+    return bills.filter(b => b.status === "paid" && isToday(b.paid_at || b.created_at));
+  }, [bills]);
 
   const todayTotal = useMemo(() => {
-    const todayList = bills.filter(b => {
-      const ts = b.paid_at || b.created_at || "";
-      return b.status === "paid" && ts.startsWith(todayDateStr);
-    });
-    return todayList.reduce((sum, b) => sum + Number(b.total || 0), 0);
-  }, [bills, todayDateStr]);
+    return todayPaidBills.reduce((sum, b) => sum + Number(b.total || 0), 0);
+  }, [todayPaidBills]);
 
   const todayFormula = useMemo(() => {
-    const todayList = bills.filter(b => {
-      const ts = b.paid_at || b.created_at || "";
-      return b.status === "paid" && ts.startsWith(todayDateStr);
-    });
-    if (todayList.length === 0) return "No sales recorded today yet";
-    if (todayList.length === 1) return `1 bill: ₹${todayList[0].total} = ₹${todayList[0].total}`;
-    const formulaStr = todayList.map(b => `₹${b.total}`).join(" + ");
+    if (todayPaidBills.length === 0) return "No paid sales recorded today yet";
+    if (todayPaidBills.length === 1) return `1 bill: ₹${todayPaidBills[0].total} = ₹${todayPaidBills[0].total}`;
+    const formulaStr = todayPaidBills.map(b => `₹${b.total}`).join(" + ");
     return `${formulaStr} = ₹${todayTotal.toLocaleString("en-IN")}`;
-  }, [bills, todayDateStr, todayTotal]);
+  }, [todayPaidBills, todayTotal]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>

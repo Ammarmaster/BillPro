@@ -87,37 +87,54 @@ export default function WaiterScreen() {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-  const handleScanImport = async (confirmedOrder: any) => {
+  const handleScanImport = async (confirmedOrder: any, tableNum?: string) => {
     setShowScanner(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     
-    // Optimistically insert/update the confirmed order in local state
+    const assignedTable = tableNum || confirmedOrder.table_number || "1";
+    const finalOrder = { ...confirmedOrder, table_number: assignedTable };
+
+    // 1. Optimistically insert/update the confirmed order in local state
     setOrders(prev => {
-      const filtered = prev.filter(o => o.id !== confirmedOrder.id);
-      return [confirmedOrder, ...filtered];
+      const filtered = prev.filter(o => o.id !== finalOrder.id);
+      return [finalOrder, ...filtered];
     });
 
-    // Mark the table as occupied locally
-    if (confirmedOrder.table_number) {
-      setTables(prev =>
-        prev.map(t =>
-          String(t.label).toLowerCase() === String(confirmedOrder.table_number).toLowerCase()
-            ? { ...t, status: "occupied" }
-            : t
-        )
-      );
+    // 2. Mark the table as occupied locally
+    setTables(prev =>
+      prev.map(t =>
+        isSameTable(t.label, assignedTable)
+          ? { ...t, status: "occupied" }
+          : t
+      )
+    );
 
-      // Instantly open the table details view with 0ms delay!
-      const targetTbl = tables.find(
-        t => String(t.label).toLowerCase() === String(confirmedOrder.table_number).toLowerCase()
-      ) || { id: "tbl-dyn", label: String(confirmedOrder.table_number), seats: 4, status: "occupied" };
-      
-      setSelectedTableObj(targetTbl);
-      setActiveOrder(confirmedOrder);
-      setViewMode("order_details");
-    }
+    // 3. 0ms INSTANT Kitchen KOT Print on QR scan confirmation!
+    (async () => {
+      try {
+        const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
+        const kSettings = await getPrinterSettings("kitchen");
+        const cSettings = await getPrinterSettings("cashier");
+        const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                            (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+        if (shouldPrint) {
+          await printKitchenKOT(finalOrder);
+        }
+      } catch (printErr) {
+        console.warn("Scan import KOT auto-print error:", printErr);
+      }
+    })();
 
-    // Trigger a silent load in background to reconcile state
+    // 4. Instantly open the table details view in 0ms!
+    const targetTbl = tables.find(
+      t => isSameTable(t.label, assignedTable)
+    ) || { id: "tbl-dyn", label: String(assignedTable), seats: 4, status: "occupied" };
+    
+    setSelectedTableObj(targetTbl);
+    setActiveOrder(finalOrder);
+    setViewMode("order_details");
+
+    // 5. Trigger a silent load in background to reconcile state
     load().catch(() => {});
   };
 

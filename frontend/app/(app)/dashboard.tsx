@@ -397,6 +397,21 @@ function OwnerDashboard() {
   const handleScanImport = async (confirmedOrder: any) => {
     setShowScanner(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    
+    // Auto-print KOT on QR scan confirm!
+    (async () => {
+      try {
+        const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
+        const kSettings = await getPrinterSettings("kitchen");
+        const cSettings = await getPrinterSettings("cashier");
+        const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                            (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+        if (shouldPrint) {
+          await printKitchenKOT(confirmedOrder);
+        }
+      } catch {}
+    })();
+
     load().catch(() => {});
   };
 

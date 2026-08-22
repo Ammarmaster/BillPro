@@ -131,9 +131,6 @@ export function getBillLogo(snapshot?: any, width: number = 80): string | null {
     if (width === 80 && snapshot.logo_base64_80) {
       return snapshot.logo_base64_80;
     }
-    if (snapshot.logo_base64) {
-      return snapshot.logo_base64;
-    }
   }
   return null;
 }
@@ -200,14 +197,20 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     const r = data.restaurant_snapshot || {};
     const customLogo = getBillLogo(r, width);
     
-    // Only print logo if custom logo exists and is not empty
+    // Only print logo if compact pre-scaled logo exists
     if (customLogo) {
       lines.push(`[C]<img>data:image/png;base64,${customLogo}</img>\n`);
     }
     
-    // Restaurant Header (Master cheff style)
-    lines.push(`[C]<b><font size='big'>${r.name || "RESTAURANT"}</font></b>\n`);
-    if (r.address) lines.push(`[C]${r.address}\n`);
+    // Restaurant Header (Master cheff style - Strictly Centered)
+    lines.push(`[C]<b><font size='big'>${(r.name || "MASTER CHEFF").toUpperCase()}</font></b>\n`);
+    
+    if (r.address) {
+      const addrLines = r.address.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean);
+      addrLines.forEach((addrLine: string) => {
+        lines.push(`[C]${addrLine}\n`);
+      });
+    }
     
     const phoneParts = [];
     if (r.phone) phoneParts.push(r.phone);
