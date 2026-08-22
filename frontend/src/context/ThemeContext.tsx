@@ -37,14 +37,14 @@ export const lightTheme = {
 
 export const darkTheme = {
   isDark: true,
-  surface: "#0B0F19",
-  surfaceSecondary: "#161C2E",
-  surfaceTertiary: "#1F293D",
+  surface: "#0D0D0D",
+  surfaceSecondary: "#16161A",
+  surfaceTertiary: "#222228",
   onSurface: "#FFFFFF",
   onSurfaceSecondary: "#94A3B8",
   onSurfaceTertiary: "#64748B",
-  border: "#26334D",
-  borderStrong: "#334155",
+  border: "#2E2E38",
+  borderStrong: "#3E3E4A",
   brand: "#635BFF",
   brandSecondary: "#4F46E5",
   brandTertiary: "#26294D",
@@ -55,8 +55,8 @@ export const darkTheme = {
   onSuccess: "#34D399",
   warning: "#451A03",
   onWarning: "#FBBF24",
-  card: "#161C2E",
-  tabBarBg: "#0B0F19",
+  card: "#16161A",
+  tabBarBg: "#0D0D0D",
 };
 
 const ThemeContext = createContext<ThemeContextType>({

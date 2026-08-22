@@ -140,7 +140,8 @@ export default function TablesScreen() {
         <Pressable style={styles.modalBg} onPress={() => setQrTable(null)}>
           <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, alignItems: "center" }]} onPress={() => {}}>
             {qrTable && (() => {
-              const qrUrl = `https://billpro-g1th.onrender.com/menu/${tenantId || user?.tenant_id || "undefined"}/${qrTable.label}`;
+              const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-g1th.onrender.com").replace(/\/$/, "");
+              const qrUrl = `${backendBase}/menu/${tenantId || user?.tenant_id || "undefined"}/${qrTable.label}`;
               const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`;
               const hasTenant = !!(tenantId || user?.tenant_id);
               return (

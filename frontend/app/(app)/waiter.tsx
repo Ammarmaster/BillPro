@@ -349,12 +349,20 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
             setActiveOrder((prev: any) => (prev && prev.id === tempId) ? realOrder : prev);
             
-            // Fire-and-forget background print
-            getPrinterSettings("kitchen").then(settings => {
-              if (settings && settings.type !== "none" && settings.auto_print) {
-                printKitchenKOT(realOrder).catch(() => {});
+            // Fire-and-forget background KOT auto-print
+            (async () => {
+              try {
+                const kSettings = await getPrinterSettings("kitchen");
+                const cSettings = await getPrinterSettings("cashier");
+                const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                                    (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+                if (shouldPrint) {
+                  await printKitchenKOT(realOrder);
+                }
+              } catch (printErr) {
+                console.warn("Background KOT auto-print error:", printErr);
               }
-            }).catch(() => {});
+            })();
           }
         } catch (e: any) {
           console.warn("Order placement background sync error:", e);
@@ -513,12 +521,12 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
 
                     {/* Footer / Subtotal + Actions */}
                     <View style={[styles.subtotalRow, { borderTopColor: theme.border }]}>
-                      <View>
+                      <View style={{ flex: 1, minWidth: 90 }}>
                         <Text style={[styles.subtotalLbl, { color: theme.onSurfaceSecondary }]}>Order Amount</Text>
                         <Text style={[styles.subtotalVal, { color: theme.onSurface }]}>₹{orderTotal}</Text>
                       </View>
 
-                      <View style={{ flexDirection: "row", gap: 8 }}>
+                      <View style={styles.cardActionsWrap}>
                         <Pressable
                           style={[styles.guestActionBtn, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}
                           onPress={() => {
@@ -537,7 +545,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                           }}
                         >
                           <Ionicons name="create-outline" size={14} color="#635BFF" />
-                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginLeft: 4 }}>Edit</Text>
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#635BFF", marginLeft: 4 }} numberOfLines={1}>Edit</Text>
                         </Pressable>
 
                         <Pressable
@@ -545,7 +553,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                           onPress={() => router.push({ pathname: "/(app)/billing", params: { orderId: order.id, backTo: "/(app)/waiter" } })}
                         >
                           <Ionicons name="receipt-outline" size={14} color="#FFF" />
-                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }}>Bill Guest</Text>
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF", marginLeft: 4 }} numberOfLines={1}>Bill Guest</Text>
                         </Pressable>
                       </View>
                     </View>
@@ -713,8 +721,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
               data={tables}
               keyExtractor={t => t.id}
               numColumns={3}
-              columnWrapperStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
-              contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: spacing.md }}
+              columnWrapperStyle={{ justifyContent: "flex-start", gap: 10, paddingHorizontal: spacing.lg }}
+              contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: 10 }}
               showsVerticalScrollIndicator={false}
               renderItem={({ item, index }) => {
                 const { status } = getTableStatusInfo(item.label, orders, bills);
@@ -746,7 +754,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                 }
 
                 return (
-                  <Animated.View entering={FadeInDown.delay(index * 40).springify()} style={{ flex: 1 }}>
+                  <Animated.View entering={FadeInDown.delay(index * 40).springify()} style={{ width: "31.2%", maxWidth: "31.2%", minWidth: "31.2%" }}>
                     <Pressable
                       style={({ pressed }) => [
                         styles.tableCard,
@@ -760,7 +768,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                         <Ionicons name={iconName} size={14} color={textColor} />
                       </View>
 
-                      <Text style={[styles.cardLabel, { color: theme.onSurface }]}>{item.label}</Text>
+                      <Text style={[styles.cardLabel, { color: theme.onSurface }]} numberOfLines={1}>{item.label}</Text>
                       <Text style={[styles.cardSeats, { color: theme.onSurfaceSecondary }]}>{item.seats} seats</Text>
                       <Text style={[styles.cardStatus, { color: textColor }]}>{status}</Text>
                     </Pressable>
@@ -1102,10 +1110,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   
   tableCard: {
-    flex: 1,
-    aspectRatio: 0.85,
-    padding: spacing.md,
-    borderRadius: radius.xl,
+    width: "100%",
+    minHeight: 116,
+    padding: 12,
+    borderRadius: radius.lg,
     borderWidth: 1.5,
     alignItems: "flex-start",
     justifyContent: "space-between",
@@ -1117,9 +1125,9 @@ const styles = StyleSheet.create({
   },
   cardPressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   badgeIconBox: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  cardLabel: { color: colors.onSurface, fontSize: 22, fontWeight: "900", marginTop: 4 },
+  cardLabel: { color: colors.onSurface, fontSize: 19, fontWeight: "900", marginTop: 4 },
   cardSeats: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "600" },
-  cardStatus: { fontSize: 13, fontWeight: "800", marginTop: 2 },
+  cardStatus: { fontSize: 12, fontWeight: "800", marginTop: 2 },
 
   // Details View Styles (Matching Screenshot)
   detailsHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
@@ -1146,9 +1154,10 @@ const styles = StyleSheet.create({
   itemQty: { color: "#635BFF", fontSize: 15, fontWeight: "800", width: 30 },
   itemTitle: { color: colors.onSurface, fontSize: 16, fontWeight: "600", flex: 1 },
   itemAmt: { color: colors.onSurface, fontSize: 16, fontWeight: "700" },
-  subtotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "#F1F5F9" },
-  subtotalLbl: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: "500" },
-  subtotalVal: { color: colors.onSurface, fontSize: 18, fontWeight: "900" },
+  subtotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "#F1F5F9", gap: 8 },
+  cardActionsWrap: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
+  subtotalLbl: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: "500" },
+  subtotalVal: { color: colors.onSurface, fontSize: 17, fontWeight: "900" },
 
   bottomActionBar: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#FFFFFF", flexDirection: "row", padding: spacing.lg, gap: spacing.md, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
   addOrderBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 16, borderRadius: radius.lg, backgroundColor: "#F1F0FF", borderWidth: 1, borderColor: "rgba(99,91,255,0.2)" },
@@ -1243,13 +1252,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   guestActionBtn: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: radius.md,
     borderWidth: 1,
+    minHeight: 34,
   },
   guestPickerSheet: {
     padding: spacing.xl,

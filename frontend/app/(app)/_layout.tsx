@@ -1,44 +1,62 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Tabs, useRouter, usePathname } from "expo-router";
-import { View, ActivityIndicator, Platform } from "react-native";
+import { View, Text, ActivityIndicator, Platform, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/lib/api";
-import { colors } from "@/src/theme";
+import { colors, spacing, radius } from "@/src/theme";
 
 export default function AppLayout() {
   const insets = useSafeAreaInsets();
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const { theme, isDark } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+
+  const [subStatus, setSubStatus] = useState<"active" | "expired" | "unknown">("active");
+  const [checkingSub, setCheckingSub] = useState<boolean>(true);
+
+  const checkSubscription = useCallback(async () => {
+    if (!user) return;
+    if (user.role === "super_admin" || user.role === "admin_employee") {
+      setSubStatus("active");
+      setCheckingSub(false);
+      return;
+    }
+    try {
+      const sub = await api.mySubscription();
+      if (!sub || sub.status === "expired" || sub.status !== "active") {
+        setSubStatus("expired");
+        if ((user.role === "owner" || user.role === "manager") && !pathname?.includes("subscribe")) {
+          router.replace("/(app)/subscribe");
+        }
+      } else {
+        setSubStatus("active");
+        if (!user.tenant_id && !pathname?.includes("onboarding")) {
+          router.replace("/onboarding");
+        }
+      }
+    } catch {
+      if (user.role === "owner" || user.role === "manager") {
+        setSubStatus("expired");
+        if (!pathname?.includes("subscribe")) {
+          router.replace("/(app)/subscribe");
+        }
+      }
+    } finally {
+      setCheckingSub(false);
+    }
+  }, [user, pathname, router]);
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/");
     } else if (!loading && user) {
-      api.mySubscription().then(sub => {
-        if (user.role === "owner") {
-          if (pathname && pathname.includes("subscribe")) {
-            return;
-          }
-          if (!sub) {
-            router.replace("/demo-billing");
-          } else if (sub.status === "expired" || sub.status !== "active") {
-            router.replace("/(app)/subscribe");
-          } else if (!user.tenant_id) {
-            router.replace("/onboarding");
-          }
-        }
-      }).catch(() => {
-        if (user.role === "owner") {
-          router.replace("/(app)/subscribe");
-        }
-      });
+      checkSubscription();
     }
-  }, [user, loading, router, pathname]);
+  }, [user, loading, checkSubscription]);
 
   if (loading || !user) {
     return (
@@ -52,6 +70,42 @@ export default function AppLayout() {
   const isWaiter = user.role === "waiter";
   const isKitchen = user.role === "kitchen";
   const isStaff = isWaiter || isKitchen;
+
+  // If staff member of an expired tenant, show the locked screen with Logout option
+  if (!isAdmin && isStaff && subStatus === "expired") {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.surface, justifyContent: "center", alignItems: "center", padding: spacing.xl }}>
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: "#7F1D1D", justifyContent: "center", alignItems: "center", marginBottom: spacing.lg }}>
+          <Ionicons name="lock-closed" size={38} color="#F87171" />
+        </View>
+        <Text style={{ color: theme.onSurface, fontSize: 22, fontWeight: "900", textAlign: "center" }}>
+          Subscription Expired
+        </Text>
+        <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, textAlign: "center", marginTop: 8, lineHeight: 22, maxWidth: 320 }}>
+          Your restaurant's EzBill subscription has ended. Please notify your restaurant owner or manager to renew the plan.
+        </Text>
+        
+        <Pressable 
+          style={{ marginTop: spacing.xl, backgroundColor: "#635BFF", paddingHorizontal: 24, paddingVertical: 14, borderRadius: radius.md, width: "100%", maxWidth: 280, alignItems: "center" }}
+          onPress={checkSubscription}
+          disabled={checkingSub}
+        >
+          {checkingSub ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14 }}>Check Status Again</Text>
+          )}
+        </Pressable>
+
+        <Pressable 
+          style={{ marginTop: spacing.md, paddingVertical: 12 }}
+          onPress={() => logout()}
+        >
+          <Text style={{ color: "#EF4444", fontWeight: "700", fontSize: 14 }}>Log Out</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 14 : 10);
 

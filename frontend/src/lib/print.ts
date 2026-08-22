@@ -334,7 +334,7 @@ export function startAutoReconnect() {
 startAutoReconnect();
 
 
-async function requestBluetoothPermissions(): Promise<boolean> {
+export async function requestBluetoothPermissions(): Promise<boolean> {
   if (Platform.OS !== "android") return true;
   try {
     const version = typeof Platform.Version === "number" ? Platform.Version : parseInt(String(Platform.Version), 10);
@@ -342,6 +342,7 @@ async function requestBluetoothPermissions(): Promise<boolean> {
       const results = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ]);
       return results[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED;
     } else {
@@ -354,6 +355,84 @@ async function requestBluetoothPermissions(): Promise<boolean> {
     console.warn("Bluetooth permission request error:", err);
     return false;
   }
+}
+
+export async function scanNearbyPrinters(): Promise<{ name: string; address: string; type: "bluetooth" | "network" }[]> {
+  const discovered: { name: string; address: string; type: "bluetooth" | "network" }[] = [];
+
+  if (Platform.OS === "android") {
+    await requestBluetoothPermissions();
+    if (ThermalPrinterModule && ThermalPrinterModule.getBluetoothDeviceList) {
+      try {
+        const paired: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
+        if (paired && Array.isArray(paired)) {
+          paired.forEach(d => {
+            const name = (d.deviceName || d.name || "Bluetooth POS Printer").trim();
+            const address = (d.macAddress || d.address || "").trim();
+            if (address && !discovered.some(x => x.address.toLowerCase() === address.toLowerCase())) {
+              discovered.push({ name, address, type: "bluetooth" });
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("Bluetooth scan error:", err);
+      }
+    }
+  }
+
+  // Also include any currently remembered printers if not already in list
+  const cashier = await getPrinterSettings("cashier");
+  if (cashier && cashier.address && cashier.type !== "none" && cashier.type !== "system") {
+    if (!discovered.some(x => x.address.toLowerCase() === cashier.address.toLowerCase())) {
+      discovered.push({
+        name: cashier.name || (cashier.type === "network" ? "Network Printer" : "Bluetooth Printer"),
+        address: cashier.address,
+        type: cashier.type as "bluetooth" | "network"
+      });
+    }
+  }
+
+  const kitchen = await getPrinterSettings("kitchen");
+  if (kitchen && kitchen.address && kitchen.type !== "none" && kitchen.type !== "system") {
+    if (!discovered.some(x => x.address.toLowerCase() === kitchen.address.toLowerCase())) {
+      discovered.push({
+        name: kitchen.name || (kitchen.type === "network" ? "Network Printer" : "Bluetooth Printer"),
+        address: kitchen.address,
+        type: kitchen.type as "bluetooth" | "network"
+      });
+    }
+  }
+
+  // Fallback defaults for testing/development if no hardware detected
+  if (discovered.length === 0 && (Platform.OS === "web" || !ThermalPrinterModule)) {
+    discovered.push(
+      { name: "MTP-II Bluetooth Printer", address: "66:22:03:B1:A5:1E", type: "bluetooth" },
+      { name: "XP-80 Bluetooth POS Printer", address: "00:11:22:33:44:55", type: "bluetooth" },
+      { name: "Ethernet Kitchen Printer (9100)", address: "192.168.1.200", type: "network" }
+    );
+  }
+
+  return discovered;
+}
+
+export async function autoConnectPrinter(
+  role: "cashier" | "kitchen",
+  printer: { name: string; address: string; type?: "bluetooth" | "network" | "system"; width?: 58 | 80; auto_print?: boolean }
+): Promise<PrinterConnectionStatus> {
+  const isNetwork = printer.type === "network" || (printer.address && printer.address.includes("."));
+  const existing = await getPrinterSettings(role);
+  const settings: PrinterSettings = {
+    type: isNetwork ? "network" : "bluetooth",
+    name: printer.name || (isNetwork ? "Network Printer" : "Bluetooth Thermal Printer"),
+    address: printer.address.trim(),
+    port: isNetwork ? "9100" : undefined,
+    width: printer.width || (existing ? existing.width : 80),
+    auto_print: printer.auto_print ?? (existing ? existing.auto_print : true),
+  };
+
+  await savePrinterSettings(role, settings);
+  const status = await checkPrinterConnection(role);
+  return status;
 }
 
 export async function printThermalDirect(role: "cashier" | "kitchen", data: any, isKitchen = false): Promise<boolean> {
@@ -421,34 +500,31 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     }
   } catch (e: any) {
     console.warn("Direct thermal printing failed:", e);
-    Alert.alert(
-      "Printer Offline",
-      `Could not print to ${settings.name || "Bluetooth Printer"}. Fallback to standard print dialog?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Print Dialog", onPress: () => printBillLegacy(data) }
-      ]
-    );
-    return true; // Alert handled, so return true to bypass automatic legacy print triggering twice
+    return false;
   }
 
   return false;
 }
 
-export async function printBill(bill: any) {
+export async function printBill(bill: any): Promise<boolean> {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  const handled = await printThermalDirect("cashier", bill, false);
-  if (!handled) {
+  let handled = await printThermalDirect("cashier", bill, false);
+  if (!handled && Platform.OS === "web") {
     await printBillLegacy(bill);
   }
+  return handled;
 }
 
-export async function printKitchenKOT(order: any) {
+export async function printKitchenKOT(order: any): Promise<boolean> {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  const handled = await printThermalDirect("kitchen", order, true);
+  let handled = await printThermalDirect("kitchen", order, true);
   if (!handled) {
-    await printBillLegacy(order);
+    const cashierSettings = await getPrinterSettings("cashier");
+    if (cashierSettings && cashierSettings.type !== "none" && cashierSettings.type !== "system") {
+      handled = await printThermalDirect("cashier", order, true);
+    }
   }
+  return handled;
 }
 
 function escapeHtml(s: string) {

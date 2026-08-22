@@ -438,8 +438,12 @@ export const api = {
   adminListPlans: () => req("/admin/plans"),
   adminCreatePlan: (payload: any) => req("/admin/plans", { method: "POST", body: JSON.stringify(payload) }),
   adminDeletePlan: (id: string) => req(`/admin/plans/${id}`, { method: "DELETE" }),
-  adminAssignSubscription: (tid: string, plan_id: string) =>
-    req(`/admin/restaurants/${tid}/subscription`, { method: "POST", body: JSON.stringify({ plan_id, status: "active" }) }),
+  adminAssignSubscription: (tid: string, plan_id: string, valid_days?: number, status?: string) =>
+    req(`/admin/restaurants/${tid}/subscription`, { method: "POST", body: JSON.stringify({ plan_id, valid_days, status: status || "active" }) }),
+  adminExpireSubscription: (tid: string) =>
+    req(`/admin/restaurants/${tid}/expire-subscription`, { method: "POST" }),
+  adminUpdateRestaurantFeatures: (tid: string, custom_features: any, custom_staff_limit?: number) =>
+    req(`/admin/restaurants/${tid}/features`, { method: "POST", body: JSON.stringify({ custom_features, custom_staff_limit }) }),
   adminCancelSubscription: (tid: string) => req(`/admin/restaurants/${tid}/subscription`, { method: "DELETE" }),
   
   cancelSubscription: async () => {

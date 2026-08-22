@@ -156,6 +156,20 @@ export default function TakeawayScreen() {
         api.setTempIdMapping(tempOrderId, realOrder.id);
         api.updateCachedOrder(tempOrderId, realOrder);
         
+        // Auto-print KOT if enabled
+        (async () => {
+          try {
+            const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
+            const kSettings = await getPrinterSettings("kitchen");
+            const cSettings = await getPrinterSettings("cashier");
+            const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                                (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+            if (shouldPrint) {
+              await printKitchenKOT(realOrder);
+            }
+          } catch {}
+        })();
+
         // Auto-create bill for the real order on the backend
         api.createBill({ order_id: realOrder.id, tax_percent: gstRate, discount: 0 }).then(realBill => {
           api.setTempIdMapping(tempBillId, realBill.id);

@@ -1349,6 +1349,7 @@ async def staff_login(payload: StaffLoginIn):
 @api.post("/orders")
 async def create_order(payload: OrderIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
+    await _ensure_active_subscription(tid, user)
     subtotal = sum(i.price * i.quantity for i in payload.items)
     cust_name = (payload.customer_name or "Guest 1").strip()
     sess_id = payload.session_id or str(uuid.uuid4())
@@ -2347,6 +2348,7 @@ async def public_orders_checkout(payload: PublicCheckoutIn):
 @api.post("/bills")
 async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
+    await _ensure_active_subscription(tid, user)
     
     if payload.order_id:
         existing_b = await db.bills.find_one({"order_id": payload.order_id, "tenant_id": tid}, {"_id": 0})
@@ -2916,7 +2918,13 @@ class PlanIn(BaseModel):
 
 class SubscribeIn(BaseModel):
     plan_id: str
-    status: str = "active"  # active / cancelled
+    status: str = "active"  # active / cancelled / expired
+    valid_days: Optional[int] = None
+
+
+class AdminFeaturesIn(BaseModel):
+    custom_features: Optional[dict] = None
+    custom_staff_limit: Optional[int] = None
 
 
 class ResetPasswordIn(BaseModel):
@@ -3142,7 +3150,9 @@ async def admin_assign_subscription(tid: str, payload: SubscribeIn, user: dict =
     if not await db.restaurants.find_one({"id": tid}, {"_id": 0}):
         raise HTTPException(status_code=404, detail="Restaurant not found")
         
-    valid_days = plan.get("valid_days")
+    valid_days = payload.valid_days
+    if not valid_days:
+        valid_days = plan.get("valid_days")
     if not valid_days:
         valid_days = 365 if plan.get("interval") == "year" else 30
     ends_at = datetime.now(timezone.utc) + timedelta(days=int(valid_days))
@@ -3166,7 +3176,56 @@ async def admin_assign_subscription(tid: str, payload: SubscribeIn, user: dict =
     }
     await db.subscriptions.insert_one(doc)
     doc.pop("_id", None)
+    
+    limits = await get_tenant_plan_limits(tid)
+    await notify_tenant(
+        tid,
+        "subscription",
+        "Subscription Updated",
+        f"Your plan has been updated to {plan['name']} by admin.",
+        {"event": "subscription.updated", "subscription": doc, "limits": limits}
+    )
     return doc
+
+
+@api.post("/admin/restaurants/{tid}/expire-subscription")
+async def admin_expire_subscription(tid: str, user: dict = Depends(require_roles("super_admin"))):
+    now_str = datetime.now(timezone.utc).isoformat()
+    await db.subscriptions.update_many(
+        {"tenant_id": tid},
+        {"$set": {"status": "expired", "ends_at": now_str}}
+    )
+    limits = await get_tenant_plan_limits(tid)
+    await notify_tenant(
+        tid,
+        "subscription",
+        "Subscription Expired",
+        "Your EzBill subscription has been expired by admin. Please renew.",
+        {"event": "subscription.expired", "status": "expired", "limits": limits}
+    )
+    return {"ok": True, "status": "expired"}
+
+
+@api.post("/admin/restaurants/{tid}/features")
+async def admin_update_restaurant_features(tid: str, payload: AdminFeaturesIn, user: dict = Depends(require_roles("super_admin"))):
+    update_data = {}
+    if payload.custom_features is not None:
+        update_data["custom_features"] = payload.custom_features
+    if payload.custom_staff_limit is not None:
+        update_data["custom_staff_limit"] = payload.custom_staff_limit
+        
+    if update_data:
+        await db.restaurants.update_one({"id": tid}, {"$set": update_data})
+        
+    limits = await get_tenant_plan_limits(tid)
+    await notify_tenant(
+        tid,
+        "subscription",
+        "Features Updated",
+        "Your restaurant features have been updated by admin.",
+        {"event": "features.updated", "limits": limits}
+    )
+    return {"ok": True, "limits": limits}
 
 
 @api.delete("/admin/restaurants/{tid}/subscription")
@@ -3175,6 +3234,14 @@ async def admin_cancel_subscription(tid: str, user: dict = Depends(require_roles
     if not latest:
         raise HTTPException(status_code=404, detail="No subscription found")
     await db.subscriptions.update_one({"id": latest["id"]}, {"$set": {"status": "cancelled"}})
+    limits = await get_tenant_plan_limits(tid)
+    await notify_tenant(
+        tid,
+        "subscription",
+        "Subscription Cancelled",
+        "Your EzBill subscription has been cancelled.",
+        {"event": "subscription.cancelled", "status": "cancelled", "limits": limits}
+    )
     return {"ok": True}
 
 
@@ -3187,10 +3254,23 @@ async def get_tenant_plan_limits(tid: str) -> dict:
     
     if sub:
         plan_id = sub.get("plan_id", "STARTER_MONTHLY")
+        plan_name = sub.get("plan_name", "Starter")
         status = sub.get("status", "expired")
+        ends_at_str = sub.get("ends_at")
+        if ends_at_str and status == "active":
+            try:
+                ends_at = datetime.fromisoformat(ends_at_str.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > ends_at:
+                    status = "expired"
+                    await db.subscriptions.update_one({"id": sub["id"]}, {"$set": {"status": "expired"}})
+            except Exception:
+                pass
     else:
-        # Default to Starter if no subscription document exists yet
         status = "expired"
+
+    restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
+    custom_features = restaurant.get("custom_features", {})
+    custom_staff_limit = restaurant.get("custom_staff_limit")
 
     plan_base = "starter"
     if status == "active":
@@ -3208,32 +3288,60 @@ async def get_tenant_plan_limits(tid: str) -> dict:
     elif plan_base == "pro":
         staff_limit = 14
 
+    if custom_staff_limit is not None:
+        try:
+            staff_limit = int(custom_staff_limit)
+        except Exception:
+            pass
+
+    is_active = (status == "active")
+
     features = {
-        "billing": True,
-        "menu_crud": True,
-        "table_crud": True,
-        "offline_mode": True,
-        "thermal_printing": True,
-        "basic_reports": True,
-        "advanced_reports": plan_base in ("growth", "pro"),
-        "inventory": plan_base in ("growth", "pro"),
-        "expenses": plan_base in ("growth", "pro"),
-        "ai_menu": plan_base in ("growth", "pro"),
-        "qr_web_menu": plan_base == "pro",
-        "customer_ordering": plan_base == "pro",
-        "waiter_qr_confirmation": plan_base == "pro",
-        "advanced_permissions": plan_base == "pro",
-        "audit_logs": plan_base == "pro",
-        "api_access": plan_base == "pro",
+        "billing": is_active,
+        "menu_crud": is_active,
+        "table_crud": is_active,
+        "offline_mode": is_active,
+        "thermal_printing": is_active,
+        "basic_reports": is_active,
+        "advanced_reports": is_active and (plan_base in ("growth", "pro")),
+        "inventory": is_active and (plan_base in ("growth", "pro")),
+        "expenses": is_active and (plan_base in ("growth", "pro")),
+        "ai_menu": is_active and (plan_base in ("growth", "pro")),
+        "qr_web_menu": is_active and (plan_base == "pro"),
+        "customer_ordering": is_active and (plan_base == "pro"),
+        "waiter_qr_confirmation": is_active and (plan_base == "pro"),
+        "advanced_permissions": is_active and (plan_base == "pro"),
+        "audit_logs": is_active and (plan_base == "pro"),
+        "api_access": is_active and (plan_base == "pro"),
     }
+
+    # Apply super-admin custom feature overrides!
+    for k, v in custom_features.items():
+        if isinstance(v, bool):
+            features[k] = v
 
     return {
         "plan": plan_base,
+        "plan_name": plan_name,
         "plan_id": plan_id,
         "status": status,
+        "is_active": is_active,
         "staff_limit": staff_limit,
-        "features": features
+        "features": features,
+        "custom_features": custom_features,
+        "custom_staff_limit": custom_staff_limit
     }
+
+
+async def _ensure_active_subscription(tid: str, user: dict = None):
+    if user and user.get("role") in ("super_admin", "admin_employee"):
+        return
+    limits = await get_tenant_plan_limits(tid)
+    if limits.get("status") != "active":
+        raise HTTPException(
+            status_code=402,
+            detail="Subscription expired. Please renew your EzBill subscription to continue using POS billing and orders."
+        )
 
 
 # ---------- BATCH SYNC ----------

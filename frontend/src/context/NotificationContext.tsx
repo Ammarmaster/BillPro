@@ -394,6 +394,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           api.setCachedTables(updated);
           api.notifyCacheUpdate("/tables", updated);
         }
+
+        // Automatic instant KOT thermal print on incoming order if auto_print is enabled
+        (async () => {
+          try {
+            const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
+            const kSettings = await getPrinterSettings("kitchen");
+            const cSettings = await getPrinterSettings("cashier");
+            const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                                (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+            if (shouldPrint) {
+              await printKitchenKOT(data.order);
+            }
+          } catch (pErr) {
+            console.warn("WebSocket KOT auto-print error:", pErr);
+          }
+        })();
       }
 
       // 2. Inject bill directly if present
