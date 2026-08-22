@@ -2828,12 +2828,24 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     occupied_tables = len(occupied_table_labels)
     tables_free = max(0, total_tables - occupied_tables) if total_tables > 0 else 5
 
-    # Fast projection with 7-day query window
-    seven_days_ago = (now - timedelta(days=7)).date().isoformat()
+    # Convert timestamps accurately to IST (UTC+5:30) date for precise today matching
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.now(timezone.utc) + ist_offset
+    today_ist_str = now_ist.date().isoformat()
+    today_utc_str = datetime.now(timezone.utc).date().isoformat()
+
+    seven_days_ago = (now_ist - timedelta(days=7)).date().isoformat()
     paid_bills = await db.bills.find(
-        {"tenant_id": tid, "status": "paid", "created_at": {"$gte": seven_days_ago}},
+        {
+            "tenant_id": tid,
+            "status": "paid",
+            "$or": [
+                {"paid_at": {"$gte": seven_days_ago}},
+                {"created_at": {"$gte": seven_days_ago}}
+            ]
+        },
         {"_id": 0, "total": 1, "created_at": 1, "paid_at": 1, "created_by": 1, "items": 1}
-    ).to_list(1000)
+    ).to_list(2000)
     
     # Fast database aggregate for lifetime total revenue
     pipeline_total = [
@@ -2844,28 +2856,52 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     revenue_total = round(agg_res[0]["total_revenue"], 2) if agg_res else 0.0
     paid_bills_count = agg_res[0]["total_count"] if agg_res else 0
 
-    today_bills = [
-        b for b in paid_bills
-        if (b.get("paid_at") and str(b.get("paid_at"))[:10] == today_str) or
-           (b.get("created_at") and str(b.get("created_at"))[:10] == today_str)
-    ]
-    revenue_today = round(sum(b.get("total", 0) for b in today_bills), 2)
+    def is_bill_today(b):
+        ts = b.get("paid_at") or b.get("created_at")
+        if not ts:
+            return False
+        ts_str = str(ts).strip()
+        if ts_str.startswith(today_ist_str) or ts_str.startswith(today_utc_str):
+            return True
+        try:
+            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            dt_ist = dt if dt.tzinfo else (dt.replace(tzinfo=timezone.utc) + ist_offset)
+            return dt_ist.date().isoformat() == today_ist_str
+        except Exception:
+            return ts_str[:10] == today_ist_str or ts_str[:10] == today_utc_str
+
+    today_bills = [b for b in paid_bills if is_bill_today(b)]
+    revenue_today = round(sum(float(b.get("total", 0.0)) for b in today_bills), 2)
     avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / paid_bills_count, 2) if paid_bills_count > 0 else 0)
 
     # Calculate web payments (created_by == "guest")
-    revenue_web_today = round(sum(b.get("total", 0) for b in today_bills if b.get("created_by") == "guest"), 2)
-    revenue_web_total = round(sum(b.get("total", 0) for b in paid_bills if b.get("created_by") == "guest"), 2)
+    revenue_web_today = round(sum(float(b.get("total", 0.0)) for b in today_bills if b.get("created_by") == "guest"), 2)
+    revenue_web_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills if b.get("created_by") == "guest"), 2)
 
     # Last 7 days revenue calculation
     last_7_days = []
     for i in range(6, -1, -1):
-        day_date = (now - timedelta(days=i)).date()
+        day_date = (now_ist - timedelta(days=i)).date()
         day_str = day_date.isoformat()
         day_label = day_date.strftime("%m-%d")
+        
+        def is_bill_on_day(b, target_str):
+            ts = b.get("paid_at") or b.get("created_at")
+            if not ts:
+                return False
+            ts_str = str(ts).strip()
+            if ts_str.startswith(target_str):
+                return True
+            try:
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                dt_ist = dt if dt.tzinfo else (dt.replace(tzinfo=timezone.utc) + ist_offset)
+                return dt_ist.date().isoformat() == target_str
+            except Exception:
+                return ts_str[:10] == target_str
+
         day_rev = round(sum(
-            b.get("total", 0) for b in paid_bills
-            if (b.get("paid_at") and str(b.get("paid_at"))[:10] == day_str) or
-               (b.get("created_at") and str(b.get("created_at"))[:10] == day_str)
+            float(b.get("total", 0.0)) for b in paid_bills
+            if is_bill_on_day(b, day_str)
         ), 2)
         last_7_days.append({"date": day_label, "revenue": day_rev})
 

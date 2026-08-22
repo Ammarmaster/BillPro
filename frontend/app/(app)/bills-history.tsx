@@ -1,24 +1,43 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, ScrollView, SafeAreaView, StatusBar,
 } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { printBill, sharePdf } from "@/src/lib/print";
 import { colors, spacing, radius } from "@/src/theme";
-
 import { useTheme } from "@/src/context/ThemeContext";
+import * as Haptics from "expo-haptics";
 
 export default function BillsHistory() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ filter?: string }>();
   const { theme, isDark } = useTheme();
+
+  const [activeFilter, setActiveFilter] = useState<"today" | "all">(() => params.filter === "today" ? "today" : "all");
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selBill, setSelBill] = useState<any>(null);
+
+  useEffect(() => {
+    if (params.filter === "today") {
+      setActiveFilter("today");
+    }
+  }, [params.filter]);
+
+  useEffect(() => {
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/bills" && data) {
+        setBills(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -43,56 +62,144 @@ export default function BillsHistory() {
     } catch { return ts; }
   };
 
+  // IST Date String matching for Indian restaurants
+  const todayDateStr = useMemo(() => {
+    const d = new Date();
+    return d.toISOString().split("T")[0];
+  }, []);
+
+  const filteredBills = useMemo(() => {
+    if (activeFilter === "all") return bills;
+    return bills.filter(b => {
+      const ts = b.paid_at || b.created_at || "";
+      return b.status === "paid" && ts.startsWith(todayDateStr);
+    });
+  }, [bills, activeFilter, todayDateStr]);
+
+  const todayTotal = useMemo(() => {
+    const todayList = bills.filter(b => {
+      const ts = b.paid_at || b.created_at || "";
+      return b.status === "paid" && ts.startsWith(todayDateStr);
+    });
+    return todayList.reduce((sum, b) => sum + Number(b.total || 0), 0);
+  }, [bills, todayDateStr]);
+
+  const todayFormula = useMemo(() => {
+    const todayList = bills.filter(b => {
+      const ts = b.paid_at || b.created_at || "";
+      return b.status === "paid" && ts.startsWith(todayDateStr);
+    });
+    if (todayList.length === 0) return "No sales recorded today yet";
+    if (todayList.length === 1) return `1 bill: ₹${todayList[0].total} = ₹${todayList[0].total}`;
+    const formulaStr = todayList.map(b => `₹${b.total}`).join(" + ");
+    return `${formulaStr} = ₹${todayTotal.toLocaleString("en-IN")}`;
+  }, [bills, todayDateStr, todayTotal]);
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FD" />
-      <View style={[styles.wrap, { paddingTop: insets.top }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
+      <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]}>
         
         {/* Header Bar */}
         <View style={styles.header}>
-          <Pressable onPress={() => router.push("/(app)/more")} style={styles.backBtn} hitSlop={12}>
-            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          <Pressable onPress={() => router.push("/(app)/more")} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={theme.onSurface} />
           </Pressable>
-          <Text style={styles.title}>Bills</Text>
-          <View style={{ width: 40 }} />
+          <Text style={[styles.title, { color: theme.onSurface }]}>Bills & Sales History</Text>
+          <Pressable onPress={load} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} hitSlop={12}>
+            <Ionicons name="refresh" size={18} color={colors.brand} />
+          </Pressable>
         </View>
+
+        {/* Filter Tabs */}
+        <View style={styles.filterRow}>
+          <Pressable
+            style={[styles.filterTab, activeFilter === "today" && styles.filterTabActive]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setActiveFilter("today");
+            }}
+          >
+            <Text style={[styles.filterTabText, activeFilter === "today" ? styles.filterTabTextActive : { color: theme.onSurfaceSecondary }]}>
+              Today's Live Sales (₹{todayTotal.toLocaleString("en-IN")})
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.filterTab, activeFilter === "all" && styles.filterTabActive]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setActiveFilter("all");
+            }}
+          >
+            <Text style={[styles.filterTabText, activeFilter === "all" ? styles.filterTabTextActive : { color: theme.onSurfaceSecondary }]}>
+              All Bills ({bills.length})
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Today's Sales Calculation Breakdown Banner */}
+        {activeFilter === "today" && (
+          <View style={[styles.breakdownCard, { backgroundColor: isDark ? "#131927" : "#EEF2FF", borderColor: isDark ? "#1F293D" : "#C7D2FE" }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={styles.liveDot} />
+                <Text style={styles.breakdownTitle}>LIVE SALES BREAKDOWN</Text>
+              </View>
+              <Text style={[styles.breakdownTotal, { color: colors.brand }]}>Total: ₹{todayTotal.toLocaleString("en-IN")}</Text>
+            </View>
+            <Text style={[styles.breakdownFormula, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>
+              {todayFormula}
+            </Text>
+          </View>
+        )}
 
         {loading ? (
           <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
-        ) : bills.length === 0 ? (
+        ) : filteredBills.length === 0 ? (
           <View style={styles.center}>
-            <Ionicons name="receipt-outline" size={48} color={colors.onSurfaceTertiary} />
-            <Text style={{ color: colors.onSurfaceSecondary, marginTop: 8, fontSize: 15 }}>No past bills recorded yet.</Text>
+            <Ionicons name="receipt-outline" size={48} color={theme.onSurfaceTertiary} />
+            <Text style={{ color: theme.onSurfaceSecondary, marginTop: 8, fontSize: 15 }}>
+              {activeFilter === "today" ? "No paid bills recorded today yet." : "No past bills recorded yet."}
+            </Text>
           </View>
         ) : (
           <FlatList
-            data={bills}
+            data={filteredBills}
             keyExtractor={item => item.id}
-            contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}
+            contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxxl }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item, index }) => {
               const isPaid = item.status === "paid";
               const billNo = item.bill_number || (bills.length - index);
-              const tableLabel = item.table_number ? `Table ${item.table_number}` : "Takeaway";
+              const tableLabel = item.table_number ? (item.table_number === "Takeaway" ? "Takeaway" : `Table ${item.table_number}`) : "Takeaway";
               const payMode = item.payment_method ? item.payment_method.toUpperCase() : "UNPAID";
               const dateStr = formatTimestamp(item.paid_at || item.created_at);
 
               return (
                 <Pressable
-                  style={({ pressed }) => [styles.billCard, pressed && styles.cardPressed]}
+                  style={({ pressed }) => [
+                    styles.billCard,
+                    { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                    pressed && styles.cardPressed
+                  ]}
                   onPress={() => setSelBill(item)}
                 >
                   <View style={styles.billLeftRow}>
                     <View style={[styles.statusDot, { backgroundColor: isPaid ? "#10B981" : "#F59E0B" }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.billTitle}>#{billNo} • {tableLabel}</Text>
-                      <Text style={styles.billSubtitle}>{dateStr} {payMode ? `• ${payMode}` : ""}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.billTitle, { color: theme.onSurface }]} numberOfLines={1}>
+                        #{billNo} • {tableLabel}
+                      </Text>
+                      <Text style={[styles.billSubtitle, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+                        {dateStr} {payMode ? `• ${payMode}` : ""}
+                      </Text>
                     </View>
                   </View>
 
                   <View style={styles.billRightRow}>
-                    <Text style={styles.billAmount}>₹{item.total ?? 0}</Text>
-                    <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceSecondary} />
+                    <Text style={[styles.billAmount, { color: colors.brand }]}>₹{item.total ?? 0}</Text>
+                    <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
                   </View>
                 </Pressable>
               );
@@ -105,143 +212,100 @@ export default function BillsHistory() {
         {/* Bill Detail Modal */}
         <Modal transparent visible={!!selBill} animationType="slide" onRequestClose={() => setSelBill(null)}>
           <Pressable style={styles.modalBg} onPress={() => setSelBill(null)}>
-            <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]} onPress={() => {}}>
+            <Pressable style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary, paddingBottom: insets.bottom + spacing.xl }]} onPress={() => {}}>
               <View style={styles.modalHeader}>
                 <View>
-                  <Text style={styles.modalTitle}>Bill #{selBill?.bill_number || ""}</Text>
-                  <Text style={styles.modalSub}>{selBill?.table_number ? `Table ${selBill.table_number}` : "Takeaway"}</Text>
+                  <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Bill #{selBill?.bill_number || ""}</Text>
+                  <Text style={[styles.modalSub, { color: theme.onSurfaceSecondary }]}>
+                    {selBill?.table_number ? (selBill.table_number === "Takeaway" ? "Takeaway" : `Table ${selBill.table_number}`) : "Takeaway"}
+                  </Text>
                 </View>
                 <Pressable onPress={() => setSelBill(null)} hitSlop={12}>
-                  <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
+                  <Ionicons name="close" size={24} color={theme.onSurfaceSecondary} />
                 </Pressable>
               </View>
 
               <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
                 {selBill?.items?.map((it: any, idx: number) => (
-                  <View key={idx} style={styles.itemRow}>
-                    <Text style={styles.itemName}>{it.quantity}x {it.name}</Text>
-                    <Text style={styles.itemPrice}>₹{it.price * it.quantity}</Text>
+                  <View key={idx} style={[styles.itemRow, { borderBottomColor: theme.border }]}>
+                    <Text style={[styles.itemName, { color: theme.onSurface }]}>{it.name} x{it.quantity}</Text>
+                    <Text style={[styles.itemPrice, { color: theme.onSurface }]}>₹{it.price * it.quantity}</Text>
                   </View>
                 ))}
-                
-                <View style={styles.divider} />
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLbl}>Subtotal</Text>
-                  <Text style={styles.summaryVal}>₹{selBill?.subtotal ?? 0}</Text>
-                </View>
-                {!!selBill?.tax && (
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLbl}>Tax ({selBill?.tax_percent || 0}%)</Text>
-                    <Text style={styles.summaryVal}>+₹{selBill?.tax}</Text>
-                  </View>
-                )}
-                {!!selBill?.discount && (
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLbl}>Discount</Text>
-                    <Text style={styles.summaryVal}>-₹{selBill?.discount}</Text>
-                  </View>
-                )}
-                <View style={[styles.summaryRow, { marginTop: 6 }]}>
-                  <Text style={styles.totalLbl}>Total</Text>
-                  <Text style={styles.totalVal}>₹{selBill?.total ?? 0}</Text>
-                </View>
               </ScrollView>
 
+              <View style={[styles.totalRow, { borderTopColor: theme.border }]}>
+                <Text style={[styles.totalLbl, { color: theme.onSurface }]}>Total Amount</Text>
+                <Text style={[styles.totalVal, { color: colors.brand }]}>₹{selBill?.total ?? 0}</Text>
+              </View>
+
               <View style={styles.modalActions}>
-                <Pressable style={styles.actionBtnOutline} onPress={() => selBill && sharePdf(selBill)}>
-                  <Ionicons name="share-outline" size={18} color={colors.brand} />
-                  <Text style={styles.actionBtnOutlineText}>Share PDF</Text>
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: theme.surfaceTertiary }]}
+                  onPress={() => selBill && sharePdf(selBill)}
+                >
+                  <Ionicons name="share-social-outline" size={18} color={theme.onSurface} />
+                  <Text style={[styles.actionBtnText, { color: theme.onSurface }]}>Share</Text>
                 </Pressable>
-                <Pressable style={styles.actionBtnSolid} onPress={() => selBill && printBill(selBill)}>
+
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: colors.brand }]}
+                  onPress={() => selBill && printBill(selBill)}
+                >
                   <Ionicons name="print-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.actionBtnSolidText}>Print Bill</Text>
+                  <Text style={[styles.actionBtnText, { color: "#FFFFFF" }]}>Print Bill</Text>
                 </Pressable>
               </View>
             </Pressable>
           </Pressable>
         </Modal>
-
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
-  wrap: { flex: 1, backgroundColor: colors.surface },
+  safe: { flex: 1 },
+  wrap: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: colors.border,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: { color: colors.onSurface, fontSize: 24, fontWeight: "800" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  billCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surfaceSecondary,
-    padding: spacing.lg,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "rgba(99, 91, 255, 0.04)",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  cardPressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },
-  billLeftRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
+  backBtn: { width: 40, height: 40, borderRadius: radius.pill, borderWidth: 1, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 20, fontWeight: "900" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  
+  filterRow: { flexDirection: "row", paddingHorizontal: spacing.lg, gap: 10, marginBottom: spacing.xs },
+  filterTab: { flex: 1, paddingVertical: 10, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.04)" },
+  filterTabActive: { backgroundColor: colors.brand },
+  filterTabText: { fontSize: 12, fontWeight: "700" },
+  filterTabTextActive: { color: "#FFFFFF" },
+
+  breakdownCard: { marginHorizontal: spacing.lg, marginTop: spacing.xs, marginBottom: spacing.sm, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" },
+  breakdownTitle: { color: "#10B981", fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
+  breakdownTotal: { fontSize: 14, fontWeight: "900" },
+  breakdownFormula: { fontSize: 12, marginTop: 4, fontWeight: "600" },
+
+  billCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1 },
+  cardPressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
+  billLeftRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1, minWidth: 0, paddingRight: 8 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
-  billTitle: { color: colors.onSurface, fontSize: 16, fontWeight: "800" },
-  billSubtitle: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2, fontWeight: "500" },
+  billTitle: { fontSize: 16, fontWeight: "800" },
+  billSubtitle: { fontSize: 12, marginTop: 2 },
   billRightRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  billAmount: { color: colors.onSurface, fontSize: 17, fontWeight: "900" },
-  err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: colors.surfaceSecondary, padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, gap: spacing.md },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  modalTitle: { color: colors.onSurface, fontSize: 22, fontWeight: "800" },
-  modalSub: { color: colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
-  itemRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
-  itemName: { color: colors.onSurface, fontSize: 15, fontWeight: "600" },
-  itemPrice: { color: colors.onSurface, fontSize: 15, fontWeight: "700" },
-  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 },
-  summaryLbl: { color: colors.onSurfaceSecondary, fontSize: 14 },
-  summaryVal: { color: colors.onSurface, fontSize: 14, fontWeight: "600" },
-  totalLbl: { color: colors.onSurface, fontSize: 16, fontWeight: "800" },
-  totalVal: { color: colors.brand, fontSize: 20, fontWeight: "900" },
-  modalActions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
-  actionBtnOutline: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.brand,
-    backgroundColor: "rgba(99, 91, 255, 0.05)",
-  },
-  actionBtnOutlineText: { color: colors.brand, fontWeight: "700", fontSize: 15 },
-  actionBtnSolid: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: radius.lg,
-    backgroundColor: colors.brand,
-  },
-  actionBtnSolidText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15 },
+  billAmount: { fontSize: 16, fontWeight: "900" },
+  err: { color: "#EF4444", padding: spacing.md, textAlign: "center" },
+
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
+  modalCard: { padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md },
+  modalTitle: { fontSize: 20, fontWeight: "900" },
+  modalSub: { fontSize: 13, marginTop: 2 },
+  itemRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm, borderBottomWidth: 1 },
+  itemName: { fontSize: 14, fontWeight: "600" },
+  itemPrice: { fontSize: 14, fontWeight: "700" },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, paddingTop: spacing.md, marginTop: spacing.sm },
+  totalLbl: { fontSize: 16, fontWeight: "800" },
+  totalVal: { fontSize: 18, fontWeight: "900" },
+  modalActions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
+  actionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: radius.md },
+  actionBtnText: { fontSize: 14, fontWeight: "800" },
 });

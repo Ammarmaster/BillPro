@@ -529,19 +529,28 @@ function OwnerDashboard() {
           <>
             {/* Hero Analytics Gradient Box */}
             <Animated.View entering={FadeInDown.delay(100).springify()}>
-              <LinearGradient
-                colors={["#635BFF", "#4F46E5"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.heroRevenueCard}
+              <Pressable
+                onPress={() => router.push({ pathname: "/(app)/bills-history", params: { filter: "today" } })}
+                style={({ pressed }) => [{ overflow: "hidden", borderRadius: radius.xl }, pressed && { opacity: 0.94, transform: [{ scale: 0.99 }] }]}
                 testID="metric-revenue-today"
               >
-                <View style={styles.liveBadgeRow}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>LIVE SALES TODAY</Text>
-                </View>
+                <LinearGradient
+                  colors={["#635BFF", "#4F46E5"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.heroRevenueCard}
+                >
+                  <View style={styles.liveBadgeRow}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={styles.liveDot} />
+                      <Text style={styles.liveText}>LIVE SALES TODAY</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12 }}>
+                      <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "800" }}>History & Bills →</Text>
+                    </View>
+                  </View>
 
-                <Text style={styles.heroRevenueValue}>₹{animatedRevenue.toLocaleString("en-IN")}</Text>
+                  <Text style={styles.heroRevenueValue}>₹{animatedRevenue.toLocaleString("en-IN")}</Text>
 
                 <View style={styles.heroFooterRow}>
                   <View style={styles.heroFooterItem}>
@@ -560,7 +569,8 @@ function OwnerDashboard() {
                   </View>
                 </View>
               </LinearGradient>
-            </Animated.View>
+            </Pressable>
+          </Animated.View>
 
             {/* Quick Action Shortcuts */}
             <View style={{ flexDirection: "row", gap: 10, marginVertical: spacing.md }}>

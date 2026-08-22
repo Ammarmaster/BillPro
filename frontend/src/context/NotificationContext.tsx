@@ -457,8 +457,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           }
         }
       }
-      if (data.status === "served" || data.status === "paid" || eventName === "ORDER_PAID" || eventName === "TABLE_SETTLED") {
-        const billOrOrderId = data.bill_id || data.order_id || (data.bill && data.bill.id) || (data.table_number ? `tbl_${data.table_number}_${data.total}` : null);
+      if (data.status === "served" || data.status === "paid" || eventName === "ORDER_PAID" || eventName === "TABLE_SETTLED" || notif.category === "payment") {
+        const paidAmt = Number(data.total || data.bill?.total || 0);
+        const billOrOrderId = data.bill_id || data.order_id || (data.bill && data.bill.id) || (data.table_number ? `tbl_${data.table_number}_${paidAmt}_${Date.now()}` : null);
+        
+        if (data.bill) {
+          api.injectCachedBill(data.bill);
+        }
+
+        if (data.table_number && (data.active_orders_remaining === 0 || data.table_status === "AVAILABLE")) {
+          api.settleTableInCache(data.table_number);
+        }
+
         if (billOrOrderId && !processedPaymentIds.has(billOrOrderId)) {
           processedPaymentIds.add(billOrOrderId);
           if (processedPaymentIds.size > 200) {
@@ -466,12 +476,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             if (first !== undefined) processedPaymentIds.delete(first);
           }
           const summary = api.getCachedSummary();
-          if (summary) {
-            if (data.total) {
-              summary.revenue_today = Number((Number(summary.revenue_today || 0) + Number(data.total)).toFixed(2));
-              summary.revenue_total = Number((Number(summary.revenue_total || 0) + Number(data.total)).toFixed(2));
-              summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
-            }
+          if (summary && paidAmt > 0) {
+            summary.revenue_today = Number((Number(summary.revenue_today || 0) + paidAmt).toFixed(2));
+            summary.revenue_total = Number((Number(summary.revenue_total || 0) + paidAmt).toFixed(2));
+            summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
             api.setCachedSummary({ ...summary });
             api.notifyCacheUpdate("/dashboard/summary", summary);
           }
