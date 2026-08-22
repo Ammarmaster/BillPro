@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, Modal, Pressable, TextInput,
-  ActivityIndicator, Platform, Alert, Dimensions, ScrollView
+  ActivityIndicator, Platform, Dimensions, ScrollView
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,12 +18,40 @@ const SCAN_BOX_SIZE = Math.min(width * 0.7, 260);
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onScanSuccess: (qrData: string, tableNumber?: string) => Promise<void>;
+  onScanSuccess: (order: any, tableNumber?: string) => Promise<void> | void;
   defaultTable?: string;
 };
 
 const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const SCAN_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
+
+// Universal 0ms Audio Beep Generator
+function playInstantPOSBeep() {
+  try {
+    // 1. Success Haptics
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    
+    // 2. Web Audio API (0ms Instant Crystal-Clear POS Beep)
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1046.5, ctx.currentTime); // C6 crisp POS beep
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+      }
+    }
+  } catch (err) {
+    console.warn("Audio beep error:", err);
+  }
+}
 
 export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, defaultTable = "" }: Props) {
   const { theme, isDark } = useTheme();
@@ -36,55 +64,14 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
   const [targetTable, setTargetTable] = useState(defaultTable);
   const [targetTableId, setTargetTableId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
 
-  // Preload native player
+  // Preload native audio player
   const player = useAudioPlayer(Platform.OS !== "web" ? SCAN_SOUND_URL : null);
   if (player) {
     player.loop = false;
   }
-  const webAudioRef = useRef<any>(null);
-
-  // Preload web Audio constructor on mount
-  useEffect(() => {
-    if (Platform.OS === "web") {
-      try {
-        const audio = new window.Audio(SCAN_SOUND_URL);
-        audio.preload = "auto";
-        audio.loop = false;
-        audio.volume = 1.0;
-        webAudioRef.current = audio;
-      } catch (err) {
-        console.error("Failed to preload web scanner audio:", err);
-      }
-    }
-  }, []);
-
-  const playSuccessEffects = () => {
-    // 1. Success Haptics
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    
-    // 2. Play Scan Success Beep
-    try {
-      if (Platform.OS === "web") {
-        if (webAudioRef.current) {
-          webAudioRef.current.currentTime = 0;
-          webAudioRef.current.play().catch((err: any) => console.log("Web audio play blocked or failed:", err));
-        }
-      } else {
-        if (player) {
-          player.seekTo(0);
-          player.play();
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to play scan sound:", err);
-    }
-  };
-  
-  const [previewOrder, setPreviewOrder] = useState<any | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [scannedData, setScannedData] = useState<string>("");
-  const [isCameraActive, setIsCameraActive] = useState(false);
 
   const scannedRef = useRef(false);
 
@@ -96,13 +83,11 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
       setTargetTable(defaultTable);
       setTargetTableId(null);
       setTorch(false);
-      setPreviewOrder(null);
       setErrorMsg(null);
-      setScannedData("");
       
       const timer = setTimeout(() => {
         setIsCameraActive(true);
-      }, 350);
+      }, 300);
 
       if (!permission?.granted) {
         requestPermission();
@@ -116,35 +101,40 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
     }
   }, [visible, defaultTable]);
 
-  const processScannedCode = async (data: string) => {
-    setScannedData(data);
-    setErrorMsg(null);
+  const processAndAttach0ms = async (data: string) => {
+    if (scannedRef.current) return;
+    scannedRef.current = true;
     setBusy(true);
 
+    // 1. Play Instant Confirmation Beep & Vibration
+    playInstantPOSBeep();
+    if (player && Platform.OS !== "web") {
+      try {
+        player.seekTo(0);
+        player.play();
+      } catch {}
+    }
+
     const raw = data.trim();
+    let parsedOrder: any = null;
     let qrTenant: string | null = null;
+    let tblNum = targetTable.trim();
 
     if (raw.startsWith("EZBILL_ORDER:")) {
       try {
         const stripped = raw.substring("EZBILL_ORDER:".length).trim();
-        const parsed = JSON.parse(stripped);
-        qrTenant = parsed.tenant_id || null;
-        if (parsed.table_id) {
-          setTargetTableId(parsed.table_id);
-        }
-        if (parsed.table_number && !targetTable) {
-          setTargetTable(parsed.table_number);
+        parsedOrder = JSON.parse(stripped);
+        qrTenant = parsedOrder.tenant_id || null;
+        if (parsedOrder.table_number && !tblNum) {
+          tblNum = parsedOrder.table_number;
         }
       } catch {}
     } else {
       try {
-        const parsed = JSON.parse(raw);
-        qrTenant = parsed.tenant_id || null;
-        if (parsed.table_id) {
-          setTargetTableId(parsed.table_id);
-        }
-        if (parsed.table_number && !targetTable) {
-          setTargetTable(parsed.table_number);
+        parsedOrder = JSON.parse(raw);
+        qrTenant = parsedOrder.tenant_id || null;
+        if (parsedOrder.table_number && !tblNum) {
+          tblNum = parsedOrder.table_number;
         }
       } catch {}
     }
@@ -153,58 +143,64 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
     if (qrTenant && user?.tenant_id && qrTenant !== user.tenant_id) {
       setErrorMsg("This QR belongs to another restaurant.");
       setBusy(false);
+      scannedRef.current = false;
       return;
     }
 
+    // 2. Build 0ms Optimistic Order Object
+    const assignedTable = tblNum || "1";
+    const orderId = parsedOrder?.order_id || parsedOrder?.id || `qr_${Date.now()}`;
+    const orderNum = parsedOrder?.order_number || String(Math.floor(100 + Math.random() * 900));
+    const orderItems = parsedOrder?.items || [];
+    const subtotal = parsedOrder?.subtotal || orderItems.reduce((sum: number, x: any) => sum + (Number(x.price || 0) * Number(x.quantity || 1)), 0);
+
+    const optimisticOrder = {
+      id: orderId,
+      order_number: orderNum,
+      table_number: assignedTable,
+      customer_name: parsedOrder?.customer_name || "Web Guest",
+      session_id: parsedOrder?.session_id || `tsess_${Date.now()}`,
+      items: orderItems,
+      subtotal: subtotal,
+      status: "placed",
+      created_by: "guest",
+      order_source: "qr_web",
+      created_at: new Date().toISOString(),
+    };
+
+    // 3. Immediately Close Modal and Attach in 0ms!
+    onClose();
     try {
-      const res = await api.resolveQrOrder(data);
-      setPreviewOrder(res);
-      if (res.tableId) {
-        setTargetTableId(res.tableId);
-      }
-      if (res.tableName && !targetTable) {
-        // Fallback to table label
-        setTargetTable(res.tableName.replace("Table ", ""));
-      }
-      playSuccessEffects();
-    } catch (e: any) {
-      setErrorMsg(e.message || "Failed to resolve order details.");
-    } finally {
-      setBusy(false);
+      await onScanSuccess(optimisticOrder, assignedTable);
+    } catch (cbErr) {
+      console.warn("onScanSuccess callback error:", cbErr);
     }
+
+    // 4. Background Autoritative Network Confirmation
+    (async () => {
+      try {
+        const opId = `op_confirm_${orderId}_${Date.now()}`;
+        const res = await api.confirmQrOrder(data, assignedTable, opId, targetTableId || undefined);
+        if (res && res.order) {
+          api.updateCachedOrder(orderId, res.order);
+        }
+      } catch (e: any) {
+        console.warn("Background QR confirm sync error:", e);
+      }
+    })();
   };
 
-  const handleBarcodeScanned = async ({ data }: { data: string }) => {
-    if (scannedRef.current || busy || previewOrder) return;
-    scannedRef.current = true;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    await processScannedCode(data);
+  const handleBarcodeScanned = ({ data }: { data: string }) => {
+    if (scannedRef.current || busy) return;
+    processAndAttach0ms(data);
   };
 
-  const handleManualSubmit = async () => {
+  const handleManualSubmit = () => {
     if (!manualCode.trim()) {
-      Alert.alert("Input Required", "Please enter the order ID or scan payload.");
+      setErrorMsg("Please enter order ID or scan code.");
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await processScannedCode(manualCode.trim());
-  };
-
-  const handleConfirmOrder = async () => {
-    if (!scannedData || busy) return;
-    setBusy(true);
-    setErrorMsg(null);
-
-    const opId = `op_confirm_${previewOrder?.orderId || "qr"}_${Date.now()}`;
-
-    try {
-      const res = await api.confirmQrOrder(scannedData, targetTable.trim() || undefined, opId, targetTableId || undefined);
-      // Clean up and notify parent component
-      await onScanSuccess(res.order);
-    } catch (e: any) {
-      setErrorMsg(e.message || "Failed to confirm order.");
-      setBusy(false);
-    }
+    processAndAttach0ms(manualCode.trim());
   };
 
   if (!visible) return null;
@@ -244,21 +240,19 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
             </Pressable>
           </View>
 
-          {/* Table Override Row */}
-          {!previewOrder && (
-            <View style={[styles.tableOverrideRow, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
-              <Ionicons name="hardware-chip-outline" size={16} color="#635BFF" />
-              <Text style={[styles.tableOverrideLabel, { color: theme.onSurface }]}>Table Assignment:</Text>
-              <TextInput
-                style={[styles.tableOverrideInput, { color: "#635BFF", borderColor: theme.border }]}
-                value={targetTable}
-                onChangeText={setTargetTable}
-                placeholder="e.g. 5"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-              />
-            </View>
-          )}
+          {/* Table Assignment Row */}
+          <View style={[styles.tableOverrideRow, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
+            <Ionicons name="tablet-portrait-outline" size={16} color="#635BFF" />
+            <Text style={[styles.tableOverrideLabel, { color: theme.onSurface }]}>Target Table:</Text>
+            <TextInput
+              style={[styles.tableOverrideInput, { color: "#635BFF", borderColor: theme.border, backgroundColor: theme.surface }]}
+              value={targetTable}
+              onChangeText={setTargetTable}
+              placeholder="e.g. 5"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+            />
+          </View>
 
           {/* ERROR BOX */}
           {errorMsg && (
@@ -269,203 +263,115 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
                 onPress={() => {
                   setErrorMsg(null);
                   scannedRef.current = false;
-                  setPreviewOrder(null);
                   setBusy(false);
                 }}
                 style={styles.retryBtn}
               >
-                <Text style={styles.retryBtnText}>Reset</Text>
+                <Text style={styles.retryBtnText}>Retry</Text>
               </Pressable>
             </View>
           )}
 
-          {/* PREVIEW ORDER MODE */}
-          {previewOrder ? (
-            <View style={styles.previewContainer}>
-              <View style={styles.previewHeader}>
-                <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-                <Text style={styles.previewTitle}>Order Found</Text>
-              </View>
-
-              <Text style={[styles.previewMetaText, { color: theme.onSurfaceSecondary, marginBottom: 8 }]}>
-                Table {targetTable || previewOrder.tableName || previewOrder.tableId || "-"} • Customer: {previewOrder.customerName}
-              </Text>
-
-              <View style={[styles.previewItemsCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={true}>
-                  {(previewOrder.items || []).map((it: any, idx: number) => (
-                    <View key={idx} style={styles.previewItemRow}>
-                      <Text style={styles.previewItemQty}>{it.quantity}×</Text>
-                      <Text style={[styles.previewItemName, { color: theme.onSurface }]}>{it.name}</Text>
-                      <Text style={[styles.previewItemPrice, { color: theme.onSurface }]}>₹{it.price * it.quantity}</Text>
-                    </View>
-                  ))}
-                </ScrollView>
-
-                <View style={[styles.previewTotalRow, { borderTopColor: theme.border }]}>
-                  <Text style={[styles.previewTotalLbl, { color: theme.onSurfaceSecondary }]}>Order Total</Text>
-                  <Text style={[styles.previewTotalVal, { color: theme.onSurface }]} testID="preview-total-val">₹{previewOrder.total}</Text>
-                </View>
-              </View>
-
-              {/* Warning if already confirmed or paid */}
-              {previewOrder.status !== "pending_scan" && (
-                <View style={{ backgroundColor: "rgba(245,158,11,0.15)", padding: 10, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Ionicons name="warning" size={16} color="#F59E0B" />
-                  <Text style={{ fontSize: 12, color: "#F59E0B", fontWeight: "700" }}>
-                    This order is already {previewOrder.status.toUpperCase()}.
-                  </Text>
-                </View>
-              )}
-
-              {/* Preview Action Buttons */}
-              <View style={styles.previewButtonsRow}>
-                <Pressable
-                  style={[styles.previewCancelBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
-                  onPress={() => {
-                    setPreviewOrder(null);
-                    setErrorMsg(null);
-                    setScannedData("");
-                    scannedRef.current = false;
-                    setBusy(false);
-                  }}
-                  disabled={busy}
-                >
-                  <Text style={{ color: theme.onSurfaceSecondary, fontWeight: "700" }}>Scan Again</Text>
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.previewConfirmBtn,
-                    { backgroundColor: "#635BFF" },
-                    (busy || previewOrder.status !== "pending_scan") && { opacity: 0.6 }
-                  ]}
-                  onPress={handleConfirmOrder}
-                  disabled={busy || previewOrder.status !== "pending_scan"}
-                  testID="qr-confirm-order-btn"
-                >
-                  {busy ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                      <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 15 }}>Confirm Order</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          ) : (
-            /* CAMERA / MANUAL FORMS */
-            <>
-              {mode === "camera" && (
-                <View style={styles.cameraContainer}>
-                  {isCameraActive ? (
-                    permission?.granted ? (
-                      <View style={styles.cameraWrap}>
-                        <CameraView
-                          style={StyleSheet.absoluteFill}
-                          facing={facing}
-                          enableTorch={torch}
-                          barcodeScannerSettings={{
-                            barcodeTypes: ["qr"],
-                          }}
-                          onBarcodeScanned={handleBarcodeScanned}
-                        />
-
-                        {/* Viewfinder Target Box Overlay */}
-                        <View style={styles.finderOverlay}>
-                          <View style={styles.scanTargetBox}>
-                            <View style={[styles.corner, styles.cornerTL]} />
-                            <View style={[styles.corner, styles.cornerTR]} />
-                            <View style={[styles.corner, styles.cornerBL]} />
-                            <View style={[styles.corner, styles.cornerBR]} />
-                          </View>
-                        </View>
-
-                        {/* Camera Action Buttons */}
-                        <View style={styles.camControls}>
-                          <Pressable
-                            style={[styles.camCircleBtn, torch && styles.camCircleBtnActive]}
-                            onPress={() => setTorch(!torch)}
-                          >
-                            <Ionicons name={torch ? "flash" : "flash-outline"} size={20} color="#FFFFFF" />
-                          </Pressable>
-
-                          <Pressable
-                            style={styles.camCircleBtn}
-                            onPress={() => setFacing(facing === "back" ? "front" : "back")}
-                          >
-                            <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
-                          </Pressable>
-                        </View>
-
+          {/* CONTENT AREA: CAMERA SCANNER OR MANUAL INPUT */}
+          <View style={styles.contentArea}>
+            {mode === "camera" ? (
+              <View style={styles.cameraWrapper}>
+                {!permission?.granted ? (
+                  <View style={styles.permissionBox}>
+                    <Ionicons name="camera-outline" size={48} color="#94A3B8" />
+                    <Text style={[styles.permissionText, { color: theme.onSurface }]}>
+                      Camera permission is required to scan customer QR codes.
+                    </Text>
+                    <Pressable style={styles.permissionBtn} onPress={requestPermission}>
+                      <Text style={styles.permissionBtnText}>Enable Camera</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={styles.cameraContainer}>
+                    {isCameraActive && (
+                      <CameraView
+                        style={StyleSheet.absoluteFillObject}
+                        facing={facing}
+                        enableTorch={torch}
+                        barcodeScannerSettings={{
+                          barcodeTypes: ["qr"],
+                        }}
+                        onBarcodeScanned={handleBarcodeScanned}
+                      />
+                    )}
+                    
+                    {/* Viewfinder Target Box with glowing corners */}
+                    <View style={styles.finderOverlay}>
+                      <View style={[styles.scanBox, { width: SCAN_BOX_SIZE, height: SCAN_BOX_SIZE }]}>
+                        <View style={[styles.corner, styles.tl]} />
+                        <View style={[styles.corner, styles.tr]} />
+                        <View style={[styles.corner, styles.bl]} />
+                        <View style={[styles.corner, styles.br]} />
                         {busy && (
-                          <View style={styles.busyOverlay}>
+                          <View style={styles.scanningIndicator}>
                             <ActivityIndicator size="large" color="#635BFF" />
-                            <Text style={styles.busyText}>Checking QR details...</Text>
+                            <Text style={styles.scanningText}>Attaching Order...</Text>
                           </View>
                         )}
                       </View>
-                    ) : (
-                      <View style={[styles.noCamBox, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
-                        <Ionicons name="camera-outline" size={48} color="#94A3B8" />
-                        <Text style={[styles.noCamTitle, { color: theme.onSurface }]}>Camera Permission Required</Text>
-                        <Text style={[styles.noCamSub, { color: theme.onSurfaceSecondary }]}>
-                          Please allow camera access to scan customer QR codes, or use manual entry.
-                        </Text>
-                        <Pressable style={styles.grantBtn} onPress={requestPermission}>
-                          <Text style={styles.grantBtnText}>Grant Camera Permission</Text>
-                        </Pressable>
-                        <Pressable style={styles.switchManualBtn} onPress={() => setMode("manual")}>
-                          <Text style={styles.switchManualBtnText}>Switch to Manual Code Entry</Text>
-                        </Pressable>
-                      </View>
-                    )
-                  ) : (
-                    <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.surfaceSecondary }}>
-                      <ActivityIndicator size="large" color="#635BFF" />
-                      <Text style={{ color: theme.onSurfaceSecondary, marginTop: 12, fontSize: 13, fontWeight: "600" }}>
-                        Initializing scanner...
-                      </Text>
                     </View>
-                  )}
-                </View>
-              )}
 
-              {mode === "manual" && (
-                <View style={styles.manualContainer}>
-                  <Text style={[styles.manualPrompt, { color: theme.onSurfaceSecondary }]}>
-                    Enter the 16-character token, full QR string, or Order ID shown on the customer's phone:
+                    {/* Camera Control Overlay */}
+                    <View style={styles.cameraControls}>
+                      <Pressable
+                        style={[styles.ctrlBtn, torch && styles.ctrlBtnActive]}
+                        onPress={() => setTorch(!torch)}
+                      >
+                        <Ionicons name={torch ? "flash" : "flash-off"} size={20} color={torch ? "#635BFF" : "#FFF"} />
+                      </Pressable>
+
+                      <Pressable
+                        style={styles.ctrlBtn}
+                        onPress={() => setFacing(facing === "back" ? "front" : "back")}
+                      >
+                        <Ionicons name="camera-reverse" size={20} color="#FFF" />
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={styles.manualWrapper}>
+                <View style={[styles.manualCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                  <Text style={[styles.manualTitle, { color: theme.onSurface }]}>Enter Order ID / JSON</Text>
+                  <Text style={[styles.manualSub, { color: theme.onSurfaceSecondary }]}>
+                    Type the order reference or raw payload from customer's phone.
                   </Text>
-
+                  
                   <TextInput
-                    style={[styles.manualInput, { color: theme.onSurface, borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                    style={[styles.manualInput, { color: theme.onSurface, borderColor: theme.border, backgroundColor: theme.surface }]}
                     value={manualCode}
                     onChangeText={setManualCode}
-                    placeholder="e.g. EZBILL_ORDER:{...} or Token"
-                    placeholderTextColor="#64748B"
-                    autoFocus
+                    placeholder="e.g. EZBILL_ORDER:..."
+                    placeholderTextColor="#94A3B8"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
                   />
 
                   <Pressable
-                    style={[styles.submitBtn, (!manualCode.trim() || busy) && { opacity: 0.6 }]}
+                    style={[styles.manualSubmitBtn, busy && { opacity: 0.6 }]}
                     onPress={handleManualSubmit}
-                    disabled={!manualCode.trim() || busy}
+                    disabled={busy}
                   >
                     {busy ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <>
-                        <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                        <Text style={styles.submitBtnText}>Check Order Code</Text>
+                        <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                        <Text style={styles.manualSubmitBtnText}>Attach Order (0ms)</Text>
                       </>
                     )}
                   </Pressable>
                 </View>
-              )}
-            </>
-          )}
+              </ScrollView>
+            )}
+          </View>
 
         </View>
       </View>
@@ -476,25 +382,26 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
   },
   container: {
+    height: "88%",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    padding: spacing.xl,
-    paddingBottom: Platform.OS === "ios" ? 40 : spacing.xl,
-    maxHeight: "90%",
+    paddingTop: 16,
+    overflow: "hidden",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
   },
   title: {
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
   },
   closeBtn: {
     width: 36,
@@ -505,9 +412,10 @@ const styles = StyleSheet.create({
   },
   tabRow: {
     flexDirection: "row",
-    borderRadius: 12,
+    marginHorizontal: 20,
+    borderRadius: 14,
     padding: 4,
-    marginBottom: spacing.md,
+    marginBottom: 12,
   },
   tabBtn: {
     flex: 1,
@@ -515,7 +423,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 10,
   },
   tabBtnActive: {
@@ -523,177 +431,44 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#64748B",
   },
   tabTextActive: {
     color: "#FFFFFF",
-    fontWeight: "700",
   },
   tableOverrideRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
+    marginHorizontal: 20,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    marginBottom: spacing.md,
+    marginBottom: 12,
     gap: 8,
   },
   tableOverrideLabel: {
     fontSize: 13,
     fontWeight: "700",
-    flex: 1,
   },
   tableOverrideInput: {
-    fontSize: 15,
+    flex: 1,
+    fontSize: 14,
     fontWeight: "800",
-    borderWidth: 1,
-    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    minWidth: 60,
-    textAlign: "center",
-    backgroundColor: "rgba(99,91,255,0.08)",
-  },
-  cameraContainer: {
-    height: 320,
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  cameraWrap: {
-    flex: 1,
-    position: "relative",
-  },
-  finderOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.3)",
-  },
-  scanTargetBox: {
-    width: SCAN_BOX_SIZE,
-    height: SCAN_BOX_SIZE,
-    position: "relative",
-  },
-  corner: {
-    position: "absolute",
-    width: 24,
-    height: 24,
-    borderColor: "#635BFF",
-  },
-  cornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 8 },
-  cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 8 },
-  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 8 },
-  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 8 },
-  camControls: {
-    position: "absolute",
-    bottom: 16,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 20,
-  },
-  camCircleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  camCircleBtnActive: {
-    backgroundColor: "#635BFF",
-  },
-  busyOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-  },
-  busyText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  noCamBox: {
-    flex: 1,
-    borderRadius: 20,
+    borderRadius: 8,
     borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.xl,
-    textAlign: "center",
-  },
-  noCamTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    marginTop: 12,
-    textAlign: "center",
-  },
-  noCamSub: {
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 6,
-    marginBottom: spacing.lg,
-  },
-  grantBtn: {
-    backgroundColor: "#635BFF",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  grantBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  switchManualBtn: {
-    marginTop: 12,
-  },
-  switchManualBtnText: {
-    color: "#635BFF",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  manualContainer: {
-    paddingVertical: spacing.md,
-  },
-  manualPrompt: {
-    fontSize: 13,
-    marginBottom: spacing.md,
-    lineHeight: 18,
-  },
-  manualInput: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 14,
-    marginBottom: spacing.lg,
-  },
-  submitBtn: {
-    height: 50,
-    backgroundColor: "#635BFF",
-    borderRadius: 14,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
   },
   errBox: {
     flexDirection: "row",
     alignItems: "center",
+    marginHorizontal: 20,
     padding: 12,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: spacing.md,
+    marginBottom: 10,
   },
   errText: {
     flex: 1,
@@ -702,94 +477,144 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   retryBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
     backgroundColor: "#EF4444",
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 8,
   },
   retryBtnText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  contentArea: {
+    flex: 1,
+  },
+  cameraWrapper: {
+    flex: 1,
+    position: "relative",
+  },
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  permissionBox: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 30,
+    gap: 12,
+  },
+  permissionText: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  permissionBtn: {
+    backgroundColor: "#635BFF",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  permissionBtnText: {
+    color: "#FFF",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  finderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scanBox: {
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  corner: {
+    position: "absolute",
+    width: 24,
+    height: 24,
+    borderColor: "#635BFF",
+  },
+  tl: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 12 },
+  tr: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 12 },
+  bl: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 12 },
+  br: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 12 },
+  scanningIndicator: {
+    backgroundColor: "rgba(0,0,0,0.7)",
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    gap: 8,
+  },
+  scanningText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "700",
   },
-  previewContainer: {
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-  },
-  previewHeader: {
+  cameraControls: {
+    position: "absolute",
+    bottom: 24,
+    left: 0,
+    right: 0,
     flexDirection: "row",
+    justifyContent: "center",
+    gap: 20,
+  },
+  ctrlBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
   },
-  previewTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#10B981",
+  ctrlBtnActive: {
+    backgroundColor: "#FFFFFF",
   },
-  previewMetaText: {
-    fontSize: 13,
-    fontWeight: "700",
+  manualWrapper: {
+    padding: 20,
   },
-  previewItemsCard: {
-    padding: spacing.md,
-    borderRadius: 14,
+  manualCard: {
+    padding: 18,
+    borderRadius: 20,
     borderWidth: 1,
   },
-  previewItemRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 6,
-  },
-  previewItemQty: {
+  manualTitle: {
+    fontSize: 16,
     fontWeight: "800",
-    color: "#635BFF",
-    width: 24,
   },
-  previewItemName: {
-    flex: 1,
-    fontWeight: "600",
+  manualSub: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 14,
   },
-  previewItemPrice: {
-    fontWeight: "700",
-  },
-  previewTotalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    marginTop: spacing.sm,
-  },
-  previewTotalLbl: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  previewTotalVal: {
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  previewButtonsRow: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  previewCancelBtn: {
-    flex: 1,
-    height: 50,
-    borderRadius: 14,
+  manualInput: {
     borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 90,
+    textAlignVertical: "top",
+    marginBottom: 16,
   },
-  previewConfirmBtn: {
-    flex: 1.5,
-    height: 50,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
+  manualSubmitBtn: {
+    backgroundColor: "#635BFF",
     flexDirection: "row",
-    gap: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  manualSubmitBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
   },
 });

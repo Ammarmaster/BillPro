@@ -179,7 +179,7 @@ function KdsTicketCard({
             ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-              printKitchenKOT(item);
+              printKitchenKOT(item, true);
             }}
           >
             <Ionicons name="print-outline" size={14} color="#635BFF" />

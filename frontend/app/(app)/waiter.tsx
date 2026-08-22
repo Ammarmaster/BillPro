@@ -89,6 +89,7 @@ export default function WaiterScreen() {
 
   const handleScanImport = async (confirmedOrder: any) => {
     setShowScanner(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     
     // Optimistically insert/update the confirmed order in local state
     setOrders(prev => {
@@ -109,14 +110,12 @@ export default function WaiterScreen() {
       // Instantly open the table details view with 0ms delay!
       const targetTbl = tables.find(
         t => String(t.label).toLowerCase() === String(confirmedOrder.table_number).toLowerCase()
-      );
-      if (targetTbl) {
-        setSelectedTableObj(targetTbl);
-        setViewMode("order_details");
-      }
+      ) || { id: "tbl-dyn", label: String(confirmedOrder.table_number), seats: 4, status: "occupied" };
+      
+      setSelectedTableObj(targetTbl);
+      setActiveOrder(confirmedOrder);
+      setViewMode("order_details");
     }
-
-    Alert.alert("Order Attached", "Customer order confirmed and attached successfully!");
 
     // Trigger a silent load in background to reconcile state
     load().catch(() => {});
@@ -214,10 +213,15 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const matchingOrders = ordersList.filter(
     (o: any) => isSameTable(o.table_number, tblLabel) && o.status !== "served" && o.status !== "cancelled" && o.status !== "pending_scan"
   );
-  if (matchingOrders.length === 0) return { status: "Available", orders: [], bill: null, isWeb: false, activeCount: 0 };
+  if (matchingOrders.length === 0) return { status: "Available", orders: [], bill: null, isWeb: false, activeCount: 0, totalAmount: 0 };
+
+  const totalAmt = matchingOrders.reduce((sum: number, o: any) => {
+    const oTotal = o.subtotal || (o.items || []).reduce((acc: number, x: any) => acc + (x.price * x.quantity), 0);
+    return sum + oTotal;
+  }, 0);
 
   const matchingBill = billsList.find((b: any) => matchingOrders.some((o: any) => o.id === b.order_id) && b.status !== "paid");
-  if (matchingBill) return { status: "Billed", orders: matchingOrders, bill: matchingBill, isWeb: false, activeCount: matchingOrders.length };
+  if (matchingBill) return { status: "Billed", orders: matchingOrders, bill: matchingBill, isWeb: false, activeCount: matchingOrders.length, totalAmount: totalAmt };
 
   const allWeb = matchingOrders.every((o: any) => o.created_by === "guest" || o.order_source === "qr_web" || billsList.some((b: any) => b.order_id === o.id && b.status === "paid"));
 
@@ -226,7 +230,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
     orders: matchingOrders, 
     bill: null, 
     isWeb: allWeb, 
-    activeCount: matchingOrders.length 
+    activeCount: matchingOrders.length,
+    totalAmount: totalAmt
   };
 };
 
@@ -657,56 +662,76 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
         <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="waiter-screen">
           
-          {/* Header */}
-          <View style={styles.header}>
+          {/* Header with Scan & Printer Action Buttons */}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={[styles.title, { color: theme.onSurface, marginBottom: 0 }]}>Tables</Text>
-                <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
-                  <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Live</Text>
-                </View>
-              </View>
-              <Text style={[styles.subtitle, { color: theme.onSurfaceSecondary, marginTop: 2 }]}>Tap a table to take order & view status</Text>
+              <Text style={{ fontSize: 28, fontWeight: "900", color: theme.onSurface }}>Tables</Text>
+              <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, marginTop: 2, fontWeight: "500" }}>
+                Tap a table to add items or generate bill
+              </Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Pressable
-                style={[styles.logoutPill, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}
+                style={{
+                  backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                  borderColor: isDark ? "#635BFF" : "#C7D2FE",
+                  borderWidth: 1,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                  borderRadius: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 5,
+                }}
                 onPress={() => setShowScanner(true)}
               >
-                <Ionicons name="qr-code-outline" size={18} color="#635BFF" />
-                <Text style={[styles.logoutText, { color: "#635BFF" }]}>Scan Order</Text>
+                <Ionicons name="qr-code-outline" size={16} color="#635BFF" />
+                <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "800" }}>Scan</Text>
               </Pressable>
-              <Pressable style={styles.logoutPill} onPress={logout} testID="waiter-logout-btn">
-                <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-                <Text style={styles.logoutText}>Logout</Text>
+
+              <Pressable
+                style={{
+                  backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB",
+                  borderColor: isDark ? "#F59E0B" : "#FDE68A",
+                  borderWidth: 1,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                  borderRadius: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+                onPress={() => router.push("/(app)/printer-settings")}
+              >
+                <Ionicons name="print-outline" size={16} color="#F59E0B" />
+                <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "800" }}>Printer</Text>
               </Pressable>
             </View>
           </View>
 
-          {/* Legend Summary Row */}
-          <View style={styles.legendRow}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#10B981" }]} />
-              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Available • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.available}</Text></Text>
+          {/* Legend Summary Row matching Screenshot 2 */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14, paddingHorizontal: spacing.lg, marginVertical: spacing.md }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }} />
+              <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, fontWeight: "600" }}>Available · <Text style={{ color: theme.onSurface, fontWeight: "800" }}>{counts.available}</Text></Text>
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#F59E0B" }]} />
-              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Occupied • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.occupied}</Text></Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#F59E0B" }} />
+              <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, fontWeight: "600" }}>Occupied · <Text style={{ color: theme.onSurface, fontWeight: "800" }}>{counts.occupied}</Text></Text>
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#EF4444" }]} />
-              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Billed • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.billed}</Text></Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444" }} />
+              <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, fontWeight: "600" }}>Billed · <Text style={{ color: theme.onSurface, fontWeight: "800" }}>{counts.billed}</Text></Text>
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#3B82F6" }]} />
-              <Text style={[styles.legendText, { color: theme.onSurfaceSecondary }]}>Reserved • <Text style={[styles.legendCount, { color: theme.onSurface }]}>{counts.reserved}</Text></Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#3B82F6" }} />
+              <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, fontWeight: "600" }}>Reserved · <Text style={{ color: theme.onSurface, fontWeight: "800" }}>{counts.reserved}</Text></Text>
             </View>
           </View>
 
           {/* Main Section Title */}
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.onSurface }]}>Main</Text>
+          <View style={{ paddingHorizontal: spacing.lg, marginTop: 4, marginBottom: 8 }}>
+            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.onSurface }}>Main</Text>
           </View>
 
           {loading ? (
@@ -725,31 +750,41 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
               contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: 10 }}
               showsVerticalScrollIndicator={false}
               renderItem={({ item, index }) => {
-                const { status } = getTableStatusInfo(item.label, orders, bills);
-                let bgColor = isDark ? "#161C2E" : "#ECFDF5";
-                let borderColor = isDark ? "#065F46" : "#A7F3D0";
-                let textColor = isDark ? "#34D399" : "#10B981";
+                const { status, orders: tblOrders, activeCount, totalAmount } = getTableStatusInfo(item.label, orders, bills);
+                
+                let cardBg = isDark ? "#161C2E" : "#F0FDF4";
+                let cardBorder = isDark ? "#065F46" : "#BBF7D0";
+                let iconBg = isDark ? "#064E3B" : "#DCFCE7";
+                let iconColor = isDark ? "#34D399" : "#10B981";
+                let statusLabel = "Available";
+                let statusTextColor = isDark ? "#34D399" : "#10B981";
+                let isOccupied = false;
                 let iconName: any = "checkmark-circle-outline";
 
-                if (status === "Web Paid") {
-                  bgColor = isDark ? "#13232C" : "#F0FDF4";
-                  borderColor = isDark ? "#065F46" : "#86EFAC";
-                  textColor = isDark ? "#34D399" : "#10B981";
-                  iconName = "globe-outline";
-                } else if (status === "Billed") {
-                  bgColor = isDark ? "#161C2E" : "#FEF2F2";
-                  borderColor = isDark ? "#7F1D1D" : "#FECACA";
-                  textColor = isDark ? "#F87171" : "#EF4444";
-                  iconName = "square";
-                } else if (status === "Occupied") {
-                  bgColor = isDark ? "#161C2E" : "#FFFBEB";
-                  borderColor = isDark ? "#78350F" : "#FDE68A";
-                  textColor = isDark ? "#FBBF24" : "#F59E0B";
-                  iconName = "flame-outline";
+                if (status === "Billed") {
+                  cardBg = isDark ? "#2A1417" : "#FFF1F2";
+                  cardBorder = isDark ? "#7F1D1D" : "#FECDD3";
+                  iconBg = isDark ? "#451216" : "#FEE2E2";
+                  iconColor = "#EF4444";
+                  statusLabel = "Billed";
+                  statusTextColor = "#EF4444";
+                  iconName = "stop";
+                } else if (status === "Occupied" || status === "Web Paid") {
+                  isOccupied = true;
+                  cardBg = isDark ? "#2D1E0C" : "#FFFBEB";
+                  cardBorder = isDark ? "#78350F" : "#FDE68A";
+                  iconBg = isDark ? "#451A03" : "#FEF3C7";
+                  iconColor = "#D97706";
+                  statusLabel = totalAmount > 0 ? `₹${totalAmount}` : "Occupied";
+                  statusTextColor = "#4F46E5";
+                  iconName = "people";
                 } else if (status === "Reserved") {
-                  bgColor = isDark ? "#161C2E" : "#EFF6FF";
-                  borderColor = isDark ? "#1E3A8A" : "#BAE6FD";
-                  textColor = isDark ? "#60A5FA" : "#3B82F6";
+                  cardBg = isDark ? "#121F3D" : "#EFF6FF";
+                  cardBorder = isDark ? "#1E3A8A" : "#BAE6FD";
+                  iconBg = isDark ? "#172554" : "#DBEAFE";
+                  iconColor = "#3B82F6";
+                  statusLabel = "Reserved";
+                  statusTextColor = "#3B82F6";
                   iconName = "bookmark-outline";
                 }
 
@@ -757,20 +792,43 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                   <Animated.View entering={FadeInDown.delay(index * 40).springify()} style={{ width: "31.2%", maxWidth: "31.2%", minWidth: "31.2%" }}>
                     <Pressable
                       style={({ pressed }) => [
-                        styles.tableCard,
-                        { backgroundColor: bgColor, borderColor: borderColor },
-                        pressed && styles.cardPressed,
+                        {
+                          backgroundColor: cardBg,
+                          borderColor: cardBorder,
+                          borderWidth: 1,
+                          borderRadius: 20,
+                          padding: 12,
+                          minHeight: 132,
+                          justifyContent: "space-between",
+                        },
+                        pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
                       ]}
                       onPress={() => onSelectTable(item)}
                       testID={`waiter-table-${item.id}`}
                     >
-                      <View style={[styles.badgeIconBox, { backgroundColor: borderColor }]}>
-                        <Ionicons name={iconName} size={14} color={textColor} />
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: iconBg, alignItems: "center", justifyContent: "center" }}>
+                          <Ionicons name={iconName} size={15} color={iconColor} />
+                        </View>
+                        {isOccupied && (
+                          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#4F46E5", alignItems: "center", justifyContent: "center" }}>
+                            <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "900" }}>{activeCount || tblOrders.length || 1}</Text>
+                          </View>
+                        )}
                       </View>
 
-                      <Text style={[styles.cardLabel, { color: theme.onSurface }]} numberOfLines={1}>{item.label}</Text>
-                      <Text style={[styles.cardSeats, { color: theme.onSurfaceSecondary }]}>{item.seats} seats</Text>
-                      <Text style={[styles.cardStatus, { color: textColor }]}>{status}</Text>
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={{ fontSize: 24, fontWeight: "900", color: theme.onSurface }} numberOfLines={1}>
+                          {item.label}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2, fontWeight: "500" }}>
+                          {item.seats} seats
+                        </Text>
+                      </View>
+
+                      <Text style={{ fontSize: isOccupied ? 15 : 13, fontWeight: "900", color: statusTextColor, marginTop: 4 }}>
+                        {statusLabel}
+                      </Text>
                     </Pressable>
                   </Animated.View>
                 );

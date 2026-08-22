@@ -395,21 +395,44 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           api.notifyCacheUpdate("/tables", updated);
         }
 
-        // Automatic instant KOT thermal print on incoming order if auto_print is enabled
-        (async () => {
-          try {
-            const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
-            const kSettings = await getPrinterSettings("kitchen");
-            const cSettings = await getPrinterSettings("cashier");
-            const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
-                                (cSettings && cSettings.type !== "none" && cSettings.auto_print);
-            if (shouldPrint) {
-              await printKitchenKOT(data.order);
+        // Automatic instant KOT thermal print ONLY on initial order placement / creation
+        const isNewOrderCreation = 
+          eventName === "order.created" || 
+          eventName === "order.confirmed" || 
+          eventName === "ORDER_CREATED" ||
+          notif.title === "New KOT Placed" ||
+          notif.title === "Order Confirmed" ||
+          notif.title === "New Order Placed";
+
+        const isPlacedStatus = 
+          data.order?.status === "placed" || 
+          data.order?.status === "new" || 
+          !data.order?.status;
+
+        const isStatusChange = 
+          eventName === "ORDER_STATUS_CHANGED" ||
+          eventName === "order.status_changed" ||
+          notif.title === "Order Status Updated" ||
+          (notif.title && notif.title.includes("now IN KITCHEN")) ||
+          (notif.title && notif.title.includes("now READY")) ||
+          (notif.title && notif.title.includes("now SERVED"));
+
+        if (isNewOrderCreation && isPlacedStatus && !isStatusChange && data.order) {
+          (async () => {
+            try {
+              const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
+              const kSettings = await getPrinterSettings("kitchen");
+              const cSettings = await getPrinterSettings("cashier");
+              const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
+                                  (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+              if (shouldPrint) {
+                await printKitchenKOT(data.order);
+              }
+            } catch (pErr) {
+              console.warn("WebSocket KOT auto-print error:", pErr);
             }
-          } catch (pErr) {
-            console.warn("WebSocket KOT auto-print error:", pErr);
-          }
-        })();
+          })();
+        }
       }
 
       // 2. Inject bill directly if present

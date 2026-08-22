@@ -22,9 +22,14 @@ expo-env.d.ts
 # Gradle & Android builds
 .gradle/
 build/
+.cxx/
+**/.cxx/
+**/build/
+**/.gradle/
 android/.gradle/
 android/build/
 android/app/build/
+android/app/.cxx/
 local.properties
 
 # Metro

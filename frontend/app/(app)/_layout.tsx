@@ -132,15 +132,15 @@ export default function AppLayout() {
         options={{
           href: isStaff ? null : undefined,
           title: isAdmin ? "Admin" : "Dashboard",
-          tabBarIcon: ({ color, size }) => <Ionicons name={isAdmin ? "shield-checkmark" : "stats-chart"} size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name={isAdmin ? "shield-checkmark" : "grid-outline"} size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="waiter"
         options={{
           href: isAdmin ? null : undefined,
-          title: "Waiter",
-          tabBarIcon: ({ color, size }) => <Ionicons name="clipboard-outline" size={size} color={color} />,
+          title: "Tables",
+          tabBarIcon: ({ color, size }) => <Ionicons name="tablet-portrait-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -148,7 +148,7 @@ export default function AppLayout() {
         options={{
           href: isAdmin ? null : undefined,
           title: "Takeaway",
-          tabBarIcon: ({ color, size }) => <Ionicons name="bag-handle-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="bag-handle-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -156,7 +156,7 @@ export default function AppLayout() {
         options={{
           href: isAdmin ? null : undefined,
           title: "Kitchen",
-          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -164,7 +164,7 @@ export default function AppLayout() {
         options={{
           href: isStaff ? null : undefined,
           title: isAdmin ? "Account" : "More",
-          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal-circle-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal-circle-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen name="tables" options={{ href: null, title: "Tables" }} />

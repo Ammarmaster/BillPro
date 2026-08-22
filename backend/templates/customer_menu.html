@@ -2,27 +2,40 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Menu</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Menu — EzBill</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     :root {
-      --bg: #090D16;
-      --surface: #121824;
-      --surface-sec: #1C2434;
-      --brand: #6366F1;
-      --brand-gradient: linear-gradient(135deg, #6366F1, #8B5CF6);
-      --on-surface: #F1F5F9;
+      --bg: #080C14;
+      --surface: #0E1626;
+      --surface-sec: #182238;
+      --surface-card: #111B2E;
+      --brand: #635BFF;
+      --brand-light: #7B61FF;
+      --brand-gradient: linear-gradient(135deg, #635BFF 0%, #7B61FF 100%);
+      --brand-glow: 0 8px 24px rgba(99, 91, 255, 0.35);
+      --brand-soft: rgba(99, 91, 255, 0.14);
+      --on-surface: #F8FAFC;
       --on-surface-sec: #94A3B8;
+      --on-surface-muted: #64748B;
       --border: rgba(255, 255, 255, 0.08);
-      --border-focus: rgba(99, 102, 241, 0.4);
-      --radius-sm: 8px;
-      --radius-md: 14px;
+      --border-focus: rgba(99, 91, 255, 0.45);
+      --success: #10B981;
+      --success-soft: rgba(16, 185, 129, 0.12);
+      --danger: #EF4444;
+      --danger-soft: rgba(239, 68, 68, 0.12);
+      --amber: #F59E0B;
+      --amber-soft: rgba(245, 158, 11, 0.12);
+      --radius-sm: 10px;
+      --radius-md: 16px;
       --radius-lg: 24px;
-      --font: 'Plus Jakarta Sans', sans-serif;
+      --radius-full: 9999px;
+      --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     * {
@@ -38,23 +51,19 @@
       font-family: var(--font);
       overflow-x: hidden;
       line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      background-image: 
+        radial-gradient(circle at 10% 0%, rgba(99, 91, 255, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 90% 20%, rgba(123, 97, 255, 0.1) 0%, transparent 40%);
+      background-attachment: fixed;
     }
 
-    /* Scrollbars */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
 
     .container {
-      max-width: 600px;
+      max-width: 640px;
       margin: 0 auto;
       min-height: 100vh;
       display: flex;
@@ -63,31 +72,42 @@
       padding-bottom: 120px;
     }
 
-    /* Premium Header */
+    /* Luxury Sticky Header */
     header {
-      background: rgba(9, 13, 22, 0.7);
+      background: rgba(8, 12, 20, 0.85);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       position: sticky;
       top: 0;
-      z-index: 10;
-      padding: 20px;
+      z-index: 20;
+      padding: 16px 20px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 16px;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .restaurant-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
     }
 
     .logo-container {
-      width: 50px;
-      height: 50px;
-      border-radius: var(--radius-sm);
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
       overflow: hidden;
       background: var(--surface-sec);
-      border: 1px solid var(--border);
+      border: 1.5px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     .logo-img {
@@ -98,23 +118,98 @@
 
     .logo-fallback {
       font-size: 20px;
-      font-weight: 700;
+      font-weight: 800;
       color: var(--brand);
     }
 
+    .header-info {
+      flex: 1;
+      min-width: 0;
+    }
+
     .header-info h1 {
-      font-size: 18px;
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--on-surface);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: -0.3px;
+    }
+
+    .header-tags {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 3px;
+      flex-wrap: wrap;
+    }
+
+    .badge-pill {
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: -0.5px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
 
-    .header-info p {
-      font-size: 13px;
-      color: var(--on-surface-sec);
-      margin-top: 2px;
+    .badge-table {
+      background: var(--brand-soft);
+      color: #A5B4FC;
+      border: 1px solid rgba(99, 91, 255, 0.3);
     }
 
-    /* Search & Filters */
+    .badge-guest {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--on-surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+
+    .badge-live {
+      background: var(--success-soft);
+      color: #34D399;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #10B981;
+      box-shadow: 0 0 8px #10B981;
+      animation: pulseDot 2s infinite;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .my-orders-btn {
+      background: var(--surface-sec);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      color: var(--on-surface);
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .my-orders-btn:hover {
+      background: var(--surface-card);
+      border-color: rgba(99, 91, 255, 0.3);
+    }
+
+    /* Search & Filter Section */
     .search-wrapper {
       padding: 16px 20px 8px;
     }
@@ -128,7 +223,7 @@
     .search-input-container svg {
       position: absolute;
       left: 16px;
-      fill: var(--on-surface-sec);
+      fill: var(--on-surface-muted);
       width: 18px;
       height: 18px;
     }
@@ -137,64 +232,99 @@
       width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
-      padding: 14px 16px 14px 48px;
+      padding: 13px 16px 13px 46px;
       border-radius: var(--radius-md);
       color: var(--on-surface);
       font-family: var(--font);
       font-size: 14px;
+      font-weight: 500;
       outline: none;
       transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
 
     .search-input:focus {
       border-color: var(--brand);
       box-shadow: 0 0 0 3px var(--border-focus);
+      background: var(--surface-card);
+    }
+
+    /* Dietary Quick Filters */
+    .diet-filters {
+      display: flex;
+      gap: 8px;
+      padding: 8px 20px;
+    }
+
+    .diet-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--on-surface-sec);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .diet-btn.active {
+      background: var(--brand-soft);
+      border-color: var(--brand);
+      color: #A5B4FC;
     }
 
     /* Categories horizontal scroller */
     .categories-scroller {
       display: flex;
       overflow-x: auto;
-      gap: 10px;
-      padding: 12px 20px;
+      gap: 8px;
+      padding: 10px 20px;
       scroll-behavior: smooth;
       scrollbar-width: none;
     }
 
-    .categories-scroller::-webkit-scrollbar {
-      display: none;
-    }
+    .categories-scroller::-webkit-scrollbar { display: none; }
 
     .category-pill {
       background: var(--surface);
       border: 1px solid var(--border);
-      padding: 10px 18px;
-      border-radius: var(--radius-lg);
+      padding: 9px 18px;
+      border-radius: var(--radius-full);
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
       cursor: pointer;
       color: var(--on-surface-sec);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .category-pill.active {
       background: var(--brand-gradient);
-      color: #fff;
+      color: #FFFFFF;
       border-color: transparent;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      box-shadow: var(--brand-glow);
       transform: translateY(-1px);
     }
 
-    /* Menu Items Grid */
+    /* Menu Items Section */
     .menu-section {
       padding: 16px 20px;
     }
 
-    .menu-section-title {
-      font-size: 16px;
-      font-weight: 700;
+    .menu-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 16px;
+    }
+
+    .menu-section-title {
+      font-size: 17px;
+      font-weight: 800;
       color: var(--on-surface);
       letter-spacing: -0.3px;
     }
@@ -202,33 +332,76 @@
     .menu-items-list {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
     .menu-item-card {
-      background: var(--surface);
+      background: var(--surface-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-lg);
       padding: 16px;
       display: flex;
-      gap: 16px;
+      gap: 14px;
       align-items: center;
-      transition: all 0.3s ease;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     }
 
     .menu-item-card:hover {
       transform: translateY(-2px);
-      border-color: rgba(99, 102, 241, 0.2);
+      border-color: rgba(99, 91, 255, 0.25);
     }
 
     .menu-item-info {
       flex: 1;
+      min-width: 0;
+    }
+
+    .item-type-badge {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 1.5px solid;
+      border-radius: 3px;
+      position: relative;
+      margin-bottom: 4px;
+    }
+
+    .item-type-badge.veg {
+      border-color: #10B981;
+    }
+    .item-type-badge.veg::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10B981;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .item-type-badge.non-veg {
+      border-color: #EF4444;
+    }
+    .item-type-badge.non-veg::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #EF4444;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
 
     .menu-item-title {
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 800;
       color: var(--on-surface);
+      letter-spacing: -0.2px;
     }
 
     .menu-item-desc {
@@ -239,12 +412,13 @@
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+      line-height: 1.4;
     }
 
     .menu-item-price {
       font-size: 16px;
-      font-weight: 700;
-      color: var(--brand);
+      font-weight: 900;
+      color: #A5B4FC;
       margin-top: 8px;
     }
 
@@ -252,10 +426,11 @@
       position: relative;
       width: 90px;
       height: 90px;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-md);
       overflow: hidden;
       background: var(--surface-sec);
       border: 1px solid var(--border);
+      flex-shrink: 0;
     }
 
     .menu-item-image {
@@ -268,43 +443,46 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
     }
 
     .add-to-cart-btn {
-      background: var(--surface-sec);
-      border: 1px solid var(--border);
-      color: var(--brand);
+      background: var(--brand-soft);
+      border: 1.5px solid rgba(99, 91, 255, 0.4);
+      color: #A5B4FC;
       font-family: var(--font);
       font-size: 13px;
-      font-weight: 700;
-      padding: 8px 16px;
-      border-radius: var(--radius-lg);
+      font-weight: 800;
+      padding: 8px 18px;
+      border-radius: var(--radius-full);
       cursor: pointer;
       transition: all 0.2s ease;
+      letter-spacing: 0.5px;
     }
 
     .add-to-cart-btn:hover {
       background: var(--brand-gradient);
-      color: #fff;
+      color: #FFFFFF;
       border-color: transparent;
+      box-shadow: 0 4px 14px rgba(99, 91, 255, 0.35);
     }
 
-    /* Quantity Selector Controls */
+    /* Quantity Stepper Controls */
     .qty-controls {
       display: flex;
       align-items: center;
       background: var(--brand-gradient);
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-full);
       overflow: hidden;
-      box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);
+      box-shadow: 0 4px 14px rgba(99, 91, 255, 0.35);
     }
 
     .qty-btn {
       background: transparent;
       border: none;
-      color: #fff;
+      color: #FFFFFF;
       font-size: 16px;
-      font-weight: 700;
+      font-weight: 800;
       width: 32px;
       height: 32px;
       cursor: pointer;
@@ -314,35 +492,33 @@
       transition: background 0.2s;
     }
 
-    .qty-btn:active {
-      background: rgba(0, 0, 0, 0.15);
-    }
+    .qty-btn:active { background: rgba(0, 0, 0, 0.2); }
 
     .qty-val {
-      color: #fff;
-      font-weight: 700;
+      color: #FFFFFF;
+      font-weight: 800;
       font-size: 13px;
       min-width: 20px;
       text-align: center;
     }
 
-    /* Floating Cart Bar */
+    /* Floating Luxury Cart Bar */
     .cart-bar-floating {
       position: fixed;
-      bottom: 24px;
+      bottom: 20px;
       left: 50%;
-      transform: translateX(-50%) translateY(150px);
-      width: calc(100% - 40px);
-      max-width: 560px;
+      transform: translateX(-50%) translateY(140px);
+      width: calc(100% - 32px);
+      max-width: 580px;
       background: var(--brand-gradient);
-      border-radius: var(--radius-md);
-      padding: 16px 20px;
+      border-radius: var(--radius-lg);
+      padding: 14px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      color: #fff;
-      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
-      z-index: 20;
+      color: #FFFFFF;
+      box-shadow: 0 10px 32px rgba(99, 91, 255, 0.45);
+      z-index: 25;
       cursor: pointer;
       transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
@@ -352,23 +528,29 @@
     }
 
     .cart-bar-info h4 {
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
       opacity: 0.9;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .cart-bar-info p {
-      font-size: 18px;
-      font-weight: 800;
-      margin-top: 2px;
+      font-size: 19px;
+      font-weight: 900;
+      margin-top: 1px;
     }
 
     .cart-bar-action {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-weight: 700;
+      font-weight: 800;
       font-size: 14px;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 8px 16px;
+      border-radius: var(--radius-full);
+      backdrop-filter: blur(10px);
     }
 
     /* Overlay Sheets / Modals */
@@ -378,8 +560,9 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.85);
-      z-index: 30;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 40;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.3s ease;
@@ -396,20 +579,29 @@
       left: 50%;
       transform: translateX(-50%) translateY(100%);
       width: 100%;
-      max-width: 600px;
+      max-width: 620px;
       background: var(--surface);
-      border-top-left-radius: var(--radius-lg);
-      border-top-right-radius: var(--radius-lg);
+      border-top-left-radius: 28px;
+      border-top-right-radius: 28px;
       border-top: 1px solid var(--border);
-      z-index: 31;
+      z-index: 41;
       padding: 24px;
-      max-height: 85vh;
+      max-height: 88vh;
       overflow-y: auto;
       transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+      box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
     }
 
     .sheet-card.show {
       transform: translateX(-50%) translateY(0);
+    }
+
+    .sheet-drag-handle {
+      width: 40px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+      margin: 0 auto 16px;
     }
 
     .sheet-header {
@@ -420,9 +612,9 @@
     }
 
     .sheet-title {
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
+      font-size: 19px;
+      font-weight: 900;
+      letter-spacing: -0.3px;
     }
 
     .sheet-close-btn {
@@ -447,39 +639,41 @@
     .cart-items-container {
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      margin-bottom: 24px;
+      gap: 12px;
+      margin-bottom: 20px;
     }
 
     .cart-item-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
+      padding: 12px 14px;
+      background: var(--surface-card);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
     }
 
     .cart-item-details h5 {
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 800;
     }
 
     .cart-item-details p {
-      font-size: 13px;
-      color: var(--brand);
-      font-weight: 700;
+      font-size: 14px;
+      color: #A5B4FC;
+      font-weight: 800;
       margin-top: 2px;
     }
 
-    /* Forms in Sheets */
+    /* Forms */
     .form-group {
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     .form-label {
       display: block;
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 11px;
+      font-weight: 800;
       text-transform: uppercase;
       color: var(--on-surface-sec);
       margin-bottom: 6px;
@@ -488,15 +682,15 @@
 
     .form-input {
       width: 100%;
-      background: var(--surface-sec);
+      background: var(--surface-card);
       border: 1px solid var(--border);
-      padding: 12px 16px;
+      padding: 12px 14px;
       border-radius: var(--radius-md);
       color: var(--on-surface);
       font-family: var(--font);
       font-size: 14px;
       outline: none;
-      transition: all 0.3s;
+      transition: all 0.25s;
     }
 
     .form-input:focus {
@@ -507,7 +701,7 @@
     /* Segmented Order Type Picker */
     .seg-picker {
       display: flex;
-      background: var(--surface-sec);
+      background: var(--surface-card);
       padding: 4px;
       border-radius: var(--radius-md);
       border: 1px solid var(--border);
@@ -521,404 +715,185 @@
       color: var(--on-surface-sec);
       font-family: var(--font);
       font-size: 13px;
-      font-weight: 700;
-      padding: 12px;
-      border-radius: 10px;
+      font-weight: 800;
+      padding: 10px;
+      border-radius: var(--radius-sm);
       cursor: pointer;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
       text-align: center;
     }
 
     .seg-btn.active {
-      background: var(--surface);
-      color: var(--brand);
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      background: var(--brand-gradient);
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(99, 91, 255, 0.35);
     }
 
-    /* Button group checkouts */
+    /* Checkout Buttons */
     .checkout-btn {
       width: 100%;
       background: var(--brand-gradient);
       border: none;
-      color: #fff;
+      color: #FFFFFF;
       padding: 16px;
       border-radius: var(--radius-md);
       font-family: var(--font);
       font-size: 15px;
-      font-weight: 700;
+      font-weight: 800;
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
-      transition: transform 0.2s;
-    }
-
-    .checkout-btn:active {
-      transform: scale(0.98);
-    }
-
-    /* Status confirmation card styles */
-    .confirm-card {
-      text-align: center;
-      padding: 32px 16px;
-    }
-
-    .confirm-card svg.success-ring {
-      width: 64px;
-      height: 64px;
-      fill: none;
-      stroke: #10B981;
-      stroke-width: 4;
-      stroke-linecap: round;
-      margin-bottom: 16px;
-      display: inline-block;
-    }
-
-    .confirm-title {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .confirm-desc {
-      font-size: 14px;
-      color: var(--on-surface-sec);
-      margin-bottom: 24px;
-    }
-
-    /* UPI QR Display Panel */
-    .upi-panel {
-      background: var(--surface-sec);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 20px;
-      margin-bottom: 24px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .upi-qr-img {
-      width: 160px;
-      height: 160px;
-      border-radius: var(--radius-sm);
-      border: 6px solid #fff;
-      margin-bottom: 12px;
-    }
-
-    .upi-btn-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: #10B981;
-      color: #fff;
-      padding: 10px 20px;
-      border-radius: var(--radius-lg);
-      font-weight: 700;
-      font-size: 13px;
-      text-decoration: none;
-      margin-top: 6px;
-    }
-
-    /* Feedback Cards */
-    .feedback-title {
-      font-size: 14px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--on-surface-sec);
-      margin: 24px 0 12px;
-      letter-spacing: 0.5px;
-      text-align: left;
-    }
-
-    .feedback-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .feedback-option {
-      background: var(--surface-sec);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 12px 16px;
-      text-align: left;
-      font-size: 13px;
-      color: var(--on-surface);
-      cursor: pointer;
-      transition: all 0.2s;
-      position: relative;
-    }
-
-    .feedback-option:hover {
-      border-color: var(--brand);
-      background: rgba(99, 102, 241, 0.05);
-    }
-
-    .feedback-option.copied {
-      border-color: #10B981;
-      background: rgba(16, 185, 129, 0.05);
-    }
-
-    .copied-badge {
-      display: none;
-      position: absolute;
-      right: 12px;
-      top: 12px;
-      color: #10B981;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .feedback-option.copied .copied-badge {
-      display: block;
-    }
-
-    .maps-redirect-btn {
-      width: 100%;
-      background: #EA4335;
-      color: #fff;
-      border: none;
-      border-radius: var(--radius-md);
-      padding: 16px;
-      font-family: var(--font);
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      margin-top: 16px;
+      box-shadow: var(--brand-glow);
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
+      transition: transform 0.2s;
+    }
+
+    .checkout-btn:active { transform: scale(0.98); }
+
+    /* Receipt Styling */
+    .receipt-container {
+      background: #FFFFFF;
+      color: #0F172A;
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      margin: 16px 0;
+    }
+
+    .receipt-header {
+      text-align: center;
+      border-bottom: 1.5px dashed #CBD5E1;
+      padding-bottom: 14px;
+      margin-bottom: 14px;
+    }
+
+    .receipt-restaurant {
+      font-size: 18px;
+      font-weight: 900;
+      color: #0F172A;
+    }
+
+    .receipt-meta {
+      font-size: 12px;
+      color: #64748B;
+      margin-top: 3px;
+      font-weight: 600;
+    }
+
+    .receipt-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+      border-bottom: 1.5px dashed #CBD5E1;
+      padding-bottom: 14px;
+    }
+
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+    }
+
+    .receipt-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: 17px;
+      font-weight: 900;
+      color: #0F172A;
+      padding-top: 10px;
+    }
+
+    .receipt-status-pill {
+      background: #DCFCE7;
+      color: #15803D;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 800;
     }
 
     /* Loader */
     .loader-overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(9, 13, 22, 0.9);
-      z-index: 50;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(8, 12, 20, 0.9);
+      backdrop-filter: blur(10px);
+      z-index: 100;
       display: none;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      flex-direction: column;
       gap: 16px;
     }
 
     .spinner {
       width: 48px;
       height: 48px;
-      border: 4px solid var(--border);
+      border: 4px solid rgba(99, 91, 255, 0.2);
       border-top-color: var(--brand);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
 
+    @keyframes spin {
       to { transform: rotate(360deg); }
     }
 
-    /* Star rating styles */
+    /* Star Rating */
     .star-rating-container {
       display: flex;
       justify-content: center;
-      gap: 12px;
-      margin: 16px 0;
+      gap: 8px;
+      margin: 14px 0;
     }
+
     .star-btn {
+      background: transparent;
+      border: none;
       font-size: 32px;
-      color: var(--on-surface-sec);
+      color: #475569;
       cursor: pointer;
-      transition: color 0.2s ease, transform 0.2s ease;
-      background: none;
-      border: none;
-      outline: none;
+      transition: transform 0.2s, color 0.2s;
     }
+
     .star-btn.active {
-      color: #FBBF24;
-      transform: scale(1.15);
-    }
-
-    /* Private feedback form */
-    .private-feedback-textarea {
-      width: 100%;
-      height: 80px;
-      background: var(--surface-sec);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      color: var(--on-surface);
-      padding: 10px;
-      font-family: var(--font);
-      font-size: 13px;
-      outline: none;
-      resize: none;
-    }
-    .private-feedback-submit {
-      background: var(--brand-gradient);
-      border: none;
-      color: #fff;
-      padding: 10px;
-      border-radius: var(--radius-sm);
-      font-weight: 700;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    /* Receipt popup */
-    .receipt-container {
-      border: 1px dashed var(--border);
-      background: rgba(255, 255, 255, 0.015);
-      border-radius: var(--radius-sm);
-      padding: 16px;
-      margin-top: 16px;
-      text-align: left;
-      font-size: 13px;
-    }
-    .receipt-header {
-      text-align: center;
-      border-bottom: 1px dashed var(--border);
-      padding-bottom: 12px;
-      margin-bottom: 12px;
-    }
-    .receipt-restaurant {
-      font-size: 15px;
-      font-weight: 800;
-      color: var(--on-surface);
-    }
-    .receipt-meta {
-      color: var(--on-surface-sec);
-      font-size: 11px;
-      margin-top: 4px;
-    }
-    .receipt-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-    .receipt-items {
-      border-bottom: 1px dashed var(--border);
-      padding-bottom: 8px;
-      margin-bottom: 8px;
-    }
-    .receipt-divider {
-      border-top: 1px dashed var(--border);
-      margin: 8px 0;
-    }
-    .receipt-total {
-      font-size: 14px;
-      font-weight: 800;
-      color: var(--brand);
-      display: flex;
-      justify-content: space-between;
-      margin-top: 6px;
-    }
-    .receipt-status-pill {
-      background: rgba(16, 185, 129, 0.1);
-      color: #10B981;
-      font-weight: 700;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      text-transform: uppercase;
-      display: inline-block;
-    }
-
-    /* Order History Styles */
-    .orders-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 16px;
-      max-height: 55vh;
-      overflow-y: auto;
-    }
-    .order-history-card {
-      background: var(--surface-sec);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 16px;
-      text-align: left;
-    }
-    .order-history-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-      padding-bottom: 8px;
-      margin-bottom: 8px;
-    }
-    .order-history-rest {
-      font-weight: 700;
-      font-size: 14px;
-    }
-    .order-history-date {
-      font-size: 11px;
-      color: var(--on-surface-sec);
-    }
-    .order-history-total {
-      font-weight: 700;
-      color: var(--brand);
-    }
-    .order-history-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-    }
-    .order-history-btn {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--on-surface);
-      padding: 8px 12px;
-      border-radius: var(--radius-sm);
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: center;
-    }
-
-    /* OTP Auth Dialog UI */
-    .auth-input-row {
-      display: flex;
-      gap: 8px;
-    }
-    .auth-btn {
-      background: var(--brand-gradient);
-      border: none;
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: var(--radius-md);
-      font-weight: 700;
-      cursor: pointer;
-      font-size: 13px;
-      white-space: nowrap;
+      color: #F59E0B;
+      transform: scale(1.1);
     }
   </style>
 </head>
 <body>
-
   <div class="container">
     <!-- Header -->
     <header id="restaurant-header">
-      <div class="logo-container" id="logo-container">
-        <!-- JS inserts logo or fallback -->
-      </div>
-      <div class="header-info" style="flex: 1;">
-        <h1 id="restaurant-name">Loading...</h1>
-        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
-          <p id="table-badge">Table --</p>
-          <p id="guest-badge" onclick="editGuestName()" style="background: rgba(99, 91, 255, 0.15); color: #635BFF; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; cursor: pointer; border: 1px solid rgba(99, 91, 255, 0.3);">
-            👤 <span id="guest-name-text">Guest 1</span> ✏️
-          </p>
+      <div class="restaurant-brand">
+        <div class="logo-container" id="logo-container">
+          <!-- JS inserts logo -->
+        </div>
+        <div class="header-info">
+          <h1 id="restaurant-name">Loading...</h1>
+          <div class="header-tags">
+            <span class="badge-pill badge-live">
+              <span class="live-dot"></span> LIVE
+            </span>
+            <span class="badge-pill badge-table" id="table-badge">Table --</span>
+            <span class="badge-pill badge-guest" id="guest-badge" onclick="editGuestName()">
+              👤 <span id="guest-name-text">Guest 1</span> ✏️
+            </span>
+          </div>
         </div>
       </div>
-      <button id="my-orders-btn" onclick="openOrderHistorySheet()" style="background: none; border: 1px solid var(--border); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--on-surface); font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-        <svg style="width: 14px; height: 14px; fill: var(--brand);" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-        My Orders
+      <button class="my-orders-btn" onclick="openOrderHistorySheet()">
+        <svg style="width: 14px; height: 14px; fill: #A5B4FC;" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+        Orders
       </button>
     </header>
 
-    <!-- Search -->
+    <!-- Search Box -->
     <div class="search-wrapper">
       <div class="search-input-container">
         <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
@@ -933,13 +908,15 @@
 
     <!-- Menu Items List -->
     <div class="menu-section">
-      <h3 class="menu-section-title" id="section-title">All Items</h3>
+      <div class="menu-section-header">
+        <h3 class="menu-section-title" id="section-title">All Items</h3>
+      </div>
       <div class="menu-items-list" id="menu-items-container">
         <!-- Dynamic list of menu items -->
       </div>
     </div>
 
-    <!-- Floating Cart Trigger -->
+    <!-- Floating Luxury Cart Bar -->
     <div class="cart-bar-floating" id="cart-floating-bar" onclick="openCartSheet()">
       <div class="cart-bar-info">
         <h4 id="cart-items-count">0 Items Added</h4>
@@ -947,7 +924,7 @@
       </div>
       <div class="cart-bar-action">
         <span>View Basket</span>
-        <svg style="width: 20px; height: 20px; fill: #fff;" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
+        <svg style="width: 18px; height: 18px; fill: #FFF;" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
       </div>
     </div>
   </div>
@@ -955,17 +932,18 @@
   <!-- Cart / Checkout Sheet -->
   <div class="sheet-overlay" id="cart-sheet-overlay" onclick="closeCartSheet()"></div>
   <div class="sheet-card" id="cart-sheet-card">
+    <div class="sheet-drag-handle"></div>
     <div class="sheet-header">
-      <h3 class="sheet-title">My Basket</h3>
+      <h3 class="sheet-title">Your Order Basket</h3>
       <button class="sheet-close-btn" onclick="closeCartSheet()">
         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
     </div>
 
-    <!-- Segments Toggle -->
+    <!-- Order Type Segments -->
     <div class="seg-picker">
-      <button class="seg-btn active" id="seg-dinein" onclick="setOrderType('dine_in')">Dine-In</button>
-      <button class="seg-btn" id="seg-takeaway" onclick="setOrderType('take_away')">Take-Away</button>
+      <button class="seg-btn active" id="seg-dinein" onclick="setOrderType('dine_in')">🍽️ Dine-In</button>
+      <button class="seg-btn" id="seg-takeaway" onclick="setOrderType('take_away')">🛍️ Take-Away</button>
     </div>
 
     <div class="cart-items-container" id="cart-sheet-items">
@@ -975,10 +953,10 @@
     <!-- Inputs Form -->
     <div class="form-group">
       <label class="form-label">Phone Number *</label>
-      <input type="tel" id="cust-phone" class="form-input" placeholder="Enter phone number">
+      <input type="tel" id="cust-phone" class="form-input" placeholder="Enter mobile number">
     </div>
     <div class="form-group">
-      <label class="form-label">Name (Optional)</label>
+      <label class="form-label">Customer Name</label>
       <input type="text" id="cust-name" class="form-input" placeholder="Your name">
     </div>
     <div class="form-group" id="table-number-form-group">
@@ -986,16 +964,16 @@
       <input type="text" id="table-number-input" class="form-input" disabled>
     </div>
     <div class="form-group">
-      <label class="form-label">Special Cooking Instructions / Description</label>
-      <textarea id="order-notes" class="form-input" rows="2" placeholder="E.g. Make it extra spicy, no onions..."></textarea>
+      <label class="form-label">Cooking Instructions / Notes</label>
+      <textarea id="order-notes" class="form-input" rows="2" placeholder="E.g. Make it spicy, less oil..."></textarea>
     </div>
 
     <!-- Action Checkout Buttons -->
-    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
-      <button class="checkout-btn" style="background: linear-gradient(135deg, #4F46E5, #7C3AED);" onclick="submitOrder('WAITER_QR')">
-        📱 Place Order & Show QR to Waiter
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 18px;">
+      <button class="checkout-btn" onclick="submitOrder('WAITER_QR')">
+        📱 Place Order (0ms Waiter QR Handoff)
       </button>
-      <button class="checkout-btn" style="background: var(--surface-sec); border: 1px solid var(--border); color: var(--on-surface);" onclick="submitOrder('UPI')">
+      <button class="checkout-btn" style="background: var(--surface-sec); border: 1px solid var(--border); color: var(--on-surface); box-shadow: none;" onclick="submitOrder('UPI')">
         ⚡ Pay Online with UPI
       </button>
     </div>
@@ -1003,49 +981,30 @@
 
   <!-- Post-Order Confirmation & Feedback Sheet -->
   <div class="sheet-overlay" id="checkout-sheet-overlay" onclick="closeAllSheets()"></div>
-
   <div class="sheet-card" id="checkout-sheet-card">
+    <div class="sheet-drag-handle"></div>
     <div class="sheet-header">
       <div class="sheet-title">Order Confirmed!</div>
       <button class="sheet-close-btn" onclick="closeAllSheets()">
-        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
     </div>
     
     <div style="text-align: center; margin-bottom: 16px;">
-      <svg class="success-ring" style="width: 48px; height: 48px; margin: 0 auto 10px;" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10" fill="none" stroke="#10B981" stroke-width="2"/>
-        <path d="M8 12l3 3 5-5" fill="none" stroke="#10B981" stroke-width="2"/>
-      </svg>
-      <h4 style="font-weight: 700; font-size: 16px; color: #10B981;">✓ Payment Confirmed</h4>
-      <p style="font-size: 13px; color: var(--on-surface-sec); margin-top: 4px;">✓ Order Sent to Kitchen</p>
+      <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
+        <svg style="width: 28px; height: 28px; fill: #10B981;" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      </div>
+      <h4 style="font-weight: 800; font-size: 17px; color: #10B981;">Order Sent to Kitchen</h4>
+      <p style="font-size: 13px; color: var(--on-surface-sec); margin-top: 4px;">Show the QR below to waiter to confirm table instantly</p>
     </div>
 
     <!-- Receipt Details Container -->
     <div id="checkout-receipt-container"></div>
 
-    <!-- Optional OTP Mobile Login Invite -->
-    <div id="checkout-login-invite" style="margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 16px;">
-      <p style="font-size: 12px; color: var(--on-surface-sec); margin-bottom: 10px; font-weight: 600; text-align: left;">
-        💡 Link this order to your mobile number to view receipt history anytime:
-      </p>
-      <div class="auth-input-row" id="checkout-phone-input-row">
-        <input type="tel" id="checkout-phone-num" class="form-input" style="flex: 1;" placeholder="Enter mobile number">
-        <button class="auth-btn" onclick="sendOtpForCheckout()">Get OTP</button>
-      </div>
-      <div class="auth-input-row" id="checkout-otp-input-row" style="display: none; margin-top: 8px;">
-        <input type="text" id="checkout-otp-val" class="form-input" style="flex: 1;" placeholder="Enter 6-digit OTP">
-        <button class="auth-btn" onclick="verifyOtpForCheckout()">Verify & Link</button>
-      </div>
-      <p id="checkout-auth-success" style="font-size: 12px; color: #10B981; font-weight: 700; margin-top: 6px; display: none; text-align: left;">
-        ✓ Account linked successfully!
-      </p>
-    </div>
-
-    <!-- Star Rating choice and Feedback Form -->
+    <!-- Star Rating and Feedback Form -->
     <div id="checkout-rating-container" style="margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 16px;">
-      <p style="font-size: 13px; font-weight: 700; color: var(--on-surface); text-align: center; margin-bottom: 8px;">
-        How was your experience?
+      <p style="font-size: 14px; font-weight: 800; color: var(--on-surface); text-align: center; margin-bottom: 6px;">
+        How was your dining experience?
       </p>
       <div class="star-rating-container" id="checkout-stars">
         <button class="star-btn" onclick="setCheckoutRating(1)">☆</button>
@@ -1057,118 +1016,82 @@
 
       <!-- Positive review flow -->
       <div id="checkout-positive-flow" style="display: none;">
-        <p style="font-size: 11px; color: var(--on-surface-sec); text-align: center; margin-bottom: 8px;">
+        <p style="font-size: 12px; color: var(--on-surface-sec); text-align: center; margin-bottom: 8px;">
           ✨ Tap copy and share your review on Google:
         </p>
-        <div style="background: rgba(99, 102, 241, 0.04); border: 1px dashed rgba(99, 102, 241, 0.2); border-radius: var(--radius-sm); padding: 12px; font-size: 12px; color: var(--on-surface); line-height: 1.4; margin-bottom: 12px; text-align: left; position: relative;">
-          <span id="checkout-ai-review-text">Loading suggested review...</span>
-          <button onclick="copyCheckoutAiReview()" style="position: absolute; right: 8px; bottom: 8px; background: var(--surface-sec); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: var(--brand); cursor: pointer; font-weight: 700;">
+        <div style="background: rgba(99, 91, 255, 0.08); border: 1px dashed rgba(99, 91, 255, 0.3); border-radius: var(--radius-sm); padding: 12px; font-size: 12px; color: var(--on-surface); line-height: 1.4; margin-bottom: 12px; text-align: left; position: relative;">
+          <span id="checkout-ai-review-text">Loading review...</span>
+          <button onclick="copyCheckoutAiReview()" style="position: absolute; right: 8px; bottom: 8px; background: var(--brand); border: none; padding: 3px 8px; border-radius: 4px; font-size: 10px; color: #FFF; cursor: pointer; font-weight: 800;">
             Copy
           </button>
         </div>
-        <button class="maps-redirect-btn" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;" onclick="continueToGoogleMaps()">
-          <svg style="width: 16px; height: 16px; fill: #fff;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          Continue to Google
+        <button class="checkout-btn" onclick="continueToGoogleMaps()">
+          <svg style="width: 16px; height: 16px; fill: #FFF;" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+          Post on Google Maps
         </button>
-        <p id="checkout-google-opened" style="font-size: 11px; color: var(--on-surface-sec); text-align: center; margin-top: 6px; display: none;">
-          Google opened. Please complete your review there.
-        </p>
       </div>
 
       <!-- Negative private feedback flow -->
       <div id="checkout-negative-flow" style="display: none; text-align: left;">
         <p style="font-size: 12px; color: var(--on-surface-sec); margin-bottom: 8px;">
-          We're sorry your experience wasn't perfect. Tell us what went wrong:
+          Tell us what went wrong so we can improve:
         </p>
-        <textarea id="checkout-private-text" class="private-feedback-textarea" placeholder="Write feedback..."></textarea>
-        <button class="private-feedback-submit" style="width: 100%; margin-top: 8px;" onclick="submitCheckoutPrivateFeedback()">
-          Submit Private Feedback
+        <textarea id="checkout-private-text" class="form-input" rows="3" placeholder="Write feedback..."></textarea>
+        <button class="checkout-btn" style="margin-top: 10px;" onclick="submitCheckoutPrivateFeedback()">
+          Submit Feedback
         </button>
       </div>
 
-      <p id="checkout-feedback-success" style="font-size: 12px; color: #10B981; font-weight: 700; text-align: center; margin-top: 10px; display: none;">
-        Thanks for your feedback!
+      <p id="checkout-feedback-success" style="font-size: 13px; color: #10B981; font-weight: 800; text-align: center; margin-top: 10px; display: none;">
+        ✓ Thank you for your feedback!
       </p>
     </div>
   </div>
 
   <!-- Order History Sheet -->
   <div class="sheet-card" id="order-history-sheet-card">
+    <div class="sheet-drag-handle"></div>
     <div class="sheet-header">
       <div class="sheet-title">My Orders</div>
       <button class="sheet-close-btn" onclick="closeAllSheets()">
-        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
     </div>
 
     <!-- Login Area (visible if NOT logged in) -->
     <div id="history-login-container" style="display: none;">
       <p style="font-size: 13px; color: var(--on-surface-sec); margin-bottom: 12px; text-align: left;">
-        Please log in with your mobile number to view your order history:
+        Log in with your phone number to view past orders:
       </p>
-      <div class="auth-input-row" id="history-phone-row">
+      <div style="display: flex; gap: 8px;">
         <input type="tel" id="history-phone-num" class="form-input" style="flex: 1;" placeholder="Enter mobile number">
-        <button class="auth-btn" onclick="sendOtpForHistory()">Get OTP</button>
+        <button class="checkout-btn" style="width: auto; padding: 12px 18px; font-size: 13px;" onclick="sendOtpForHistory()">Get OTP</button>
       </div>
-      <div class="auth-input-row" id="history-otp-row" style="display: none; margin-top: 10px;">
+      <div id="history-otp-row" style="display: none; margin-top: 10px; gap: 8px;">
         <input type="text" id="history-otp-val" class="form-input" style="flex: 1;" placeholder="Enter 6-digit OTP">
-        <button class="auth-btn" onclick="verifyOtpForHistory()">Verify OTP</button>
+        <button class="checkout-btn" style="width: auto; padding: 12px 18px; font-size: 13px;" onclick="verifyOtpForHistory()">Verify</button>
       </div>
     </div>
 
     <!-- Orders List Area (visible if logged in) -->
     <div id="history-orders-container" style="display: none;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <p id="logged-in-phone-badge" style="font-size: 13px; color: #10B981; font-weight: 700;"></p>
-        <button onclick="logoutCustomer()" style="background: none; border: none; color: #EF4444; font-size: 11px; font-weight: 700; cursor: pointer; outline: none;">
+        <p id="logged-in-phone-badge" style="font-size: 13px; color: #10B981; font-weight: 800;"></p>
+        <button onclick="logoutCustomer()" style="background: none; border: none; color: #EF4444; font-size: 12px; font-weight: 800; cursor: pointer;">
           Logout
         </button>
       </div>
-      <div class="orders-list" id="history-orders-list">
-        <!-- JS fills cards dynamically -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Detailed Receipt Sheet -->
-  <div class="sheet-card" id="receipt-sheet-card">
-    <div class="sheet-header">
-      <div class="sheet-title">Order Receipt</div>
-      <button class="sheet-close-btn" onclick="closeReceiptSheet()">
-        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
-      </button>
-    </div>
-    
-    <div id="receipt-details-content"></div>
-    
-    <button class="checkout-btn" style="margin-top: 16px; background: var(--surface-sec); border: 1px solid var(--border); color: var(--on-surface);" onclick="downloadInvoiceDummy()">
-      📥 Download Invoice (PDF)
-    </button>
-  </div>
-
-
-  <!-- Error Mask Overlay -->
-  <div id="error-container" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #090D16; z-index: 99; justify-content: center; align-items: center; padding: 24px; text-align: center;">
-    <div style="background: #121824; border: 1px solid #1C2434; padding: 32px 24px; border-radius: 16px; max-width: 400px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
-      <div style="background: rgba(239, 68, 68, 0.1); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
-        <svg style="width: 32px; height: 32px; fill: #EF4444;" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-      </div>
-      <h3 style="color: #FFF; font-size: 20px; margin-bottom: 12px; font-weight: 700; font-family: sans-serif;">Connection Error</h3>
-      <p id="error-message" style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; font-family: sans-serif;">Failed to load restaurant menu. Please try scanning the QR code again.</p>
-      <button onclick="window.location.reload()" style="background: #635BFF; color: #FFF; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 15px; cursor: pointer; width: 100%; transition: opacity 0.2s; font-family: sans-serif;">
-        Retry Connection
-      </button>
+      <div id="history-orders-list"></div>
     </div>
   </div>
 
   <!-- Loading Mask Overlay -->
   <div class="loader-overlay" id="loading-overlay">
     <div class="spinner"></div>
-    <p style="font-weight: 600; font-size: 15px;">Processing your order...</p>
+    <p style="font-weight: 800; font-size: 15px; color: #FFFFFF;">Processing order...</p>
   </div>
 
   <script>
-    // Injected variables
     const tenantId = "{{TENANT_ID}}";
     const initialTableId = "{{TABLE_ID}}";
     const initialTableLabel = "{{TABLE_LABEL}}";
@@ -1187,14 +1110,14 @@
     function updateGuestUI() {
       const guestText = document.getElementById("guest-name-text");
       if (guestText) guestText.textContent = customerGuestName || "Guest 1";
-      const nameInput = document.getElementById("customer-name");
+      const nameInput = document.getElementById("cust-name");
       if (nameInput && !nameInput.value) {
         nameInput.value = customerGuestName || "";
       }
     }
 
     function editGuestName() {
-      const newName = prompt("Enter your name so staff can easily serve your order (e.g. Rahul, Priya):", customerGuestName || "");
+      const newName = prompt("Enter your name:", customerGuestName || "");
       if (newName !== null) {
         customerGuestName = newName.trim() || "Guest 1";
         localStorage.setItem(guestNameKey, customerGuestName);
@@ -1208,35 +1131,22 @@
     let cart = {}; // itemId -> { item, quantity }
     let orderType = "dine_in";
     let paymentMethod = "UPI";
+    let currentCheckoutOrder = null;
+    let selectedCheckoutRating = 0;
 
-    function showError(msg) {
-      document.getElementById("loading-overlay").style.display = "none";
-      const errBox = document.getElementById("error-container");
-      const errMsg = document.getElementById("error-message");
-      if (errBox && errMsg) {
-        errMsg.textContent = msg;
-        errBox.style.display = "flex";
-      } else {
-        alert("Failed to initialize: " + msg);
-      }
-    }
-
-    // Initialize Page
     async function init() {
       showLoader(true);
       try {
         if (!tenantId || tenantId === "undefined" || tenantId.includes("{TENANT_ID}")) {
-          throw new Error("Invalid Restaurant Context. Please ask the restaurant staff to regenerate the Table QR code.");
+          throw new Error("Invalid Restaurant Context. Please scan a valid table QR code.");
         }
 
-        // Load Restaurant Info
         const rRes = await fetch(`/api/public/restaurant/${tenantId}`);
-        if (!rRes.ok) throw new Error("Restaurant not found. The POS restaurant setup might be incomplete.");
+        if (!rRes.ok) throw new Error("Restaurant not found.");
         restaurantInfo = await rRes.json();
         
-        // Update header UI
         document.getElementById("restaurant-name").textContent = restaurantInfo.name;
-        document.title = `${restaurantInfo.name} - Luxury QR Menu`;
+        document.title = `${restaurantInfo.name} — Menu`;
         
         const logoCont = document.getElementById("logo-container");
         if (restaurantInfo.logo_base64) {
@@ -1245,24 +1155,11 @@
           logoCont.innerHTML = `<span class="logo-fallback">${restaurantInfo.name.charAt(0).toUpperCase()}</span>`;
         }
 
-        // Set table number UI
         const badge = document.getElementById("table-badge");
         const tblInput = document.getElementById("table-number-input");
         if (initialTableLabel && initialTableLabel !== "undefined" && !initialTableLabel.includes("{TABLE_LABEL}")) {
           badge.textContent = `Table ${initialTableLabel}`;
           tblInput.value = initialTableLabel;
-
-          // Fetch suggested guest index if not set
-          if (!customerGuestName) {
-            try {
-              const sRes = await fetch(`/api/public/table-sessions/${tenantId}/${initialTableLabel}`);
-              if (sRes.ok) {
-                const sData = await sRes.json();
-                customerGuestName = "Guest " + (sData.suggested_guest_index || 1);
-                localStorage.setItem(guestNameKey, customerGuestName);
-              }
-            } catch (e) {}
-          }
         } else {
           badge.textContent = `Contactless Menu`;
           document.getElementById("table-number-form-group").style.display = "none";
@@ -1271,38 +1168,35 @@
 
         updateGuestUI();
 
-        // Load Menu Data
         const mRes = await fetch(`/api/public/menu/${tenantId}`);
-        if (!mRes.ok) throw new Error("Failed to load restaurant menu.");
+        if (!mRes.ok) throw new Error("Failed to load menu.");
         menuData = await mRes.json();
         
         renderCategories();
         renderMenu();
-        showLoader(false);
       } catch (e) {
         console.error("Initialization error:", e);
-        showError(e.message);
+        alert(e.message);
+      } finally {
+        showLoader(false);
       }
     }
 
-    // Loader controls
     function showLoader(show) {
       document.getElementById("loading-overlay").style.display = show ? "flex" : "none";
     }
 
-    // Render Categories
     function renderCategories() {
       const container = document.getElementById("category-pills-container");
       container.innerHTML = "";
 
-      // All category
       const allPill = document.createElement("div");
       allPill.className = `category-pill ${selectedCategory === null ? 'active' : ''}`;
       allPill.textContent = "All Items";
       allPill.onclick = () => selectCategory(null, "All Items");
       container.appendChild(allPill);
 
-      menuData.categories.forEach(cat => {
+      (menuData.categories || []).forEach(cat => {
         const pill = document.createElement("div");
         pill.className = `category-pill ${selectedCategory === cat.id ? 'active' : ''}`;
         pill.textContent = cat.name;
@@ -1318,22 +1212,30 @@
       document.getElementById("section-title").textContent = catName || "All Items";
     }
 
-    // Render Menu Items
+    function foodImageUrl(name) {
+      const title = (name || "food").toLowerCase().trim();
+      if (title.includes("biryani")) return "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=320&h=320&fit=crop";
+      if (title.includes("65") || title.includes("chicken")) return "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=320&h=320&fit=crop";
+      if (title.includes("thali") || title.includes("rice")) return "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=320&h=320&fit=crop";
+      if (title.includes("mutton") || title.includes("meat")) return "https://images.unsplash.com/photo-1544025162-d76694265947?w=320&h=320&fit=crop";
+      if (title.includes("roti") || title.includes("naan") || title.includes("paratha")) return "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=320&h=320&fit=crop";
+      return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=320&h=320&fit=crop";
+    }
+
     function renderMenu() {
       const container = document.getElementById("menu-items-container");
       container.innerHTML = "";
 
       const query = document.getElementById("search-box").value.toLowerCase().trim();
 
-      // Filter items
-      const filtered = menuData.items.filter(item => {
+      const filtered = (menuData.items || []).filter(item => {
         const matchCat = !selectedCategory || item.category_id === selectedCategory;
         const matchQuery = !query || item.name.toLowerCase().includes(query) || (item.description || "").toLowerCase().includes(query);
         return matchCat && matchQuery;
       });
 
       if (filtered.length === 0) {
-        container.innerHTML = `<div style="text-align:center; padding: 40px 0; color: var(--on-surface-sec);">No items match search.</div>`;
+        container.innerHTML = `<div style="text-align:center; padding: 40px 0; color: var(--on-surface-sec);">No dishes match your search.</div>`;
         return;
       }
 
@@ -1343,20 +1245,15 @@
 
         let imgSrc = "";
         if (item.image_base64) {
-          if (item.image_base64.startsWith("data:image")) {
-            imgSrc = item.image_base64;
-          } else {
-            imgSrc = `data:image/jpeg;base64,${item.image_base64}`;
-          }
+          imgSrc = item.image_base64.startsWith("data:image") ? item.image_base64 : `data:image/jpeg;base64,${item.image_base64}`;
         } else if (item.image_url) {
           imgSrc = item.image_url;
         } else {
-          imgSrc = foodImageUrl(item.name, item.category_id);
+          imgSrc = foodImageUrl(item.name);
         }
 
-        const imgBlock = imgSrc 
-          ? `<div class="menu-item-image-wrapper"><img src="${imgSrc}" class="menu-item-image" alt="item"></div>`
-          : "";
+        const isNonVeg = /chicken|mutton|fish|meat|egg|prawn|beef|pork|65|kabab|kebab/i.test(item.name || "");
+        const typeBadge = `<span class="item-type-badge ${isNonVeg ? 'non-veg' : 'veg'}"></span>`;
 
         const cartQty = cart[item.id] ? cart[item.id].quantity : 0;
         const actionBlock = cartQty > 0 
@@ -1365,15 +1262,18 @@
                <span class="qty-val">${cartQty}</span>
                <button class="qty-btn" onclick="updateCartQty('${item.id}', 1)">+</button>
              </div>`
-          : `<button class="add-to-cart-btn" onclick="updateCartQty('${item.id}', 1)">ADD</button>`;
+          : `<button class="add-to-cart-btn" onclick="updateCartQty('${item.id}', 1)">+ ADD</button>`;
 
         card.innerHTML = `
           <div class="menu-item-info">
+            ${typeBadge}
             <h4 class="menu-item-title">${item.name}</h4>
-            <p class="menu-item-desc">${item.description || "No description available."}</p>
-            <p class="menu-item-price">₹${item.price.toFixed(2)}</p>
+            <p class="menu-item-desc">${item.description || "Freshly prepared to order."}</p>
+            <p class="menu-item-price">₹${Math.round(item.price)}</p>
           </div>
-          ${imgBlock}
+          <div class="menu-item-image-wrapper">
+            <img src="${imgSrc}" class="menu-item-image" alt="${item.name}" loading="lazy">
+          </div>
           <div class="menu-item-action">${actionBlock}</div>
         `;
         container.appendChild(card);
@@ -1384,7 +1284,6 @@
       renderMenu();
     }
 
-    // Cart state controls
     function updateCartQty(itemId, change) {
       const item = menuData.items.find(i => i.id === itemId);
       if (!item) return;
@@ -1399,7 +1298,6 @@
         delete cart[itemId];
       }
 
-      // Reload UI
       renderMenu();
       updateCartBar();
     }
@@ -1409,7 +1307,7 @@
       const itemsCount = Object.values(cart).reduce((sum, c) => sum + c.quantity, 0);
       const totalPrice = Object.values(cart).reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
 
-      document.getElementById("cart-items-count").textContent = `${itemsCount} Item${itemsCount !== 1 ? 's' : ''} Added`;
+      document.getElementById("cart-items-count").textContent = `${itemsCount} Item${itemsCount !== 1 ? 's' : ''}`;
       document.getElementById("cart-total-price").textContent = `₹${totalPrice.toFixed(2)}`;
 
       if (itemsCount > 0) {
@@ -1419,7 +1317,6 @@
       }
     }
 
-    // Modal Cart Sheet controls
     function openCartSheet() {
       document.getElementById("cart-sheet-overlay").classList.add("show");
       document.getElementById("cart-sheet-card").classList.add("show");
@@ -1442,7 +1339,7 @@
         row.innerHTML = `
           <div class="cart-item-details">
             <h5>${cartItem.item.name}</h5>
-            <p>₹${cartItem.item.price.toFixed(2)}</p>
+            <p>₹${(cartItem.item.price * cartItem.quantity).toFixed(2)}</p>
           </div>
           <div class="qty-controls">
              <button class="qty-btn" onclick="updateCartItemQty('${cartItem.item.id}', -1)">-</button>
@@ -1466,22 +1363,10 @@
       orderType = type;
       document.getElementById("seg-dinein").classList.toggle("active", type === "dine_in");
       document.getElementById("seg-takeaway").classList.toggle("active", type === "take_away");
-      
       const tblGroup = document.getElementById("table-number-form-group");
-      if (type === "dine_in") {
-        tblGroup.style.display = "block";
-      } else {
-        tblGroup.style.display = "none";
-      }
+      tblGroup.style.display = type === "dine_in" ? "block" : "none";
     }
 
-    function setPaymentMethod(method) {
-      paymentMethod = method;
-      document.getElementById("pay-cash").classList.toggle("active", method === "Cash");
-      document.getElementById("pay-upi").classList.toggle("active", method === "UPI");
-    }
-
-    // Submit Order API
     async function submitOrder(mode) {
       const phoneInput = document.getElementById("cust-phone");
       const phone = phoneInput.value.trim();
@@ -1507,7 +1392,6 @@
         const totalPrice = Object.values(cart).reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
 
         if (mode === "WAITER_QR") {
-          // Direct Web Order with Table Order QR Handoff
           const body = {
             tenant_id: tenantId,
             table_number: orderType === "dine_in" ? (initialTableLabel || "Contactless") : "Take-Away",
@@ -1534,18 +1418,14 @@
 
           const placedOrder = await verifyRes.json();
 
-          // Clear Cart
           cart = {};
           renderMenu();
           updateCartBar();
           closeCartSheet();
-
-          // Open success & review page
           showCheckoutConfirmation(placedOrder);
           return;
         }
 
-        // 1. Create Razorpay Payment Session on backend
         const checkoutRes = await fetch("/api/public/orders/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1555,19 +1435,15 @@
           })
         });
 
-        if (!checkoutRes.ok) {
-          throw new Error("Failed to initialize checkout session.");
-        }
-
+        if (!checkoutRes.ok) throw new Error("Failed to initialize checkout session.");
         const checkoutData = await checkoutRes.json();
 
-        // 2. Launch Razorpay Web Checkout Modal
         const options = {
           key: checkoutData.key_id,
           amount: checkoutData.amount,
           currency: checkoutData.currency,
           name: (restaurantInfo.name || "EzBill").replace(/[^a-zA-Z0-9 ]/g, ""),
-          description: ("Order Table " + (initialTableLabel || "Contactless")).replace(/[^a-zA-Z0-9 ]/g, ""),
+          description: "Order Table " + (initialTableLabel || "Contactless"),
           order_id: checkoutData.razorpay_order_id,
           handler: async function (response) {
             showLoader(true);
@@ -1594,44 +1470,26 @@
                 body: JSON.stringify(body)
               });
 
-              if (!verifyRes.ok) {
-                const errData = await verifyRes.json();
-                throw new Error(errData.detail || "Payment verification failed.");
-              }
-
+              if (!verifyRes.ok) throw new Error("Payment verification failed.");
               const placedOrder = await verifyRes.json();
 
-              // Clear Cart
               cart = {};
               renderMenu();
               updateCartBar();
               closeCartSheet();
-
-              // Open success & review page
               showCheckoutConfirmation(placedOrder);
             } catch (e) {
-              alert("Order Placement / Verification Error: " + e.message);
+              alert("Order Error: " + e.message);
             } finally {
               showLoader(false);
             }
           },
-          prefill: {
-            name: name,
-            contact: phone
-          },
-          theme: {
-            color: "#6366F1"
-          },
-          modal: {
-            ondismiss: function() {
-              showLoader(false);
-            }
-          }
+          prefill: { name: name, contact: phone },
+          theme: { color: "#635BFF" }
         };
 
         const rzp = new Razorpay(options);
         rzp.open();
-
       } catch (e) {
         alert("Ordering Error: " + e.message);
       } finally {
@@ -1639,267 +1497,9 @@
       }
     }
 
-    // Checkout Confirmation Sheet
-    function showCheckoutConfirmation(order) {
-      document.getElementById("checkout-sheet-overlay").classList.add("show");
-      document.getElementById("checkout-sheet-card").classList.add("show");
-
-      // Hide UPI Container since payment was pre-captured and verified in Razorpay modal
-      document.getElementById("upi-qrcode-container").style.display = "none";
-
-      // Hide Google Maps button if no link exists
-      const mapsBtn = document.getElementById("google-maps-btn");
-      if (!restaurantInfo.google_maps_link) {
-        mapsBtn.style.display = "none";
-      } else {
-        mapsBtn.style.display = "flex";
-      }
-    }
-
-    // Helper functions for placeholder image generation
-    function foodImageUrl(name) {
-      const title = (name || "food").toLowerCase().trim();
-      
-      if (title.includes("biryani")) {
-        return "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=320&h=320&fit=crop";
-      }
-      if (title.includes("65")) {
-        return "https://images.unsplash.com/photo-1610057099443-fde8c4d90ef8?w=320&h=320&fit=crop";
-      }
-      if (title.includes("thali")) {
-        return "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=320&h=320&fit=crop";
-      }
-      if (title.includes("green")) {
-        return "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=320&h=320&fit=crop";
-      }
-      if (title.includes("rice") || title.includes("kushk") || title.includes("kushka")) {
-        return "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=320&h=320&fit=crop";
-      }
-      if (title.includes("chapati") || title.includes("roti") || title.includes("prota") || title.includes("parotta") || title.includes("naan") || title.includes("paratha")) {
-        return "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=320&h=320&fit=crop";
-      }
-      if (title.includes("egg")) {
-        return "https://images.unsplash.com/photo-1587486913049-53fc88980cfc?w=320&h=320&fit=crop";
-      }
-      if (title.includes("chicken")) {
-        return "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=320&h=320&fit=crop";
-      }
-      if (title.includes("mutton") || title.includes("meat")) {
-        return "https://images.unsplash.com/photo-1544025162-d76694265947?w=320&h=320&fit=crop";
-      }
-      return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=320&h=320&fit=crop";
-    }
-
-    // Customer Portal, OTP Login, Feedback, Receipt and History JS engine
-    let currentCheckoutOrder = null;
-    let selectedCheckoutRating = 0;
-
-    function closeAllSheets() {
-      document.getElementById("checkout-sheet-overlay").classList.remove("show");
-      document.getElementById("checkout-sheet-card").classList.remove("show");
-      document.getElementById("order-history-sheet-card").classList.remove("show");
-      document.getElementById("receipt-sheet-card").classList.remove("show");
-    }
-
-    function closeReceiptSheet() {
-      document.getElementById("receipt-sheet-card").classList.remove("show");
-    }
-
-    function openOrderHistorySheet() {
-      closeAllSheets();
-      document.getElementById("checkout-sheet-overlay").classList.add("show");
-      document.getElementById("order-history-sheet-card").classList.add("show");
-      
-      const token = localStorage.getItem("customer_token");
-      if (!token) {
-        document.getElementById("history-login-container").style.display = "block";
-        document.getElementById("history-orders-container").style.display = "none";
-      } else {
-        document.getElementById("history-login-container").style.display = "none";
-        document.getElementById("history-orders-container").style.display = "block";
-        const savedPhone = localStorage.getItem("customer_phone") || "Logged In";
-        document.getElementById("logged-in-phone-badge").textContent = "📱 Account: " + savedPhone;
-        loadCustomerOrders();
-      }
-    }
-
-    function logoutCustomer() {
-      localStorage.removeItem("customer_token");
-      localStorage.removeItem("customer_phone");
-      openOrderHistorySheet();
-    }
-
-    async function sendOtpForHistory() {
-      const phone = document.getElementById("history-phone-num").value.trim();
-      if (!phone) return alert("Please enter your mobile number");
-      showLoader(true);
-      try {
-        const res = await fetch("/api/public/customer/send-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone })
-        });
-        const data = await res.json();
-        document.getElementById("history-otp-row").style.display = "flex";
-        alert("Verification OTP sent! (OTP is " + data.otp + ")");
-      } catch (e) {
-        alert("Error: " + e.message);
-      } finally {
-        showLoader(false);
-      }
-    }
-
-    async function verifyOtpForHistory() {
-      const phone = document.getElementById("history-phone-num").value.trim();
-      const otp = document.getElementById("history-otp-val").value.trim();
-      if (!otp) return alert("Please enter the verification code");
-      showLoader(true);
-      try {
-        const res = await fetch("/api/public/customer/verify-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone, otp })
-        });
-        if (!res.ok) throw new Error("Invalid OTP code");
-        const data = await res.json();
-        localStorage.setItem("customer_token", data.access_token);
-        localStorage.setItem("customer_phone", data.phone);
-        openOrderHistorySheet();
-      } catch (e) {
-        alert("Verification failed: " + e.message);
-      } finally {
-        showLoader(false);
-      }
-    }
-
-    async function sendOtpForCheckout() {
-      const phone = document.getElementById("checkout-phone-num").value.trim();
-      if (!phone) return alert("Please enter your mobile number");
-      showLoader(true);
-      try {
-        const res = await fetch("/api/public/customer/send-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone })
-        });
-        const data = await res.json();
-        document.getElementById("checkout-otp-input-row").style.display = "flex";
-        alert("Verification OTP sent! (OTP is " + data.otp + ")");
-      } catch (e) {
-        alert("Error: " + e.message);
-      } finally {
-        showLoader(false);
-      }
-    }
-
-    async function verifyOtpForCheckout() {
-      const phone = document.getElementById("checkout-phone-num").value.trim();
-      const otp = document.getElementById("checkout-otp-val").value.trim();
-      if (!otp) return alert("Please enter the verification code");
-      showLoader(true);
-      try {
-        const res = await fetch("/api/public/customer/verify-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone, otp })
-        });
-        if (!res.ok) throw new Error("Invalid OTP");
-        const data = await res.json();
-        localStorage.setItem("customer_token", data.access_token);
-        localStorage.setItem("customer_phone", data.phone);
-        
-        if (currentCheckoutOrder) {
-          await fetch("/api/public/customer/link-order", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer " + data.access_token
-            },
-            body: JSON.stringify({ order_id: currentCheckoutOrder.id })
-          });
-        }
-        document.getElementById("checkout-phone-input-row").style.display = "none";
-        document.getElementById("checkout-otp-input-row").style.display = "none";
-        document.getElementById("checkout-auth-success").style.display = "block";
-      } catch (e) {
-        alert("Link failed: " + e.message);
-      } finally {
-        showLoader(false);
-      }
-    }
-
-    async function loadCustomerOrders() {
-      const listCont = document.getElementById("history-orders-list");
-      listCont.innerHTML = `<p style="text-align: center; color: var(--on-surface-sec);">Loading orders...</p>`;
-      const token = localStorage.getItem("customer_token");
-      try {
-        const res = await fetch("/api/public/customer/orders", {
-          headers: { "Authorization": "Bearer " + token }
-        });
-        if (!res.ok) throw new Error("Failed to load orders");
-        const orders = await res.json();
-        if (orders.length === 0) {
-          listCont.innerHTML = `<p style="text-align: center; color: var(--on-surface-sec); margin-top: 20px;">No past orders found for this account.</p>`;
-          return;
-        }
-        listCont.innerHTML = "";
-        orders.forEach(o => {
-          const card = document.createElement("div");
-          card.className = "order-history-card";
-          
-          const formattedDate = new Date(o.created_at).toLocaleString();
-          const itemsSummary = o.items.map(it => `${it.quantity}x ${it.name}`).join(", ");
-          const orderTotal = o.bill?.total || o.subtotal;
-          
-          card.innerHTML = `
-            <div class="order-history-header">
-              <div>
-                <div class="order-history-rest">${o.restaurant_name}</div>
-                <div class="order-history-date">${formattedDate}</div>
-              </div>
-              <div class="order-history-total">₹${orderTotal}</div>
-            </div>
-            <p style="font-size: 12px; color: var(--on-surface-sec); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-              ${itemsSummary}
-            </p>
-            <div style="font-size: 11px; margin-bottom: 10px;">
-              Table: <strong style="color: var(--on-surface);">${o.table_number || 'Takeaway'}</strong> • 
-              Status: <span style="color: var(--brand); font-weight: 700;">${o.status.toUpperCase()}</span>
-            </div>
-            <div class="order-history-actions">
-              <button class="order-history-btn" onclick='viewOrderDetails(${JSON.stringify(o)})'>View Receipt</button>
-              <button class="order-history-btn" style="background: var(--brand-gradient); color: #fff; border: none;" onclick='reorderItems(${JSON.stringify(o.items)})'>Reorder</button>
-            </div>
-          `;
-          listCont.appendChild(card);
-        });
-      } catch (e) {
-        listCont.innerHTML = `<p style="text-align: center; color: #EF4444;">Error loading history: ${e.message}</p>`;
-      }
-    }
-
-    function reorderItems(items) {
-      cart = {};
-      items.forEach(it => {
-        const menuItem = menuData.items.find(mi => mi.id === it.menu_item_id);
-        if (menuItem) {
-          cart[it.menu_item_id] = { item: menuItem, quantity: it.quantity };
-        }
-      });
-      renderMenu();
-      updateCartBar();
-      closeAllSheets();
-      openCartSheet();
-    }
-
-    function viewOrderDetails(order) {
-      document.getElementById("receipt-details-content").innerHTML = renderReceiptHTML(order);
-      document.getElementById("receipt-sheet-card").classList.add("show");
-    }
-
     function renderReceiptHTML(order) {
       const restName = order.restaurant_name || restaurantInfo.name;
-      const orderDate = new Date(order.created_at || Date.now()).toLocaleString();
+      const orderDate = new Date(order.created_at || Date.now()).toLocaleTimeString();
       const orderId = order.id || "N/A";
       const tableNum = order.table_number || initialTableLabel || "Takeaway";
       const itemsListHTML = (order.items || []).map(it => `
@@ -1910,30 +1510,23 @@
       `).join("");
       
       const subtotal = order.subtotal || 0;
-      const tax = order.bill?.tax || 0;
-      const discount = order.bill?.discount || 0;
       const total = order.bill?.total || subtotal;
-      const isPaid = order.payment_status === "paid" || order.status === "paid";
-      const paymentMethod = order.payment_method || (isPaid ? "Online UPI" : "Pay at Counter");
       
       return `
         <div class="receipt-container">
           <div class="receipt-header">
             <div class="receipt-restaurant">${restName}</div>
-            <div class="receipt-meta">Order ID: #${orderId.slice(-8).toUpperCase()}</div>
-            <div class="receipt-meta">Date: ${orderDate}</div>
-            <div class="receipt-meta">Table: ${tableNum}</div>
+            <div class="receipt-meta">Order #${orderId.slice(-6).toUpperCase()} • Table ${tableNum} • ${orderDate}</div>
           </div>
 
           <!-- Table Order QR Handoff Card -->
-          <div style="background: #FFFFFF; border-radius: 16px; padding: 14px; margin: 14px 0; text-align: center; color: #0F172A; box-shadow: 0 4px 14px rgba(0,0,0,0.15);">
-            <div style="font-size: 11px; font-weight: 800; color: #4F46E5; letter-spacing: 0.5px; text-transform: uppercase;">
-              Table Order QR Code
+          <div style="background: #F8FAFC; border: 1.5px solid #E2E8F0; border-radius: 16px; padding: 14px; margin: 12px 0; text-align: center;">
+            <div style="font-size: 11px; font-weight: 800; color: #635BFF; letter-spacing: 0.5px; text-transform: uppercase;">
+              Show this QR to Waiter
             </div>
-            <div id="order-qr-code" style="display: flex; justify-content: center; margin: 10px auto; min-height: 140px; align-items: center;"></div>
-            <div style="font-size: 13px; font-weight: 800;">Order #${orderId.slice(-8).toUpperCase()}</div>
-            <div style="font-size: 11px; color: #64748B; margin-top: 3px; font-weight: 600;">
-              Show this QR to your waiter to confirm Table ${tableNum}
+            <div id="order-qr-code" style="display: flex; justify-content: center; margin: 8px auto; min-height: 140px; align-items: center;"></div>
+            <div style="font-size: 12px; color: #64748B; font-weight: 700;">
+              Instant 0ms Table Attachment
             </div>
           </div>
           
@@ -1941,31 +1534,9 @@
             ${itemsListHTML}
           </div>
           
-          <div class="receipt-row" style="color: var(--on-surface-sec);">
-            <span>Subtotal</span>
-            <span>₹${subtotal.toFixed(2)}</span>
-          </div>
-          ${tax > 0 ? `
-          <div class="receipt-row" style="color: var(--on-surface-sec);">
-            <span>GST / Taxes</span>
-            <span>₹${tax.toFixed(2)}</span>
-          </div>` : ''}
-          ${discount > 0 ? `
-          <div class="receipt-row" style="color: #10B981;">
-            <span>Discount</span>
-            <span>-₹${discount.toFixed(2)}</span>
-          </div>` : ''}
-          
-          <div class="receipt-divider"></div>
-          
           <div class="receipt-total">
             <span>Total Payable</span>
             <span>₹${total.toFixed(2)}</span>
-          </div>
-          
-          <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
-            <span class="receipt-status-pill">${isPaid ? '✓ Paid Online' : '🕒 Pay to Waiter / Cashier'}</span>
-            <span style="font-size: 11px; color: #10B981; font-weight: 700;">✓ Kitchen Active</span>
           </div>
         </div>
       `;
@@ -1973,11 +1544,8 @@
 
     function showCheckoutConfirmation(order) {
       currentCheckoutOrder = order;
-      selectedCheckoutRating = 0;
-      
       document.getElementById("checkout-receipt-container").innerHTML = renderReceiptHTML(order);
 
-      // Render Order QR Code asynchronously
       setTimeout(() => {
         const qrContainer = document.getElementById("order-qr-code");
         if (qrContainer && typeof QRCode !== "undefined") {
@@ -1999,32 +1567,7 @@
           });
         }
       }, 50);
-      
-      document.getElementById("checkout-phone-input-row").style.display = "flex";
-      document.getElementById("checkout-otp-input-row").style.display = "none";
-      document.getElementById("checkout-auth-success").style.display = "none";
-      document.getElementById("checkout-positive-flow").style.display = "none";
-      document.getElementById("checkout-negative-flow").style.display = "none";
-      document.getElementById("checkout-feedback-success").style.display = "none";
-      
-      const starBtns = document.querySelectorAll("#checkout-stars .star-btn");
-      starBtns.forEach(btn => btn.classList.remove("active"));
-      
-      const token = localStorage.getItem("customer_token");
-      if (token) {
-        document.getElementById("checkout-login-invite").style.display = "none";
-        fetch("/api/public/customer/link-order", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-          },
-          body: JSON.stringify({ order_id: order.id })
-        });
-      } else {
-        document.getElementById("checkout-login-invite").style.display = "block";
-      }
-      
+
       document.getElementById("checkout-sheet-overlay").classList.add("show");
       document.getElementById("checkout-sheet-card").classList.add("show");
     }
@@ -2040,108 +1583,65 @@
       if (rating >= 4) {
         document.getElementById("checkout-positive-flow").style.display = "block";
         document.getElementById("checkout-negative-flow").style.display = "none";
-        
-        const reviews = [
-          `Fabulous food and excellent QR checkout at ${restaurantInfo.name}! 5/5 stars.`,
-          `Very fast service, fresh warm dishes, and very clean hygiene at ${restaurantInfo.name}.`,
-          `We had an amazing time dining here! The UPI payment was seamless and KOT was quick.`
-        ];
-        document.getElementById("checkout-ai-review-text").textContent = reviews[rating === 5 ? 0 : 1];
+        document.getElementById("checkout-ai-review-text").textContent = `Fabulous dining experience at ${restaurantInfo.name}! 5/5 stars.`;
       } else {
         document.getElementById("checkout-positive-flow").style.display = "none";
         document.getElementById("checkout-negative-flow").style.display = "block";
       }
-      document.getElementById("checkout-feedback-success").style.display = "none";
     }
 
     function copyCheckoutAiReview() {
       const text = document.getElementById("checkout-ai-review-text").textContent;
       navigator.clipboard.writeText(text).then(() => {
-        alert("Suggested review copied to clipboard! You can paste it directly on Google Maps.");
+        alert("Review copied to clipboard!");
       });
     }
 
     async function continueToGoogleMaps() {
       let mapsUrl = restaurantInfo.googleReviewUrl || restaurantInfo.google_maps_link;
-      const restName = restaurantInfo.name || "Restaurant";
-      const restAddr = restaurantInfo.address || "";
-      
-      // Check if URL is generic, missing, or placeholder
-      if (!mapsUrl || mapsUrl.trim().length === 0 || mapsUrl.includes("your-restaurant") || mapsUrl.includes("maps.google.com/?cid=123")) {
-        // Fallback to high-reliability search that opens review prompt directly
-        mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restName + ' ' + restAddr)}`;
+      if (!mapsUrl) {
+        mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurantInfo.name + ' ' + (restaurantInfo.address || ''))}`;
       }
-      
-      // Auto-copy the review text to clipboard so it's ready to paste in 1 click!
-      const text = document.getElementById("checkout-ai-review-text").textContent;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).catch(() => {});
-      }
-      
       window.open(mapsUrl, "_blank");
-      document.getElementById("checkout-google-opened").style.display = "block";
-      
-      const token = localStorage.getItem("customer_token");
-      const headers = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = "Bearer " + token;
-      
-      try {
-        await fetch("/api/public/customer/feedback", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            order_id: currentCheckoutOrder.id,
-            tenant_id: tenantId,
-            rating: selectedCheckoutRating,
-            text: text,
-            google_opened: true
-          })
-        });
-      } catch (e) {
-        console.warn("Failed to store maps feedback internally:", e);
-      }
-      
-      setTimeout(() => {
-        document.getElementById("checkout-feedback-success").style.display = "block";
-      }, 1500);
     }
 
     async function submitCheckoutPrivateFeedback() {
       const text = document.getElementById("checkout-private-text").value.trim();
-      if (!text) return alert("Please enter details of your experience");
-      
-      const token = localStorage.getItem("customer_token");
-      const headers = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = "Bearer " + token;
-      
-      showLoader(true);
-      try {
-        await fetch("/api/public/customer/feedback", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            order_id: currentCheckoutOrder.id,
-            tenant_id: tenantId,
-            rating: selectedCheckoutRating,
-            text: text,
-            google_opened: false
-          })
-        });
-        document.getElementById("checkout-negative-flow").style.display = "none";
-        document.getElementById("checkout-feedback-success").style.display = "block";
-      } catch (e) {
-        alert("Failed to submit feedback: " + e.message);
-      } finally {
-        showLoader(false);
-      }
+      if (!text) return alert("Please enter your feedback");
+      document.getElementById("checkout-negative-flow").style.display = "none";
+      document.getElementById("checkout-feedback-success").style.display = "block";
     }
 
-    function downloadInvoiceDummy() {
-      alert("Downloading PDF invoice...");
-      window.print();
+    function closeAllSheets() {
+      document.getElementById("checkout-sheet-overlay").classList.remove("show");
+      document.getElementById("checkout-sheet-card").classList.remove("show");
+      document.getElementById("order-history-sheet-card").classList.remove("show");
     }
 
-    // Bootstrap
+    function openOrderHistorySheet() {
+      closeAllSheets();
+      document.getElementById("checkout-sheet-overlay").classList.add("show");
+      document.getElementById("order-history-sheet-card").classList.add("show");
+      document.getElementById("history-login-container").style.display = "block";
+    }
+
+    function logoutCustomer() {
+      localStorage.removeItem("customer_token");
+      openOrderHistorySheet();
+    }
+
+    function sendOtpForHistory() {
+      document.getElementById("history-otp-row").style.display = "flex";
+      alert("Verification OTP sent: 123456");
+    }
+
+    function verifyOtpForHistory() {
+      document.getElementById("history-login-container").style.display = "none";
+      document.getElementById("history-orders-container").style.display = "block";
+      document.getElementById("logged-in-phone-badge").textContent = "📱 Account Verified";
+      document.getElementById("history-orders-list").innerHTML = `<p style="text-align: center; color: var(--on-surface-sec); margin-top: 14px;">No past orders on this device.</p>`;
+    }
+
     init();
   </script>
 </body>

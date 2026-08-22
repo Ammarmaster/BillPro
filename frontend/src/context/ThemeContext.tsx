@@ -13,9 +13,9 @@ interface ThemeContextType {
 
 export const lightTheme = {
   isDark: false,
-  surface: "#F8F9FD",
+  surface: "#F8FAFC",
   surfaceSecondary: "#FFFFFF",
-  surfaceTertiary: "#F1F4FA",
+  surfaceTertiary: "#F1F5F9",
   onSurface: "#0F172A",
   onSurfaceSecondary: "#64748B",
   onSurfaceTertiary: "#94A3B8",
@@ -23,7 +23,7 @@ export const lightTheme = {
   borderStrong: "#CBD5E1",
   brand: "#635BFF",
   brandSecondary: "#4F46E5",
-  brandTertiary: "#ECEBFF",
+  brandTertiary: "#EEF2FF",
   onBrand: "#FFFFFF",
   error: "#FEF2F2",
   onError: "#EF4444",
@@ -32,7 +32,7 @@ export const lightTheme = {
   warning: "#FFFBEB",
   onWarning: "#F59E0B",
   card: "#FFFFFF",
-  tabBarBg: "#121212",
+  tabBarBg: "#FFFFFF",
 };
 
 export const darkTheme = {

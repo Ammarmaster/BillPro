@@ -359,7 +359,7 @@ def verify_pw(pw: str, hashed: str) -> bool:
     return pw == hashed
 
 
-def optimize_logo_base64(b64_str: str, max_w: int = 180, max_h: int = 180) -> str:
+def optimize_logo_base64(b64_str: str, max_w: int = 100, max_h: int = 100) -> str:
     if not b64_str:
         return ""
     if "," in b64_str:
@@ -380,6 +380,7 @@ def optimize_logo_base64(b64_str: str, max_w: int = 180, max_h: int = 180) -> st
             img = img.convert("RGB")
             
         img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+        # Convert to clean monochrome 1-bit bitmap for thermal printer
         img = img.convert("1")
         
         out_io = io.BytesIO()
@@ -1116,8 +1117,8 @@ async def create_or_update_restaurant(payload: RestaurantIn, user: dict = Depend
     
     doc_data = payload.dict()
     if payload.logo_base64:
-        doc_data["logo_base64_58"] = optimize_logo_base64(payload.logo_base64, 180, 180)
-        doc_data["logo_base64_80"] = optimize_logo_base64(payload.logo_base64, 260, 260)
+        doc_data["logo_base64_58"] = optimize_logo_base64(payload.logo_base64, 100, 100)
+        doc_data["logo_base64_80"] = optimize_logo_base64(payload.logo_base64, 130, 130)
     else:
         doc_data["logo_base64_58"] = ""
         doc_data["logo_base64_80"] = ""
@@ -4190,6 +4191,22 @@ async def start_memory_trim_worker():
             await asyncio.sleep(60)
             trim_system_memory()
     asyncio.create_task(_worker())
+
+    async def _migrate_restaurant_logos():
+        try:
+            cursor = db.restaurants.find({"logo_base64": {"$exists": True, "$ne": ""}})
+            async for rest in cursor:
+                raw_logo = rest.get("logo_base64")
+                if raw_logo:
+                    l58 = optimize_logo_base64(raw_logo, 100, 100)
+                    l80 = optimize_logo_base64(raw_logo, 130, 130)
+                    await db.restaurants.update_one(
+                        {"id": rest["id"]},
+                        {"$set": {"logo_base64_58": l58, "logo_base64_80": l80}}
+                    )
+        except Exception as e:
+            logger.warning("Restaurant logo migration error: %s", e)
+    asyncio.create_task(_migrate_restaurant_logos())
 
 
 @app.on_event("shutdown")

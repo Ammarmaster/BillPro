@@ -27,26 +27,26 @@ export default function More() {
           showsVerticalScrollIndicator={false}
         >
           
-          {/* User Profile Header Card */}
+          {/* User Profile Header Card matching Screenshot 1 */}
           <View style={[styles.userCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-            <View style={styles.avatarCircle}>
+            <View style={[styles.avatarCircle, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
               <Ionicons name="person" size={24} color="#635BFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.userName, { color: theme.onSurface }]}>{user?.full_name || "System Owner"}</Text>
               <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]}>{user?.email || "owner@prodevopz.com"}</Text>
-              <View style={styles.rolePill}>
+              <View style={[styles.rolePill, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
                 <Text style={styles.rolePillText}>{(user?.role || "OWNER").toUpperCase()}</Text>
               </View>
             </View>
           </View>
 
-          {/* Section 1: APPEARANCE matching Image */}
+          {/* Section 1: APPEARANCE matching Screenshot 1 */}
           <Text style={[styles.sectionTitle, { color: theme.onSurfaceSecondary }]}>APPEARANCE</Text>
           <View style={[styles.groupCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
             <View style={styles.rowItem}>
-              <View style={styles.iconBox}>
-                <Ionicons name="moon" size={20} color="#635BFF" />
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="sunny-outline" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Dark Mode</Text>
@@ -55,155 +55,122 @@ export default function More() {
               <Switch
                 value={isDark}
                 onValueChange={toggleTheme}
-                trackColor={{ false: "#CBD5E1", true: "#635BFF" }}
+                trackColor={{ false: "#E2E8F0", true: "#635BFF" }}
                 thumbColor="#FFFFFF"
                 testID="dark-mode-toggle"
               />
             </View>
           </View>
 
-          {/* Section 2: MANAGEMENT matching Image */}
+          {/* Section 2: MANAGEMENT matching Screenshot 1 */}
           <Text style={[styles.sectionTitle, { color: theme.onSurfaceSecondary }]}>MANAGEMENT</Text>
           <View style={[styles.groupCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
             
-            {/* Staff & Roles */}
+            {/* 1. Staff & Roles */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/staff")} testID="manage-staff-btn">
-              <View style={styles.iconBox}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
                 <Ionicons name="people" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Staff & Roles</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Add or remove waiters / managers</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-            {/* Menu Management */}
+            {/* 2. Menu Management */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/menu")} testID="manage-menu-btn">
-              <View style={styles.iconBox}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
                 <Ionicons name="restaurant" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Menu Management</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Categories, items, prices</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-            {/* AI Menu from Photos */}
-            <Pressable 
-              style={styles.rowItem} 
-              onPress={() => Alert.alert("Coming Soon", "AI Menu from Photos is coming soon!")} 
-              testID="manage-ai-menu-btn"
-            >
-              <View style={[styles.iconBox, { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB" }]}>
-                <Ionicons name="sparkles" size={20} color="#F59E0B" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={[styles.rowTitle, { color: theme.onSurface, opacity: 0.6 }]}>AI Menu from Photos</Text>
-                  <View style={{ backgroundColor: "#F59E0B", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                    <Text style={{ color: "#FFF", fontSize: 8, fontWeight: "800" }}>COMING SOON</Text>
-                  </View>
-                </View>
-                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary, opacity: 0.6 }]}>Scan menu cards into dishes with Vision AI</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} style={{ opacity: 0.4 }} />
-            </Pressable>
-            <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-            {/* Table Management */}
+            {/* 3. Table Management */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/tables")} testID="manage-tables-btn">
-              <View style={styles.iconBox}>
-                <Ionicons name="hardware-chip-outline" size={20} color="#635BFF" />
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="tablet-portrait-outline" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Table Management</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Add, edit, delete tables</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-            {/* Settings (Opens Separate Page!) */}
+            {/* 4. Settings */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/settings-details")} testID="manage-settings-btn">
-              <View style={styles.iconBox}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
                 <Ionicons name="settings" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Settings</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>GST, UPI, printer, restaurant info</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-            {/* Printer Settings */}
-            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/printer-settings")} testID="manage-printers-btn">
-              <View style={styles.iconBox}>
-                <Ionicons name="print" size={20} color="#635BFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Printer Settings</Text>
-                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Setup Cashier and Kitchen thermal printers</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
-            </Pressable>
-            <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-            {/* Notifications */}
-            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/notifications")} testID="manage-notifications-btn">
-              <View style={styles.iconBox}>
-                <Ionicons name="notifications" size={20} color="#635BFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Notifications</Text>
-                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>View logs, category filters, sound & quiet hour setup</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
-            </Pressable>
-            <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-            {/* Subscription */}
+            {/* 5. Subscription */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/subscribe")} testID="manage-subscribe-btn">
-              <View style={styles.iconBox}>
-                <Ionicons name="card-outline" size={20} color="#635BFF" />
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="card" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Subscription</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Plan, billing, auto-pay</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
-            </Pressable>
-            {/* Legal & Support */}
-            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/legal")} testID="manage-legal-btn">
-              <View style={styles.iconBox}>
-                <Ionicons name="document-text" size={20} color="#635BFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Legal & Support</Text>
-                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Privacy Policy, Terms & Data deletion</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-            {/* Bills History */}
+            {/* 6. Bills History */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/bills-history")} testID="manage-bills-history-btn">
-              <View style={styles.iconBox}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
                 <Ionicons name="receipt" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Bills History</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>All past bills</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-            {/* Sales Analytics */}
+            {/* 7. Printer Settings */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/printer-settings")} testID="manage-printers-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="print" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Printer Settings</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Setup Cashier and Kitchen thermal printers</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* 8. Notifications */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/notifications")} testID="manage-notifications-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="notifications" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Notifications</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>View logs, category filters, sound & quiet hour setup</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* 9. Sales Analytics */}
             <Pressable 
               style={styles.rowItem} 
               onPress={() => {
@@ -215,20 +182,24 @@ export default function More() {
               }} 
               testID="manage-analytics-btn"
             >
-              <View style={styles.iconBox}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
                 <Ionicons name="bar-chart" size={20} color="#635BFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Sales Analytics</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>7-day, monthly & yearly sales</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
 
           </View>
 
           {/* Sign Out Card Button matching Image */}
-          <Pressable style={styles.signOutCard} onPress={logout} testID="more-logout-btn">
+          <Pressable 
+            style={[styles.signOutCard, { backgroundColor: isDark ? "#1C141E" : "#FEF2F2", borderColor: isDark ? "rgba(239,68,68,0.3)" : "#FECACA" }]} 
+            onPress={logout} 
+            testID="more-logout-btn"
+          >
             <Ionicons name="exit-outline" size={22} color="#EF4444" />
             <Text style={styles.signOutText}>Sign Out</Text>
           </Pressable>
@@ -259,63 +230,60 @@ const styles = StyleSheet.create({
   userCard: {
     flexDirection: "row",
     alignItems: "center",
-    padding: spacing.xl,
-    borderRadius: 28,
-    marginBottom: spacing.xl,
-    gap: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: 20,
+    marginBottom: spacing.md,
+    gap: spacing.md,
     borderWidth: 1,
   },
   avatarCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#26294D",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
   },
-  userName: { fontSize: 20, fontWeight: "900" },
+  userName: { fontSize: 18, fontWeight: "800" },
   userMeta: { fontSize: 13, marginTop: 2, fontWeight: "500" },
   rolePill: {
     alignSelf: "flex-start",
-    backgroundColor: "#26294D",
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,
     marginTop: 6,
   },
-  rolePillText: { color: "#635BFF", fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
+  rolePillText: { color: "#635BFF", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
 
   sectionTitle: {
     fontSize: 12,
     fontWeight: "800",
-    letterSpacing: 1.2,
+    letterSpacing: 0.8,
     textTransform: "uppercase",
-    marginBottom: spacing.sm,
-    marginTop: spacing.md,
+    marginBottom: 8,
+    marginTop: 16,
     paddingLeft: spacing.xs,
   },
   groupCard: {
-    borderRadius: 28,
+    borderRadius: 20,
     borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
     overflow: "hidden",
   },
   rowItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: spacing.lg,
-    gap: spacing.md,
+    paddingVertical: 14,
+    gap: 12,
   },
   iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    backgroundColor: "#26294D",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  rowTitle: { fontSize: 16, fontWeight: "800" },
+  rowTitle: { fontSize: 15, fontWeight: "700" },
   rowSub: { fontSize: 12, marginTop: 2, fontWeight: "500" },
   divider: { height: 1, width: "100%" },
 
@@ -324,14 +292,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.sm,
-    backgroundColor: "#1C141E",
     borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.3)",
-    paddingVertical: 18,
-    borderRadius: 28,
+    paddingVertical: 14,
+    borderRadius: 20,
     marginTop: spacing.md,
     marginBottom: spacing.xl,
   },
-  signOutText: { color: "#EF4444", fontSize: 16, fontWeight: "900" },
+  signOutText: { color: "#EF4444", fontSize: 15, fontWeight: "800" },
   footerText: { textAlign: "center", fontSize: 12, fontWeight: "600", marginBottom: spacing.xl },
 });

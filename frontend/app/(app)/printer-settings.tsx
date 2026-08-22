@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable,
   ActivityIndicator, Switch, Platform, StatusBar, Alert
@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, radius } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import * as Haptics from "expo-haptics";
 import {
   savePrinterSettings, getPrinterSettings, printThermalDirect, forgetPrinter,
@@ -14,17 +15,10 @@ import {
   PrinterSettings, PrinterConnectionStatus
 } from "@/src/lib/print";
 
-const BRAND_ORANGE = "#FF5722";
-const DARK_BG = "#0B0F19";
-const CARD_BG = "#151B2B";
-const CARD_BORDER = "#1F293D";
-const INPUT_BG = "#0B0F19";
-const CHIP_INACTIVE_BG = "#20283A";
-const TEXT_MUTED = "#8B9BB4";
-
 export default function PrinterSettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { theme, isDark } = useTheme();
 
   const [activeTab, setActiveTab] = useState<"cashier" | "kitchen">("cashier");
   const [loading, setLoading] = useState(false);
@@ -268,13 +262,13 @@ export default function PrinterSettingsScreen() {
   const getStatusBadge = (st: PrinterConnectionStatus) => {
     switch (st) {
       case "connected":
-        return { label: "Printer Connected", bg: "#DCFCE7", text: "#10B981", icon: "checkmark-circle" };
+        return { label: "Connected & Ready", bg: isDark ? "rgba(16, 185, 129, 0.18)" : "#DCFCE7", text: "#10B981", icon: "checkmark-circle" };
       case "reconnecting":
-        return { label: "Reconnecting...", bg: "#FEF3C7", text: "#F59E0B", icon: "sync" };
+        return { label: "Reconnecting...", bg: isDark ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7", text: "#F59E0B", icon: "sync" };
       case "unavailable":
-        return { label: "Printer Unavailable", bg: "#FEE2E2", text: "#EF4444", icon: "alert-circle" };
+        return { label: "Offline / Unavailable", bg: isDark ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2", text: "#EF4444", icon: "alert-circle" };
       default:
-        return { label: "Not Configured", bg: "#20283A", text: "#8B9BB4", icon: "close-circle" };
+        return { label: "Not Configured", bg: isDark ? "rgba(148, 163, 184, 0.15)" : "#F1F5F9", text: theme.onSurfaceSecondary, icon: "close-circle" };
     }
   };
 
@@ -282,58 +276,74 @@ export default function PrinterSettingsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: DARK_BG }]}>
-        <ActivityIndicator size="large" color={BRAND_ORANGE} />
+      <View style={[styles.center, { backgroundColor: theme.surface }]}>
+        <ActivityIndicator size="large" color="#635BFF" />
       </View>
     );
   }
 
   return (
-    <View style={[styles.safe, { backgroundColor: DARK_BG, paddingTop: Math.max(insets.top, 16) }]}>
-      <StatusBar barStyle="light-content" backgroundColor={DARK_BG} translucent={true} />
+    <View style={[styles.safe, { backgroundColor: theme.surface, paddingTop: Math.max(insets.top, 14) }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       
-      {/* Header Matching Screenshot */}
+      {/* Header Matching More & Dashboard */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.replace("/(app)/more")} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
+        <Pressable 
+          onPress={() => router.replace("/(app)/more")} 
+          style={[styles.backBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: theme.border }]}
+        >
+          <Ionicons name="chevron-back" size={20} color="#635BFF" />
         </Pressable>
         <View style={{ marginLeft: 14, flex: 1, minWidth: 0 }}>
-          <Text style={styles.title} numberOfLines={1}>Thermal Printer</Text>
-          <Text style={styles.sub} numberOfLines={1}>Auto-reconnect & ESC/POS direct printing</Text>
+          <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>Thermal Printers</Text>
+          <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+            Auto-reconnect & ESC/POS direct printing
+          </Text>
         </View>
       </View>
 
-      {/* Role Tabs Matching Screenshot */}
-      <View style={styles.tabsRow}>
+      {/* Role Pill Switcher */}
+      <View style={[styles.tabsRow, { backgroundColor: isDark ? "rgba(255,255,255,0.04)" : "#EEF2FF" }]}>
         <Pressable
           style={[styles.tab, activeTab === "cashier" && styles.tabActive]}
           onPress={() => setActiveTab("cashier")}
         >
-          <Text style={[styles.tabText, activeTab === "cashier" ? styles.tabTextActive : { color: TEXT_MUTED }]}>
-            Cashier Printer
+          <Ionicons 
+            name="receipt-outline" 
+            size={16} 
+            color={activeTab === "cashier" ? "#FFFFFF" : theme.onSurfaceSecondary} 
+          />
+          <Text style={[styles.tabText, { color: activeTab === "cashier" ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+            Cashier Receipts
           </Text>
         </Pressable>
+
         <Pressable
           style={[styles.tab, activeTab === "kitchen" && styles.tabActive]}
           onPress={() => setActiveTab("kitchen")}
         >
-          <Text style={[styles.tabText, activeTab === "kitchen" ? styles.tabTextActive : { color: TEXT_MUTED }]}>
-            Kitchen Printer
+          <Ionicons 
+            name="restaurant-outline" 
+            size={16} 
+            color={activeTab === "kitchen" ? "#FFFFFF" : theme.onSurfaceSecondary} 
+          />
+          <Text style={[styles.tabText, { color: activeTab === "kitchen" ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+            Kitchen KOT
           </Text>
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         
-        {/* Active Remembered Printer Card Matching Screenshot */}
-        <View style={styles.activePrinterCard}>
+        {/* Active Remembered Printer Hero Card */}
+        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <View style={styles.cardHeader}>
             <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
-              <Text style={styles.printerNameTitle} numberOfLines={1}>
-                {currentName || (currentType !== "none" ? "Cashier Thermal Printer" : "No Printer Configured")}
+              <Text style={[styles.printerNameTitle, { color: theme.onSurface }]} numberOfLines={1}>
+                {currentName || (currentType !== "none" ? "Thermal Printer" : "No Printer Configured")}
               </Text>
-              <Text style={styles.printerTypeSubtitle} numberOfLines={1}>
-                Type: {currentType.toUpperCase()} {currentAddress ? `• ${currentAddress}` : ""}
+              <Text style={[styles.printerTypeSubtitle, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+                Mode: {currentType.toUpperCase()} {currentAddress ? `• ${currentAddress}` : ""}
               </Text>
             </View>
             <View style={[styles.statusPill, { backgroundColor: badge.bg }]}>
@@ -342,53 +352,66 @@ export default function PrinterSettingsScreen() {
             </View>
           </View>
 
-          {/* Card Actions Matching Screenshot */}
-          <View style={styles.cardActions}>
-            <Pressable style={styles.cardActionBtn} onPress={handleTestPrint} disabled={testingPrint}>
+          {/* Card Actions */}
+          <View style={[styles.cardActions, { borderTopColor: theme.border }]}>
+            <Pressable 
+              style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
+              onPress={handleTestPrint} 
+              disabled={testingPrint}
+            >
               {testingPrint ? (
                 <ActivityIndicator size="small" color="#635BFF" />
               ) : (
                 <>
                   <Ionicons name="print-outline" size={16} color="#635BFF" />
-                  <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]} numberOfLines={1}>Test Print</Text>
+                  <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>Test Print</Text>
                 </>
               )}
             </Pressable>
 
-            <Pressable style={styles.cardActionBtn} onPress={handleScan}>
-              <Ionicons name="settings-outline" size={16} color="#635BFF" />
-              <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]} numberOfLines={1}>Change Printer</Text>
+            <Pressable 
+              style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
+              onPress={handleScan}
+            >
+              <Ionicons name="scan-outline" size={16} color="#635BFF" />
+              <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>Scan Nearby</Text>
             </Pressable>
 
             {currentType !== "none" && (
-              <Pressable style={[styles.cardActionBtn, { borderColor: "rgba(239, 68, 68, 0.3)" }]} onPress={() => handleForget(activeTab)}>
+              <Pressable 
+                style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(239,68,68,0.12)" : "#FEF2F2", borderColor: isDark ? "rgba(239,68,68,0.3)" : "#FECDD3" }]} 
+                onPress={() => handleForget(activeTab)}
+              >
                 <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                <Text style={[styles.cardActionBtnText, { color: "#EF4444" }]} numberOfLines={1}>Forget</Text>
+                <Text style={[styles.cardActionBtnText, { color: "#EF4444" }]}>Forget</Text>
               </Pressable>
             )}
           </View>
         </View>
 
-        {/* Form Card Settings Matching Screenshot */}
-        <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>
-            {activeTab === "cashier" ? "CASHIER PRINTER SETTINGS" : "KITCHEN PRINTER SETTINGS"}
+        {/* Form Card Settings */}
+        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <Text style={[styles.sectionTitle, { color: "#635BFF" }]}>
+            {activeTab === "cashier" ? "CASHIER RECEIPT CONFIGURATION" : "KITCHEN KOT CONFIGURATION"}
           </Text>
 
           {/* Connection Type */}
           <View style={styles.field}>
-            <Text style={styles.label}>Connection Type</Text>
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Connection Interface</Text>
             <View style={styles.selectorRow}>
-              {(["system", "network", "bluetooth", "none"] as const).map(t => {
+              {(["bluetooth", "network", "system", "none"] as const).map(t => {
                 const isSel = activeTab === "cashier" ? cashierType === t : kitchenType === t;
                 return (
                   <Pressable
                     key={t}
-                    style={[styles.selectorBtn, isSel && styles.selectorBtnActive]}
+                    style={[
+                      styles.selectorBtn,
+                      { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
+                    ]}
                     onPress={() => activeTab === "cashier" ? setCashierType(t) : setKitchenType(t)}
                   >
-                    <Text style={[styles.selectorBtnText, isSel && styles.selectorBtnTextActive]}>
-                      {t.toUpperCase()}
+                    <Text style={[styles.selectorBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+                      {t === "bluetooth" ? "Bluetooth" : t === "network" ? "Network IP" : t === "system" ? "System" : "Off"}
                     </Text>
                   </Pressable>
                 );
@@ -400,67 +423,70 @@ export default function PrinterSettingsScreen() {
           {(activeTab === "cashier" ? cashierType : kitchenType) === "network" ? (
             <View style={styles.rowInputs}>
               <View style={{ flex: 2, minWidth: 120 }}>
-                <Text style={styles.label}>Printer IP Address</Text>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer IP Address</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
                   value={activeTab === "cashier" ? cashierIP : kitchenIP}
                   onChangeText={activeTab === "cashier" ? setCashierIP : setKitchenIP}
                   placeholder="192.168.1.100"
-                  placeholderTextColor={TEXT_MUTED}
+                  placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
                 />
               </View>
               <View style={{ flex: 1, minWidth: 70, marginLeft: 10 }}>
-                <Text style={styles.label}>Port</Text>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Port</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
                   value={activeTab === "cashier" ? cashierPort : kitchenPort}
                   onChangeText={activeTab === "cashier" ? setCashierPort : setKitchenPort}
                   placeholder="9100"
-                  placeholderTextColor={TEXT_MUTED}
+                  placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
                 />
               </View>
             </View>
           ) : (
             <View style={styles.field}>
-              <Text style={styles.label}>Printer MAC Address / Name</Text>
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Bluetooth Device Name / MAC</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
                 value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
                 onChangeText={activeTab === "cashier" ? setCashierMAC : setKitchenMAC}
-                placeholder="MPT-II"
-                placeholderTextColor={TEXT_MUTED}
+                placeholder="MPT-II or 00:11:22:33:44:55"
+                placeholderTextColor="#94A3B8"
               />
             </View>
           )}
 
           {/* Profile Name */}
           <View style={styles.field}>
-            <Text style={styles.label}>Printer Profile Name</Text>
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer Label</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
               value={activeTab === "cashier" ? cashierName : kitchenName}
               onChangeText={activeTab === "cashier" ? setCashierName : setKitchenName}
-              placeholder="Cashier Thermal Printer"
-              placeholderTextColor={TEXT_MUTED}
+              placeholder="e.g. Cashier Thermal Printer"
+              placeholderTextColor="#94A3B8"
             />
           </View>
 
           {/* Paper Width */}
           <View style={styles.field}>
-            <Text style={styles.label}>Paper Width</Text>
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Thermal Roll Width</Text>
             <View style={styles.selectorRow}>
               {([58, 80] as const).map(w => {
                 const isSel = activeTab === "cashier" ? cashierWidth === w : kitchenWidth === w;
                 return (
                   <Pressable
                     key={w}
-                    style={[styles.widthBtn, isSel && styles.widthBtnActive]}
+                    style={[
+                      styles.widthBtn,
+                      { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
+                    ]}
                     onPress={() => activeTab === "cashier" ? setCashierWidth(w) : setKitchenWidth(w)}
                   >
-                    <Text style={[styles.widthBtnText, isSel && styles.widthBtnTextActive]}>
-                      {w}mm Width
+                    <Text style={[styles.widthBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+                      {w}mm {w === 58 ? "(Standard)" : "(Wide)"}
                     </Text>
                   </Pressable>
                 );
@@ -468,49 +494,52 @@ export default function PrinterSettingsScreen() {
             </View>
           </View>
 
-          {/* Auto-Print Switch Matching Screenshot */}
-          <View style={styles.switchRow}>
+          {/* Auto-Print Switch */}
+          <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
             <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={styles.switchLabel}>
-                {activeTab === "cashier" ? "Auto-Print Receipt" : "Auto-Print KOT Tickets"}
+              <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                {activeTab === "cashier" ? "Auto-Print Customer Bills" : "Auto-Print Kitchen Tickets"}
               </Text>
-              <Text style={styles.switchDesc}>
+              <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
                 {activeTab === "cashier"
-                  ? "Print customer bills automatically upon marking payment"
-                  : "Print kitchen tickets automatically when waiter places order"}
+                  ? "Print receipt automatically when marking order as paid"
+                  : "Print KOT ticket automatically upon order creation"}
               </Text>
             </View>
             <Switch
               value={activeTab === "cashier" ? cashierAuto : kitchenAuto}
               onValueChange={activeTab === "cashier" ? setCashierAuto : setKitchenAuto}
-              trackColor={{ false: "#2E2E38", true: BRAND_ORANGE }}
+              trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
               thumbColor="#FFFFFF"
             />
           </View>
         </View>
 
-        {/* Nearby Discovery Scanner Section Matching Screenshot */}
-        <View style={styles.formCard}>
+        {/* Nearby Discovery Scanner Section */}
+        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <View style={styles.scanHeader}>
-            <Text style={styles.sectionTitle}>PRINTER DISCOVERY SCANNER</Text>
+            <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 0 }]}>DISCOVERED PRINTERS</Text>
             <Pressable
-              style={styles.scanBtn}
+              style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}
               onPress={handleScan}
               disabled={scanning}
             >
               {scanning ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color="#635BFF" />
               ) : (
-                <Text style={styles.scanBtnText}>Scan Nearby</Text>
+                <>
+                  <Ionicons name="refresh-outline" size={14} color="#635BFF" />
+                  <Text style={[styles.scanBtnText, { color: "#635BFF" }]}>Scan Nearby</Text>
+                </>
               )}
             </Pressable>
           </View>
 
           {scanning && (
-            <View style={{ paddingVertical: 16, alignItems: "center" }}>
-              <ActivityIndicator size="small" color={BRAND_ORANGE} />
-              <Text style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 6 }}>
-                Searching for Bluetooth & Network thermal printers...
+            <View style={{ paddingVertical: 20, alignItems: "center", gap: 8 }}>
+              <ActivityIndicator size="small" color="#635BFF" />
+              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>
+                Searching for Bluetooth & Network printers...
               </Text>
             </View>
           )}
@@ -525,38 +554,51 @@ export default function PrinterSettingsScreen() {
                   key={i}
                   style={[
                     styles.deviceRow,
-                    isCurrent && { borderColor: BRAND_ORANGE, backgroundColor: "rgba(255, 87, 34, 0.08)" }
+                    { 
+                      backgroundColor: isCurrent ? (isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF") : theme.surface,
+                      borderColor: isCurrent ? "#635BFF" : theme.border 
+                    }
                   ]}
                   onPress={() => handleConnectDevice(dev)}
                 >
-                  <Ionicons
-                    name={dev.type === "network" ? "wifi-outline" : "bluetooth-outline"}
-                    size={20}
-                    color={BRAND_ORANGE}
-                  />
-                  <View style={{ marginLeft: 12, flex: 1, minWidth: 0, paddingRight: 6 }}>
-                    <Text style={styles.deviceName} numberOfLines={1}>{dev.name}</Text>
-                    <Text style={styles.deviceAddress} numberOfLines={1}>{dev.address}</Text>
+                  <View style={[styles.deviceIconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
+                    <Ionicons
+                      name={dev.type === "network" ? "wifi-outline" : "bluetooth-outline"}
+                      size={20}
+                      color="#635BFF"
+                    />
                   </View>
-                  <View style={[styles.useTag, isCurrent && { backgroundColor: "#10B981" }]}>
-                    <Text style={styles.useTagText}>{isCurrent ? "Connected" : "Use"}</Text>
+                  <View style={{ marginLeft: 12, flex: 1, minWidth: 0, paddingRight: 6 }}>
+                    <Text style={[styles.deviceName, { color: theme.onSurface }]} numberOfLines={1}>{dev.name}</Text>
+                    <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>{dev.address}</Text>
+                  </View>
+                  <View style={[styles.useTag, { backgroundColor: isCurrent ? "#10B981" : "#635BFF" }]}>
+                    <Text style={styles.useTagText}>{isCurrent ? "Connected" : "Pair"}</Text>
                   </View>
                 </Pressable>
               );
             })
           ) : !scanning ? (
-            <Text style={styles.noDeviceText}>No discovered printers. Tap Scan to search.</Text>
+            <Text style={[styles.noDeviceText, { color: theme.onSurfaceSecondary }]}>
+              No paired thermal printers detected. Tap "Scan Nearby" to search.
+            </Text>
           ) : null}
         </View>
 
         {/* Bottom Save & Action Buttons */}
         <View style={styles.actionsRow}>
-          <Pressable style={styles.testBtn} onPress={handleTestPrint} disabled={testingPrint}>
-            <Ionicons name="print-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.testBtnText}>Test Print</Text>
+          <Pressable 
+            style={[styles.testBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
+            onPress={handleTestPrint} 
+            disabled={testingPrint}
+          >
+            <Ionicons name="print-outline" size={18} color="#635BFF" style={{ marginRight: 6 }} />
+            <Text style={[styles.testBtnText, { color: "#635BFF" }]}>Test Ticket</Text>
           </Pressable>
+
           <Pressable style={styles.saveMainBtn} onPress={handleSaveManual}>
-            <Text style={styles.saveMainBtnText}>Save All Settings</Text>
+            <Ionicons name="save-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.saveMainBtnText}>Save Settings</Text>
           </Pressable>
         </View>
 
@@ -575,22 +617,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: CARD_BORDER,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderWidth: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: CARD_BG,
   },
   title: {
-    color: "#FFFFFF",
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
   },
   sub: {
-    color: TEXT_MUTED,
     fontSize: 13,
     marginTop: 2,
     fontWeight: "500",
@@ -602,33 +640,33 @@ const styles = StyleSheet.create({
 
   tabsRow: {
     flexDirection: "row",
-    paddingHorizontal: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2E2E38",
+    marginHorizontal: spacing.lg,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: spacing.md,
+    gap: 6,
   },
   tab: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 3,
-    borderBottomColor: "transparent",
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   tabActive: {
-    borderBottomColor: BRAND_ORANGE,
+    backgroundColor: "#635BFF",
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
   },
-  tabTextActive: {
-    color: BRAND_ORANGE,
-  },
 
-  activePrinterCard: {
-    backgroundColor: CARD_BG,
+  card: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
-    padding: 16,
+    padding: 18,
     marginBottom: spacing.lg,
   },
   cardHeader: {
@@ -638,12 +676,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   printerNameTitle: {
-    color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "800",
   },
   printerTypeSubtitle: {
-    color: TEXT_MUTED,
     fontSize: 12,
     marginTop: 2,
     fontWeight: "500",
@@ -665,8 +701,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.05)",
-    paddingTop: 12,
+    paddingTop: 14,
   },
   cardActionBtn: {
     flex: 1,
@@ -674,158 +709,149 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 4,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.2)",
     gap: 5,
   },
   cardActionBtnText: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
   },
 
-  formCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    padding: 20,
-    marginBottom: spacing.lg,
-  },
   sectionTitle: {
-    color: BRAND_ORANGE,
-    fontSize: 11,
-    fontWeight: "bold",
-    letterSpacing: 1.2,
-    marginBottom: 16,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    marginBottom: 14,
+    textTransform: "uppercase",
   },
-  field: { marginBottom: spacing.md },
-  label: { color: TEXT_MUTED, fontSize: 12, fontWeight: "600", marginBottom: 8 },
-  input: {
-    backgroundColor: INPUT_BG,
-    borderWidth: 1.5,
-    borderColor: CARD_BORDER,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#FFFFFF",
+  field: {
+    marginBottom: 14,
   },
-  rowInputs: {
-    flexDirection: "row",
-    marginBottom: spacing.md,
+  label: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   selectorRow: {
     flexDirection: "row",
     gap: 8,
-    flexWrap: "nowrap",
   },
   selectorBtn: {
     flex: 1,
-    minWidth: 0,
     paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: CHIP_INACTIVE_BG,
+    borderRadius: 12,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  selectorBtnActive: {
-    backgroundColor: BRAND_ORANGE,
-  },
   selectorBtnText: {
-    color: TEXT_MUTED,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
-  selectorBtnTextActive: {
-    color: "#FFFFFF",
+  rowInputs: {
+    flexDirection: "row",
+    marginBottom: 14,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: "600",
   },
   widthBtn: {
     flex: 1,
-    minWidth: 0,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: CHIP_INACTIVE_BG,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  widthBtnActive: {
-    backgroundColor: BRAND_ORANGE,
-  },
   widthBtnText: {
-    color: TEXT_MUTED,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
-  },
-  widthBtnTextActive: {
-    color: "#FFFFFF",
   },
 
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 8,
+    borderTopWidth: 1,
+    paddingTop: 14,
+    marginTop: 6,
   },
-  switchLabel: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
-  switchDesc: { color: TEXT_MUTED, fontSize: 11, marginTop: 2 },
+  switchLabel: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  switchDesc: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: "500",
+  },
 
   scanHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
   scanBtn: {
-    backgroundColor: BRAND_ORANGE,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 10,
+    borderWidth: 1,
   },
   scanBtnText: {
-    color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   deviceRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    padding: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
     marginBottom: 10,
-    backgroundColor: INPUT_BG,
+  },
+  deviceIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   deviceName: {
-    color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   deviceAddress: {
-    color: TEXT_MUTED,
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
+    fontWeight: "500",
   },
   useTag: {
-    backgroundColor: BRAND_ORANGE,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   useTagText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "800",
   },
   noDeviceText: {
-    color: TEXT_MUTED,
     fontSize: 13,
     textAlign: "center",
-    marginVertical: 12,
+    paddingVertical: 14,
+    fontWeight: "500",
   },
 
   actionsRow: {
@@ -838,26 +864,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#222B3D",
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: 15,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   testBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "800",
   },
   saveMainBtn: {
     flex: 1.5,
-    backgroundColor: BRAND_ORANGE,
-    paddingVertical: 14,
-    borderRadius: 14,
+    flexDirection: "row",
+    backgroundColor: "#635BFF",
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 15,
+    borderRadius: 16,
+    shadowColor: "#635BFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   saveMainBtnText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
   },
 });

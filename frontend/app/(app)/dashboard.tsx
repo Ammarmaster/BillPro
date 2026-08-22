@@ -396,8 +396,8 @@ function OwnerDashboard() {
 
   const handleScanImport = async (confirmedOrder: any) => {
     setShowScanner(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     load().catch(() => {});
-    Alert.alert("Order Attached", "Customer order confirmed and attached successfully!");
   };
 
   const load = useCallback(async () => {
@@ -498,21 +498,17 @@ function OwnerDashboard() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl tintColor="#635BFF" refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
       >
-        {/* Profile Header */}
+        {/* Profile Header matching Screenshot 3 */}
         <View style={styles.ownerHeader}>
           <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={[styles.greetText, { color: theme.onSurfaceSecondary, marginBottom: 0 }]}>Welcome back</Text>
-              <View style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
-                <Text style={{ fontSize: 9, color: "#10B981", fontWeight: "700" }}>Live</Text>
-              </View>
-            </View>
-            <Text style={[styles.ownerTitle, { color: theme.onSurface, marginTop: 4 }]} numberOfLines={1}>{user?.full_name || "Business Partner"}</Text>
+            <Text style={[styles.greetText, { color: theme.onSurfaceSecondary }]}>Welcome back</Text>
+            <Text style={[styles.ownerTitle, { color: theme.onSurface }]} numberOfLines={1}>
+              {user?.full_name || "System Owner"}
+            </Text>
           </View>
-          <View style={[styles.roleBadge, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "rgba(99, 91, 255, 0.08)" }]}>
-            <Ionicons name="shield-checkmark" size={14} color={colors.brand} />
-            <Text style={styles.roleBadgeText}>OWNER</Text>
+          <View style={[styles.roleBadge, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#E0E7FF" }]}>
+            <Ionicons name="shield-checkmark" size={14} color="#635BFF" />
+            <Text style={[styles.roleBadgeText, { color: "#635BFF" }]}>{(user?.role || "OWNER").toUpperCase()}</Text>
           </View>
         </View>
 
@@ -527,55 +523,55 @@ function OwnerDashboard() {
           </Pressable>
         ) : (
           <>
-            {/* Hero Analytics Gradient Box */}
+            {/* Hero Analytics Gradient Box matching Screenshot 3 */}
             <Animated.View entering={FadeInDown.delay(100).springify()}>
               <Pressable
                 onPress={() => router.push({ pathname: "/(app)/bills-history", params: { filter: "today" } })}
-                style={({ pressed }) => [{ overflow: "hidden", borderRadius: radius.xl }, pressed && { opacity: 0.94, transform: [{ scale: 0.99 }] }]}
+                style={({ pressed }) => [{ overflow: "hidden", borderRadius: 24 }, pressed && { opacity: 0.94, transform: [{ scale: 0.99 }] }]}
                 testID="metric-revenue-today"
               >
                 <LinearGradient
-                  colors={["#635BFF", "#4F46E5"]}
+                  colors={["#5B4DFF", "#7B61FF"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.heroRevenueCard}
+                  style={[styles.heroRevenueCard, { borderRadius: 24, padding: 22 }]}
                 >
                   <View style={styles.liveBadgeRow}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <View style={styles.liveDot} />
-                      <Text style={styles.liveText}>LIVE SALES TODAY</Text>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#34D399" }} />
+                    <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700", opacity: 0.95 }}>
+                      LIVE • Today's Revenue
+                    </Text>
+                  </View>
+
+                  <Text style={{ color: "#FFFFFF", fontSize: 44, fontWeight: "900", marginVertical: 8, letterSpacing: -0.5 }}>
+                    ₹{animatedRevenue.toLocaleString("en-IN")}
+                  </Text>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 12, gap: 32 }}>
+                    <View>
+                      <Text style={{ color: "#FFFFFF", fontSize: 22, fontWeight: "900" }} testID="metric-orders-open">
+                        {summary?.orders_total ?? summary?.orders_open ?? 0}
+                      </Text>
+                      <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Orders</Text>
                     </View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12 }}>
-                      <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "800" }}>History & Bills →</Text>
+                    <View>
+                      <Text style={{ color: "#FFFFFF", fontSize: 22, fontWeight: "900" }}>
+                        ₹{(summary?.avg_bill ?? 0).toLocaleString("en-IN")}
+                      </Text>
+                      <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Avg Bill</Text>
                     </View>
                   </View>
+                </LinearGradient>
+              </Pressable>
+            </Animated.View>
 
-                  <Text style={styles.heroRevenueValue}>₹{animatedRevenue.toLocaleString("en-IN")}</Text>
-
-                <View style={styles.heroFooterRow}>
-                  <View style={styles.heroFooterItem}>
-                    <Text style={styles.heroFooterVal} testID="metric-orders-open">{summary?.orders_total ?? summary?.orders_open ?? 0}</Text>
-                    <Text style={styles.heroFooterLbl}>Total Orders</Text>
-                  </View>
-                  <View style={styles.heroFooterDivider} />
-                  <View style={styles.heroFooterItem}>
-                    <Text style={styles.heroFooterVal}>₹{(summary?.avg_bill ?? 0).toLocaleString("en-IN")}</Text>
-                    <Text style={styles.heroFooterLbl}>Average ticket</Text>
-                  </View>
-                  <View style={styles.heroFooterDivider} />
-                  <View style={styles.heroFooterItem}>
-                    <Text style={styles.heroFooterVal}>₹{(summary?.revenue_web_today ?? 0).toLocaleString("en-IN")}</Text>
-                    <Text style={styles.heroFooterLbl}>Web payments</Text>
-                  </View>
-                </View>
-              </LinearGradient>
-            </Pressable>
-          </Animated.View>
-
-            {/* Quick Action Shortcuts */}
-            <View style={{ flexDirection: "row", gap: 10, marginVertical: spacing.md }}>
+            {/* Quick Action Shortcuts: Scan Web Order & Printer */}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: spacing.md, marginBottom: spacing.xs }}>
               <Pressable
-                style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}
+                style={[
+                  styles.quickActionShortcut,
+                  { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }
+                ]}
                 onPress={() => {
                   if (api.hasFeature("qr_web_menu")) {
                     setShowScanner(true);
@@ -588,10 +584,11 @@ function OwnerDashboard() {
                 <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Web Order</Text>
               </Pressable>
 
-
-
               <Pressable
-                style={[styles.quickActionShortcut, { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: "#F59E0B" }]}
+                style={[
+                  styles.quickActionShortcut,
+                  { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: isDark ? "#F59E0B" : "#FDE68A" }
+                ]}
                 onPress={() => router.push("/(app)/printer-settings")}
               >
                 <Ionicons name="print-outline" size={18} color="#F59E0B" />
@@ -599,51 +596,55 @@ function OwnerDashboard() {
               </Pressable>
             </View>
 
-            {/* Quick Metrics Grid */}
-            <View style={styles.statusGrid}>
+            {/* 4 Status Metrics Grid matching Screenshot 3 */}
+            <View style={[styles.statusGrid, { marginTop: spacing.md }]}>
+              {/* 1: Pending */}
               <Animated.View
                 entering={FadeInDown.delay(200).springify()}
-                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, borderRadius: 20, padding: 18 }]}
               >
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#332210" : "#FFFBEB" }]}>
-                  <Ionicons name="time" size={22} color="#D97706" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#332210" : "#FEF3C7", borderRadius: 12, width: 40, height: 40 }]}>
+                  <Ionicons name="time-outline" size={22} color="#D97706" />
                 </View>
-                <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.pending_count ?? summary?.orders_open ?? 0}</Text>
-                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Pending</Text>
+                <Text style={[styles.statusCount, { color: theme.onSurface, fontSize: 28 }]}>{summary?.pending_count ?? summary?.orders_open ?? 0}</Text>
+                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 4 }]}>Pending</Text>
               </Animated.View>
 
+              {/* 2: Cooking */}
               <Animated.View
                 entering={FadeInDown.delay(250).springify()}
-                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, borderRadius: 20, padding: 18 }]}
               >
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#28173B" : "#F5F3FF" }]}>
-                  <Ionicons name="flame" size={22} color="#8B5CF6" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#28173B" : "#EEF2FF", borderRadius: 12, width: 40, height: 40 }]}>
+                  <Ionicons name="flame" size={22} color="#635BFF" />
                 </View>
-                <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.cooking_count ?? 0}</Text>
-                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Cooking</Text>
+                <Text style={[styles.statusCount, { color: theme.onSurface, fontSize: 28 }]}>{summary?.cooking_count ?? 0}</Text>
+                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 4 }]}>Cooking</Text>
               </Animated.View>
 
+              {/* 3: Ready */}
               <Animated.View
                 entering={FadeInDown.delay(300).springify()}
-                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, borderRadius: 20, padding: 18 }]}
               >
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0F3220" : "#ECFDF5" }]}>
-                  <Ionicons name="checkmark-done-circle" size={22} color="#10B981" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0F3220" : "#DCFCE7", borderRadius: 12, width: 40, height: 40 }]}>
+                  <Ionicons name="notifications-outline" size={22} color="#10B981" />
                 </View>
-                <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.ready_count ?? 0}</Text>
-                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Ready</Text>
+                <Text style={[styles.statusCount, { color: theme.onSurface, fontSize: 28 }]}>{summary?.ready_count ?? 0}</Text>
+                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 4 }]}>Ready</Text>
               </Animated.View>
 
+              {/* 4: Tables Free */}
               <Animated.View
                 entering={FadeInDown.delay(350).springify()}
-                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, borderRadius: 20, padding: 18 }]}
                 testID="metric-menu-count"
               >
-                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0D2E3E" : "#F0F9FF" }]}>
-                  <Ionicons name="grid" size={22} color="#0EA5E9" />
+                <View style={[styles.statusIconBox, { backgroundColor: isDark ? "#0D2E3E" : "#DBEAFE", borderRadius: 12, width: 40, height: 40 }]}>
+                  <Ionicons name="tablet-portrait-outline" size={22} color="#3B82F6" />
                 </View>
-                <Text style={[styles.statusCount, { color: theme.onSurface }]}>{summary?.tables_free ?? 5}</Text>
-                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary }]}>Tables Free</Text>
+                <Text style={[styles.statusCount, { color: theme.onSurface, fontSize: 28 }]}>{summary?.tables_free ?? 5}</Text>
+                <Text style={[styles.statusLabel, { color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 4 }]}>Tables Free</Text>
               </Animated.View>
             </View>
 
@@ -678,10 +679,9 @@ function OwnerDashboard() {
             {/* Weekly Analytics Graph */}
             <Animated.View entering={FadeInDown.delay(450).springify()}>
               <View style={[styles.chartSectionCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={styles.chartHeader}>
-                  <Ionicons name="bar-chart" size={18} color={colors.brand} />
-                  <Text style={[styles.sectionHeading, { color: theme.onSurface, marginBottom: 0 }]}>Weekly Revenue Insights</Text>
-                </View>
+                  <Text style={[styles.sectionHeading, { color: theme.onSurface, fontSize: 17, fontWeight: "900", marginBottom: 0 }]}>
+                    Revenue • Last 7 days
+                  </Text>
               
               <View style={styles.barChartContainer}>
                 {last7Days.map((d: any, idx: number) => {

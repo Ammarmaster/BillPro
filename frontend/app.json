@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "EzBill",
-    "slug": "ezbill",
+    "slug": "prodevopz",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -18,7 +18,7 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-"googleServicesFile": "./google-services.json",
+      "googleServicesFile": "./google-services.json",
       "package": "com.ezbill.app",
       "permissions": [
         "android.permission.RECORD_AUDIO",
@@ -28,7 +28,8 @@
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -66,8 +67,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a99f95ae-d53d-4601-9b28-eb2305abab3e"
+        "projectId": "1e2898dc-9c35-4571-b484-4a5fc4959fd1"
       }
-    }
+    },
+    "owner": "ammarmaster1"
   }
 }

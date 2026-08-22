@@ -397,7 +397,13 @@ export default function Billing() {
 
   const doPrint = async () => {
     if (!bill) return;
-    try { await printBill(bill); }
+    try {
+      const printableBill = {
+        ...bill,
+        restaurant_snapshot: bill.restaurant_snapshot || restaurant || api.getCachedRestaurant()
+      };
+      await printBill(printableBill);
+    }
     catch (e: any) { setErr(`Print failed: ${e.message}`); }
   };
 
