@@ -62,17 +62,23 @@ export default function BillsHistory() {
     } catch { return ts; }
   };
 
-  // Local Date matching to accurately show all today's bills in IST/local time
+  // Restaurant Business Day matching (Daily shift resets after 1:00 AM local time)
   const isToday = (ts?: string) => {
     if (!ts) return false;
     try {
-      const d = new Date(ts);
+      const billDate = new Date(ts);
       const now = new Date();
-      return (
-        d.getDate() === now.getDate() &&
-        d.getMonth() === now.getMonth() &&
-        d.getFullYear() === now.getFullYear()
-      );
+      
+      // Calculate 1:00 AM cutoff for current business cycle
+      const cutoff = new Date(now);
+      if (now.getHours() >= 1) {
+        cutoff.setHours(1, 0, 0, 0);
+      } else {
+        cutoff.setDate(cutoff.getDate() - 1);
+        cutoff.setHours(1, 0, 0, 0);
+      }
+      
+      return billDate.getTime() >= cutoff.getTime();
     } catch {
       return false;
     }

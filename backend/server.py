@@ -1225,6 +1225,7 @@ async def create_table(payload: TableIn, user: dict = Depends(require_roles("own
 @api.get("/tables")
 async def list_tables(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
+    await _auto_clear_kitchen_orders(tid)
     tables = await db.tables.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("label", 1).to_list(500)
     return tables
 
@@ -1389,25 +1390,48 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
     return doc
 
 
+def get_current_business_day_start():
+    # 1:00 AM local time (IST UTC+5:30) business day reset
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.now(timezone.utc) + ist_offset
+    if now_ist.hour >= 1:
+        start_ist = now_ist.replace(hour=1, minute=0, second=0, microsecond=0)
+    else:
+        start_ist = (now_ist - timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
+    start_utc = start_ist - ist_offset
+    return start_utc.replace(tzinfo=timezone.utc)
+
+
 async def _auto_clear_kitchen_orders(tid: str):
     try:
-        now = datetime.now(timezone.utc)
-        if now.hour >= 1:
-            cutoff = now.replace(hour=1, minute=0, second=0, microsecond=0)
-        else:
-            cutoff = (now - timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
-            
-        cutoff_str = cutoff.isoformat()
+        start_utc = get_current_business_day_start()
+        start_iso = start_utc.isoformat()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        
+        # 1. Close/archive lingering orders created before today's 1 AM business day cutoff
         res = await db.orders.update_many({
             "tenant_id": tid,
-            "status": {"$in": ["placed", "in_kitchen", "ready"]},
-            "created_at": {"$lt": cutoff_str}
-        }, {"$set": {"status": "cancelled", "cancelled_at": now.isoformat(), "cancel_reason": "Daily 1 AM kitchen reset"}})
+            "status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]},
+            "created_at": {"$lt": start_iso}
+        }, {"$set": {"status": "completed", "auto_cleared_at": now_iso, "clear_reason": "Daily 1 AM business reset"}})
+        
+        # 2. Reset tables to available if no active orders from today's business cycle exist
+        active_table_labels = await db.orders.distinct("table_number", {
+            "tenant_id": tid,
+            "status": {"$nin": ["paid", "completed", "cancelled"]},
+            "created_at": {"$gte": start_iso}
+        })
+        
+        await db.tables.update_many({
+            "tenant_id": tid,
+            "label": {"$nin": active_table_labels}
+        }, {"$set": {"status": "available"}})
+        
         if res.modified_count > 0:
-            logger.info("Cleared %d pending orders for tenant %s based on 1 AM daily reset rule.", res.modified_count, tid)
+            logger.info("Daily 1 AM reset: Cleared %d orders and restored clean tables for tenant %s", res.modified_count, tid)
             dashboard_summary_cache.pop(tid, None)
     except Exception as e:
-        logger.error("Error running daily 1 AM kitchen order clear: %s", str(e))
+        logger.error("Error running daily 1 AM business reset: %s", str(e))
 
 
 @api.get("/orders")
@@ -2781,33 +2805,28 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     if cached and (time.time() - cached[0] < 5.0):
         return cached[1]
 
-    now = datetime.now(timezone.utc)
-    today_str = now.date().isoformat()
+    start_utc = get_current_business_day_start()
+    start_iso = start_utc.isoformat()
 
-    orders_total = await db.orders.count_documents({"tenant_id": tid, "created_at": {"$regex": f"^{today_str}"}})
-    open_orders = await db.orders.count_documents({"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready"]}})
-    pending_count = await db.orders.count_documents({"tenant_id": tid, "status": "placed"})
-    cooking_count = await db.orders.count_documents({"tenant_id": tid, "status": "in_kitchen"})
-    ready_count = await db.orders.count_documents({"tenant_id": tid, "status": "ready"})
+    orders_total = await db.orders.count_documents({"tenant_id": tid, "created_at": {"$gte": start_iso}})
+    open_orders = await db.orders.count_documents({"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]}, "created_at": {"$gte": start_iso}})
+    pending_count = await db.orders.count_documents({"tenant_id": tid, "status": "placed", "created_at": {"$gte": start_iso}})
+    cooking_count = await db.orders.count_documents({"tenant_id": tid, "status": "in_kitchen", "created_at": {"$gte": start_iso}})
+    ready_count = await db.orders.count_documents({"tenant_id": tid, "status": "ready", "created_at": {"$gte": start_iso}})
 
     total_tables = await db.tables.count_documents({"tenant_id": tid})
     
-    # Calculate occupied tables dynamically from active orders (status placed/in_kitchen/ready/served)
+    # Calculate occupied tables dynamically from active orders of current business cycle
     active_orders = await db.orders.find(
-        {"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]}},
+        {"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]}, "created_at": {"$gte": start_iso}},
         {"table_number": 1}
     ).to_list(1000)
     occupied_table_labels = {o["table_number"] for o in active_orders if o.get("table_number") and o.get("table_number") not in ["Takeaway", "Take-Away", "Contactless"]}
     occupied_tables = len(occupied_table_labels)
     tables_free = max(0, total_tables - occupied_tables) if total_tables > 0 else 5
 
-    # Convert timestamps accurately to IST (UTC+5:30) date for precise today matching
-    ist_offset = timedelta(hours=5, minutes=30)
-    now_ist = datetime.now(timezone.utc) + ist_offset
-    today_ist_str = now_ist.date().isoformat()
-    today_utc_str = datetime.now(timezone.utc).date().isoformat()
-
-    seven_days_ago = (now_ist - timedelta(days=7)).date().isoformat()
+    # Look back 7 business days for weekly analytics
+    seven_days_ago = (start_utc - timedelta(days=7)).isoformat()
     paid_bills = await db.bills.find(
         {
             "tenant_id": tid,
@@ -2833,15 +2852,13 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         ts = b.get("paid_at") or b.get("created_at")
         if not ts:
             return False
-        ts_str = str(ts).strip()
-        if ts_str.startswith(today_ist_str) or ts_str.startswith(today_utc_str):
-            return True
         try:
-            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            dt_ist = dt if dt.tzinfo else (dt.replace(tzinfo=timezone.utc) + ist_offset)
-            return dt_ist.date().isoformat() == today_ist_str
+            ts_str = str(ts).strip().replace("Z", "+00:00")
+            dt = datetime.fromisoformat(ts_str)
+            dt_utc = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+            return dt_utc >= start_utc
         except Exception:
-            return ts_str[:10] == today_ist_str or ts_str[:10] == today_utc_str
+            return str(ts)[:19] >= start_iso[:19]
 
     today_bills = [b for b in paid_bills if is_bill_today(b)]
     revenue_today = round(sum(float(b.get("total", 0.0)) for b in today_bills), 2)

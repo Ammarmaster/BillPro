@@ -439,7 +439,7 @@ function OwnerDashboard() {
   useEffect(() => {
     return subscribe((notif: any) => {
       const data = notif.data;
-      if (notif.category === "payment" || data?.event === "ORDER_PAID" || data?.event === "TABLE_SETTLED" || data?.event === "ORDER_SERVED") {
+      if (notif.category === "payment" || data?.event === "ORDER_PAID" || data?.event === "TABLE_SETTLED") {
         const saleAmt = Number(data?.total || data?.amount || 0);
         const saleKey = data?.bill_id || data?.order_id || (data?.table_number ? `table_${data.table_number}_${saleAmt}` : null);
 
