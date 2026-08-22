@@ -353,7 +353,7 @@ export default function Billing() {
       const targetOid = api.resolveTempId(orderId || bill.order_id);
       const updatedOrders = oList.map((o: any) => {
         if (o.id === targetOid || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
-          return { ...o, status: "served" };
+          return { ...o, status: "paid" };
         }
         return o;
       });
@@ -366,11 +366,11 @@ export default function Billing() {
         console.warn("Individual markBillPaid sync failed:", e.message);
       });
     } else {
-      // 2. SETTLE ENTIRE TABLE: Update all active orders on that table!
+      // 2. SETTLE ENTIRE TABLE: Update all active orders on that table to PAID!
       const targetOrderIds = bill?.order_ids || (order?.id ? [order.id] : undefined);
       const updatedOrders = oList.map((o: any) => {
         if ((targetOrderIds && targetOrderIds.includes(o.id)) || (targetTbl && isSameTable(o.table_number, targetTbl))) {
-          return { ...o, status: "served" };
+          return { ...o, status: "paid" };
         }
         return o;
       });

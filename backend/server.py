@@ -4213,6 +4213,10 @@ async def start_memory_trim_worker():
                         {"id": rest["id"]},
                         {"$set": {"logo_base64_58": l58, "logo_base64_80": l80}}
                     )
+        except Exception as e:
+            logger.warning("Logo migration notice: %s", e)
+    asyncio.create_task(_migrate_restaurant_logos())
+
     async def _clean_unpaid_bills():
         try:
             # Revert any bills that were falsely marked paid without razorpay or manual cash settlement

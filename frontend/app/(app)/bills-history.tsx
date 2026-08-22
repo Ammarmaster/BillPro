@@ -86,7 +86,7 @@ export default function BillsHistory() {
 
   const filteredBills = useMemo(() => {
     if (activeFilter === "all") return bills;
-    return bills.filter(b => isToday(b.created_at || b.paid_at));
+    return bills.filter(b => b.status === "paid" && isToday(b.paid_at || b.created_at));
   }, [bills, activeFilter]);
 
   const todayPaidBills = useMemo(() => {
