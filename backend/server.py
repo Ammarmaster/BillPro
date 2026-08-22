@@ -1439,13 +1439,13 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
 
     dashboard_summary_cache.pop(tid, None)
 
-    # Calculate remaining active orders on this table
+    # Calculate remaining active orders on this table (kitchen statuses placed, in_kitchen, ready, served keep table OCCUPIED until paid)
     remaining = await db.orders.count_documents({
         "tenant_id": tid,
         "table_number": tbl_num,
-        "status": {"$nin": ["served", "cancelled"]}
+        "status": {"$nin": ["paid", "completed", "cancelled"]}
     })
-    tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
+    tbl_status = "OCCUPIED" if remaining > 0 else "AVAILABLE"
 
     updated_order = await db.orders.find_one({"id": oid}, {"_id": 0})
     bill = await db.bills.find_one({"order_id": oid}, {"_id": 0})
@@ -2442,13 +2442,13 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
         active_orders = await db.orders.find({
             "id": {"$in": payload.order_ids},
             "tenant_id": tid,
-            "status": {"$nin": ["served", "cancelled"]}
+            "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
     else:
         active_orders = await db.orders.find({
             "tenant_id": tid,
             "table_number": {"$in": tbl_patterns},
-            "status": {"$nin": ["served", "cancelled"]}
+            "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
     
     total_settled = payload.total if payload.total is not None and payload.total > 0 else sum(float(o.get("subtotal", 0.0)) for o in active_orders)
@@ -2500,19 +2500,19 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
 
     await db.bills.update_many(bill_filter, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
 
-    # 4. Mark active orders for this table as served
+    # 4. Mark active orders for this table as paid
     target_order_filter = {"id": {"$in": order_id_list}, "tenant_id": tid} if order_id_list else {
         "tenant_id": tid,
         "table_number": {"$in": tbl_patterns},
-        "status": {"$nin": ["served", "cancelled"]}
+        "status": {"$nin": ["paid", "completed", "cancelled"]}
     }
-    res = await db.orders.update_many(target_order_filter, {"$set": {"status": "served"}})
+    res = await db.orders.update_many(target_order_filter, {"$set": {"status": "paid"}})
 
     # Check remaining active orders on this table
     remaining = await db.orders.count_documents({
         "tenant_id": tid,
         "table_number": {"$in": tbl_patterns},
-        "status": {"$nin": ["served", "cancelled"]}
+        "status": {"$nin": ["paid", "completed", "cancelled"]}
     })
     tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
 
@@ -2520,7 +2520,7 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
 
     settle_payload = {
         "table_number": payload.table_number,
-        "status": "served",
+        "status": "paid",
         "table_status": tbl_status,
         "active_orders_remaining": remaining,
         "total": float(total_settled),
@@ -2562,7 +2562,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             # Check if bid is an order directly and create paid bill in db.bills to guarantee sales tracking!
             o = await db.orders.find_one({"id": bid, "tenant_id": tid})
             if o:
-                await db.orders.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "served"}})
+                await db.orders.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "paid"}})
                 bill_id = str(uuid.uuid4())
                 bill_doc = {
                     "id": bill_id,
@@ -2596,10 +2596,10 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         bill["status"] = "paid"
         bill["payment_method"] = pm
 
-    # Mark ONLY the target order(s) associated with this bill as served
+    # Mark ONLY the target order(s) associated with this bill as paid
     target_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
     if target_oids:
-        await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "served"}})
+        await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "paid"}})
     
     # Calculate remaining active orders on this table strictly (DO NOT wipe other table orders!)
     tbl_num = bill.get("table_number")
@@ -2615,7 +2615,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         remaining = await db.orders.count_documents({
             "tenant_id": tid,
             "table_number": {"$in": tbl_patterns},
-            "status": {"$nin": ["served", "cancelled"]}
+            "status": {"$nin": ["paid", "completed", "cancelled"]}
         })
         tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
     
@@ -2792,9 +2792,9 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
 
     total_tables = await db.tables.count_documents({"tenant_id": tid})
     
-    # Calculate occupied tables dynamically from active orders (status placed/in_kitchen/ready) to count web orders
+    # Calculate occupied tables dynamically from active orders (status placed/in_kitchen/ready/served)
     active_orders = await db.orders.find(
-        {"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready"]}},
+        {"tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]}},
         {"table_number": 1}
     ).to_list(1000)
     occupied_table_labels = {o["table_number"] for o in active_orders if o.get("table_number") and o.get("table_number") not in ["Takeaway", "Take-Away", "Contactless"]}
@@ -3845,6 +3845,26 @@ async def get_sound_file(sound_filename: str):
         }
     )
 
+
+@app.get("/favicon.ico")
+@app.get("/static/favicon.ico")
+@app.get("/static/favicon.png")
+@app.get("/static/ezbill-logo.png")
+async def get_favicon_logo():
+    from fastapi.responses import FileResponse
+    static_dir = Path(__file__).resolve().parent / "static"
+    for cand in ["favicon.png", "ezbill-logo.png", "favicon.ico"]:
+        p = static_dir / cand
+        if p.exists():
+            return FileResponse(p, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+    
+    frontend_assets = Path(__file__).resolve().parent.parent / "frontend" / "assets" / "images"
+    for cand in ["favicon.png", "icon.png", "app-image.png"]:
+        p = frontend_assets / cand
+        if p.exists():
+            return FileResponse(p, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+            
+    raise HTTPException(status_code=404, detail="Favicon not found")
 
 
 # ---------- customer portal & OTP auth ----------

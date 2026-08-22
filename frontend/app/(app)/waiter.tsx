@@ -195,9 +195,9 @@ export default function WaiterScreen() {
       if (data) {
         const { order_id, status, table_number, event } = data;
         if (event === "TABLE_SETTLED") {
-          setOrders(prev => prev.map(o => (table_number && isSameTable(o.table_number, table_number)) ? { ...o, status: "served" } : o));
-        } else if (order_id && (event === "ORDER_SERVED" || event === "ORDER_PAID" || status === "served" || status === "paid")) {
-          setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status: "served" } : o));
+          setOrders(prev => prev.map(o => (table_number && isSameTable(o.table_number, table_number)) ? { ...o, status: "paid" } : o));
+        } else if (order_id && (event === "ORDER_PAID" || status === "paid")) {
+          setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status: "paid" } : o));
         } else if (order_id && status) {
           setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status } : o));
         }
@@ -225,11 +225,17 @@ const isSameTable = (a: string | undefined | null, b: string | undefined | null)
   return na.length > 0 && na === nb;
 };
 
-// Helper to determine table status & matching active orders
+// Helper to determine table status & matching active orders (kitchen status NEVER clears table until paid)
 const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[]) => {
-  const matchingOrders = ordersList.filter(
-    (o: any) => isSameTable(o.table_number, tblLabel) && o.status !== "served" && o.status !== "cancelled" && o.status !== "pending_scan"
-  );
+  const matchingOrders = ordersList.filter((o: any) => {
+    if (!isSameTable(o.table_number, tblLabel)) return false;
+    if (o.status === "cancelled" || o.status === "pending_scan") return false;
+    if (o.status === "paid" || o.status === "completed") return false;
+    const isPaid = billsList.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");
+    if (isPaid) return false;
+    return true;
+  });
+
   if (matchingOrders.length === 0) return { status: "Available", orders: [], bill: null, isWeb: false, activeCount: 0, totalAmount: 0 };
 
   const totalAmt = matchingOrders.reduce((sum: number, o: any) => {
@@ -240,13 +246,13 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const matchingBill = billsList.find((b: any) => matchingOrders.some((o: any) => o.id === b.order_id) && b.status !== "paid");
   if (matchingBill) return { status: "Billed", orders: matchingOrders, bill: matchingBill, isWeb: false, activeCount: matchingOrders.length, totalAmount: totalAmt };
 
-  const allWeb = matchingOrders.every((o: any) => o.created_by === "guest" || o.order_source === "qr_web" || billsList.some((b: any) => b.order_id === o.id && b.status === "paid"));
+  const allWebPaid = matchingOrders.every((o: any) => (o.created_by === "guest" || o.order_source === "qr_web") && billsList.some((b: any) => b.order_id === o.id && b.status === "paid"));
 
   return { 
-    status: allWeb ? "Web Paid" : "Occupied", 
+    status: allWebPaid ? "Web Paid" : "Occupied", 
     orders: matchingOrders, 
     bill: null, 
-    isWeb: allWeb, 
+    isWeb: allWebPaid, 
     activeCount: matchingOrders.length,
     totalAmount: totalAmt
   };
@@ -404,9 +410,14 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
 
   const tableOrders = selectedTableObj
-    ? orders.filter(
-        (o: any) => isSameTable(o.table_number, selectedTableObj.label) && o.status !== "served" && o.status !== "cancelled" && o.status !== "pending_scan"
-      )
+    ? orders.filter((o: any) => {
+        if (!isSameTable(o.table_number, selectedTableObj.label)) return false;
+        if (o.status === "cancelled" || o.status === "pending_scan") return false;
+        if (o.status === "paid" || o.status === "completed") return false;
+        const isPaid = bills.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");
+        if (isPaid) return false;
+        return true;
+      })
     : [];
 
   const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
@@ -421,15 +432,15 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
       // Optimistic local state update
-      setOrders(prev => prev.map(o => o.id === orderIdToComplete ? { ...o, status: "served" } : o));
+      setOrders(prev => prev.map(o => o.id === orderIdToComplete ? { ...o, status: "paid" } : o));
       
-      const remaining = tableOrders.filter((o: any) => o.id !== orderIdToComplete && o.status !== "served");
+      const remaining = tableOrders.filter((o: any) => o.id !== orderIdToComplete);
       if (remaining.length === 0) {
         setViewMode("tables");
       }
 
       try {
-        await api.updateOrderStatus(orderIdToComplete, "served");
+        await api.settleTable(selectedTableObj.label, "CASH", [orderIdToComplete]);
       } catch (e: any) {
         console.warn("Failed to complete order:", e);
         await load();
@@ -444,11 +455,11 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
 
     const completeAllTableOrders = async () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setOrders(prev => prev.map(o => tableOrders.some(to => to.id === o.id) ? { ...o, status: "served" } : o));
+      setOrders(prev => prev.map(o => tableOrders.some(to => to.id === o.id) ? { ...o, status: "paid" } : o));
       setViewMode("tables");
 
       try {
-        await Promise.all(tableOrders.map(o => api.updateOrderStatus(o.id, "served")));
+        await api.settleTable(selectedTableObj.label, "CASH", tableOrders.map(o => o.id), totalTableAmount);
       } catch (e: any) {
         console.warn("Failed to complete all orders:", e);
         await load();
