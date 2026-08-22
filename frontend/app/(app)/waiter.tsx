@@ -298,74 +298,43 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const submitOrder = async () => {
     if (!table.trim()) { setErr("Choose a table."); return; }
     if (lines.length === 0) { setErr("Add at least one item."); return; }
+    if (busy) return;
+    setBusy(true);
     setErr(null);
     try {
-      const orderSubtotal = lines.reduce((acc, item) => acc + (item.price * item.quantity), 0);
       const isEdit = !!activeOrder;
-      const tempId = activeOrder?.id || "temp-" + Date.now();
       const guestName = currentGuestName || activeOrder?.customer_name || "Guest 1";
       const sessId = currentSessionId || activeOrder?.session_id || "tsess_" + Math.random().toString(36).substring(2, 9);
-      
-      const localOrder = {
-        id: tempId,
-        order_number: activeOrder?.order_number || String(Math.floor(100 + Math.random() * 900)),
-        table_number: table.trim(),
-        session_id: sessId,
-        customer_name: guestName,
-        items: lines,
-        subtotal: orderSubtotal,
-        status: activeOrder?.status || "placed",
-        created_at: activeOrder?.created_at || new Date().toISOString(),
-      };
-      
-      // Optimistic State Updates (0ms UI latency)
-      api.injectCachedOrder(localOrder);
+      const tblLabel = table.trim();
+
+      let realOrder: any;
       if (isEdit) {
-        setOrders(prev => prev.map(o => o.id === tempId ? localOrder : o));
+        realOrder = await api.updateOrder(activeOrder.id, { items: lines, notes: "", customer_name: guestName });
       } else {
-        setOrders(prev => [localOrder, ...prev]);
+        realOrder = await api.createOrder({ table_number: tblLabel, items: lines, notes: "", session_id: sessId, customer_name: guestName });
       }
-      setTables(prev => prev.map(t => String(t.label).toLowerCase() === String(table.trim()).toLowerCase() ? { ...t, status: "occupied" } : t));
+
+      setOrders(prev => [realOrder, ...prev.filter(o => o.id !== realOrder.id && !String(o.id).startsWith("temp-"))]);
+      setTables(prev => prev.map(t => isSameTable(t.label, tblLabel) ? { ...t, status: "occupied" } : t));
       
       setLines([]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
-      const tblLabel = table.trim();
-      const tblObj = tables.find(t => String(t.label).toLowerCase() === String(tblLabel).toLowerCase()) || { id: "temp-tbl", label: tblLabel, status: "occupied", seats: 4 };
+      const tblObj = tables.find(t => isSameTable(t.label, tblLabel)) || { id: "temp-tbl", label: tblLabel, status: "occupied", seats: 4 };
       setSelectedTableObj(tblObj);
       setTable(tblLabel);
-      setActiveOrder(localOrder);
+      setActiveOrder(realOrder);
       setViewMode("order_details");
 
-      // Dispatch backend sync in background without blocking UI
-      if (isEdit) {
-        api.updateOrder(activeOrder.id, { items: localOrder.items, notes: "", customer_name: guestName }).then(async realOrder => {
-          api.setTempIdMapping(tempId, realOrder.id);
-          api.updateCachedOrder(tempId, realOrder);
-          setActiveOrder(realOrder);
-          setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
-          const settings = await getPrinterSettings("kitchen");
-          if (settings && settings.type !== "none" && settings.auto_print) {
-            await printKitchenKOT(realOrder);
-          }
-        }).catch(e => {
-          setErr(e.message);
-        });
-      } else {
-        api.createOrder({ table_number: tblLabel, items: localOrder.items, notes: "", session_id: sessId, customer_name: guestName }).then(async realOrder => {
-          api.setTempIdMapping(tempId, realOrder.id);
-          api.updateCachedOrder(tempId, realOrder);
-          setActiveOrder(realOrder);
-          setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
-          const settings = await getPrinterSettings("kitchen");
-          if (settings && settings.type !== "none" && settings.auto_print) {
-            await printKitchenKOT(realOrder);
-          }
-        }).catch(e => {
-          setErr(e.message);
-        });
+      const settings = await getPrinterSettings("kitchen");
+      if (settings && settings.type !== "none" && settings.auto_print) {
+        await printKitchenKOT(realOrder);
       }
-    } catch (e: any) { setErr(e.message); }
+    } catch (e: any) {
+      setErr(e.message || "Failed to place order.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   // -------------------------------------------------------------

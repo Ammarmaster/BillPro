@@ -111,6 +111,8 @@ const getRoleDefaultPrefs = (role: string | undefined): NotificationPreferences 
 };
 
 const processedEventIds = new Set<string>();
+const processedOrderCreatedIds = new Set<string>();
+const processedPaymentIds = new Set<string>();
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -423,22 +425,40 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       // 5. Instantly increment dashboard totals on payment / creation
       if (eventName === "order.created") {
-        const summary = api.getCachedSummary();
-        if (summary) {
-          summary.total_orders = (summary.total_orders || 0) + 1;
-          summary.active_tables_count = (summary.active_tables_count || 0) + 1;
-          api.setCachedSummary(summary);
-          api.notifyCacheUpdate("/dashboard/summary", summary);
+        const orderId = data.order_id || (data.order && data.order.id);
+        if (orderId && !processedOrderCreatedIds.has(orderId)) {
+          processedOrderCreatedIds.add(orderId);
+          if (processedOrderCreatedIds.size > 200) {
+            const first = processedOrderCreatedIds.values().next().value;
+            if (first !== undefined) processedOrderCreatedIds.delete(first);
+          }
+          const summary = api.getCachedSummary();
+          if (summary) {
+            summary.orders_total = (summary.orders_total || 0) + 1;
+            summary.orders_open = (summary.orders_open || 0) + 1;
+            api.setCachedSummary({ ...summary });
+            api.notifyCacheUpdate("/dashboard/summary", summary);
+          }
         }
       }
-      if (data.status === "served" || data.status === "paid") {
-        const summary = api.getCachedSummary();
-        if (summary) {
-          if (data.total) {
-            summary.total_sales = (summary.total_sales || 0) + data.total;
+      if (data.status === "served" || data.status === "paid" || eventName === "ORDER_PAID" || eventName === "TABLE_SETTLED") {
+        const billOrOrderId = data.bill_id || data.order_id || (data.bill && data.bill.id) || (data.table_number ? `tbl_${data.table_number}_${data.total}` : null);
+        if (billOrOrderId && !processedPaymentIds.has(billOrOrderId)) {
+          processedPaymentIds.add(billOrOrderId);
+          if (processedPaymentIds.size > 200) {
+            const first = processedPaymentIds.values().next().value;
+            if (first !== undefined) processedPaymentIds.delete(first);
           }
-          api.setCachedSummary(summary);
-          api.notifyCacheUpdate("/dashboard/summary", summary);
+          const summary = api.getCachedSummary();
+          if (summary) {
+            if (data.total) {
+              summary.revenue_today = Number((Number(summary.revenue_today || 0) + Number(data.total)).toFixed(2));
+              summary.revenue_total = Number((Number(summary.revenue_total || 0) + Number(data.total)).toFixed(2));
+              summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
+            }
+            api.setCachedSummary({ ...summary });
+            api.notifyCacheUpdate("/dashboard/summary", summary);
+          }
         }
       }
     }

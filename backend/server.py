@@ -1384,13 +1384,6 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
         f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
         order_payload
     )
-    await notify_tenant(
-        tid,
-        "waiter",
-        "New KOT Placed",
-        f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
-        order_payload
-    )
     return doc
 
 
@@ -1496,17 +1489,10 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
         "order": updated_order,
         "bill": bill
     }
+    notif_cat = "payment" if payload.status == "served" else ("kitchen" if payload.status in ["in_kitchen", "ready"] else "waiter")
     await notify_tenant(
         tid,
-        "payment" if payload.status == "served" else "waiter",
-        "Order Status Updated",
-        f"Order for Table {tbl_num} is now {payload.status.replace('_', ' ').upper()}",
-        status_payload
-    )
-    # Also notify kitchen
-    await notify_tenant(
-        tid,
-        "kitchen",
+        notif_cat,
         "Order Status Updated",
         f"Order for Table {tbl_num} is now {payload.status.replace('_', ' ').upper()}",
         status_payload
@@ -1574,13 +1560,6 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
     await notify_tenant(
         tid,
         "kitchen",
-        "KOT Order Modified",
-        f"Items updated for Table {order.get('table_number', '-')}",
-        updated_payload
-    )
-    await notify_tenant(
-        tid,
-        "waiter",
         "KOT Order Modified",
         f"Items updated for Table {order.get('table_number', '-')}",
         updated_payload
@@ -1747,14 +1726,7 @@ async def public_create_order(payload: PublicOrderIn):
     }
     await notify_tenant(
         payload.tenant_id,
-        "kitchen",
-        "New Customer Order" if is_online_paid else "Pending QR Order",
-        f"New QR order for Table {payload.table_number or '-'} ({cust_name})",
-        cust_payload
-    )
-    await notify_tenant(
-        payload.tenant_id,
-        "waiter",
+        "kitchen" if is_online_paid else "waiter",
         "New Customer Order" if is_online_paid else "Pending QR Order",
         f"New order for Table {payload.table_number or '-'} ({cust_name})",
         cust_payload
@@ -1832,7 +1804,6 @@ async def scan_import_order(payload: ScanImportIn, current_user: dict = Depends(
         "order": updated_order
     }
     await notify_tenant(tid, "kitchen", "Order Imported", f"Table {table_num} updated", confirm_payload)
-    await notify_tenant(tid, "waiter", "Order Imported", f"Table {table_num} updated", confirm_payload)
 
     return {
         "success": True,
@@ -2022,7 +1993,6 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         "order": updated_order
     }
     await notify_tenant(tid, "kitchen", "Order Confirmed", f"Table {table_num} updated", confirm_payload)
-    await notify_tenant(tid, "waiter", "Order Confirmed", f"Table {table_num} updated", confirm_payload)
 
     res = {
         "success": True,
@@ -2315,7 +2285,6 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
                 imported_item_ids.append(item_id)
 
     await notify_tenant(tid, "waiter", "Menu Updated", "New items added to menu", {})
-    await notify_tenant(tid, "owner", "Menu Updated", "New items added to menu", {})
 
     return {
         "success": True,
@@ -2347,7 +2316,6 @@ async def rollback_bulk_import(payload: ImportRollbackIn, current_user: dict = D
             deleted_cats_count += 1
 
     await notify_tenant(tid, "waiter", "Menu Updated", "Menu import undone", {})
-    await notify_tenant(tid, "owner", "Menu Updated", "Menu import undone", {})
 
     return {
         "success": True,
@@ -2562,13 +2530,6 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
         f"Table {payload.table_number} marked paid and cleared ({pm})",
         settle_payload
     )
-    await notify_tenant(
-        tid,
-        "waiter",
-        "Table Settled",
-        f"Table {payload.table_number} marked paid and cleared ({pm})",
-        settle_payload
-    )
     return {
         "ok": True,
         "table_number": payload.table_number,
@@ -2672,13 +2633,6 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     await notify_tenant(
         tid,
         "payment",
-        "Payment Received",
-        f"Order for {bill.get('table_number', 'Takeaway')} paid ₹{bill.get('total', 0.0):.2f} via {pm}",
-        paid_payload
-    )
-    await notify_tenant(
-        tid,
-        "waiter",
         "Payment Received",
         f"Order for {bill.get('table_number', 'Takeaway')} paid ₹{bill.get('total', 0.0):.2f} via {pm}",
         paid_payload

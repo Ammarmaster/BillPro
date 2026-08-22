@@ -552,26 +552,44 @@ export const api = {
     tempIdMap[tempId] = realId;
   },
   injectCachedOrder: (order: any) => {
+    if (!order || !order.id) return;
     const list = memoryCache["/orders"] || [];
-    const updated = [order, ...list.filter((o: any) => o.id !== order.id)];
+    const updated = [order, ...list.filter((o: any) => o.id !== order.id && !String(o.id).startsWith("temp-"))];
     memoryCache["/orders"] = updated;
     notifyCacheUpdate("/orders", updated);
   },
   injectCachedBill: (bill: any) => {
+    if (!bill || !bill.id) return;
     const list = memoryCache["/bills"] || [];
-    const updated = [bill, ...list.filter((b: any) => b.id !== bill.id)];
+    const updated = [bill, ...list.filter((b: any) => b.id !== bill.id && !String(b.id).startsWith("temp-"))];
     memoryCache["/bills"] = updated;
     notifyCacheUpdate("/bills", updated);
   },
   updateCachedOrder: (id: string, realOrder: any) => {
+    if (!realOrder || !realOrder.id) return;
     const list = memoryCache["/orders"] || [];
-    const updated = list.map((o: any) => o.id === id ? realOrder : o);
+    const exists = list.some((o: any) => o.id === realOrder.id);
+    let updated: any[];
+    if (exists) {
+      updated = list.map((o: any) => o.id === realOrder.id ? realOrder : o).filter((o: any) => o.id !== id || o.id === realOrder.id);
+    } else {
+      updated = list.map((o: any) => o.id === id ? realOrder : o);
+    }
+    updated = updated.filter((o: any) => !String(o.id).startsWith("temp-"));
     memoryCache["/orders"] = updated;
     notifyCacheUpdate("/orders", updated);
   },
   updateCachedBill: (id: string, realBill: any) => {
+    if (!realBill || !realBill.id) return;
     const list = memoryCache["/bills"] || [];
-    const updated = list.map((b: any) => b.id === id ? realBill : b);
+    const exists = list.some((b: any) => b.id === realBill.id);
+    let updated: any[];
+    if (exists) {
+      updated = list.map((b: any) => b.id === realBill.id ? realBill : b).filter((b: any) => b.id !== id || b.id === realBill.id);
+    } else {
+      updated = list.map((b: any) => b.id === id ? realBill : b);
+    }
+    updated = updated.filter((b: any) => !String(b.id).startsWith("temp-"));
     memoryCache["/bills"] = updated;
     notifyCacheUpdate("/bills", updated);
   },
