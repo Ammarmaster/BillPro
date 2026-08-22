@@ -1437,36 +1437,6 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     tid = order["tenant_id"]
     tbl_num = order.get("table_number", "-")
 
-    # If QR order is marked served, ensure sales are accounted for idempotently in db.bills
-    if payload.status == "served" and (order.get("created_by") == "guest" or order.get("order_source") == "qr_web"):
-        existing_bill = await db.bills.find_one({"order_id": oid, "tenant_id": tid})
-        if not existing_bill:
-            bill_id = str(uuid.uuid4())
-            bill_doc = {
-                "id": bill_id,
-                "tenant_id": tid,
-                "order_id": oid,
-                "session_id": order.get("session_id", ""),
-                "customer_name": order.get("customer_name", "Guest"),
-                "table_number": tbl_num,
-                "items": order.get("items", []),
-                "subtotal": float(order.get("subtotal", 0.0)),
-                "tax_percent": 0.0,
-                "tax": 0.0,
-                "cgst": 0.0,
-                "sgst": 0.0,
-                "gst_enabled": False,
-                "discount": 0.0,
-                "total": float(order.get("subtotal", 0.0)),
-                "upi_url": "",
-                "status": "paid",
-                "payment_method": order.get("payment_method") or "online",
-                "created_by": "guest",
-                "created_at": order.get("created_at", datetime.now(timezone.utc).isoformat()),
-                "paid_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await db.bills.insert_one(bill_doc)
-
     dashboard_summary_cache.pop(tid, None)
 
     # Calculate remaining active orders on this table
@@ -1501,6 +1471,7 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     )
     return {
         **order,
+        "status": payload.status,
         "active_orders_remaining": remaining,
         "table_status": tbl_status
     }
@@ -4204,9 +4175,20 @@ async def start_memory_trim_worker():
                         {"id": rest["id"]},
                         {"$set": {"logo_base64_58": l58, "logo_base64_80": l80}}
                     )
+    async def _clean_unpaid_bills():
+        try:
+            # Revert any bills that were falsely marked paid without razorpay or manual cash settlement
+            await db.bills.update_many(
+                {
+                    "created_by": "guest",
+                    "payment_method": {"$in": ["WAITER_QR", "online", "pending", ""]},
+                    "razorpay_payment_id": {"$exists": False}
+                },
+                {"$set": {"status": "pending"}}
+            )
         except Exception as e:
-            logger.warning("Restaurant logo migration error: %s", e)
-    asyncio.create_task(_migrate_restaurant_logos())
+            logger.warning("Unpaid bills cleanup notice: %s", e)
+    asyncio.create_task(_clean_unpaid_bills())
 
 
 @app.on_event("shutdown")
