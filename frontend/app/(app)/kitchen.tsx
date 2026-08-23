@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, SafeAreaView, StatusBar, Platform,
+  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, SafeAreaView, StatusBar, Platform, Alert,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import Animated, { 
@@ -22,6 +22,7 @@ import { useAudioPlayer } from "expo-audio";
 import { api } from "@/src/lib/api";
 import { printKitchenKOT } from "@/src/lib/print";
 import { useNotifications } from "@/src/context/NotificationContext";
+import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius } from "@/src/theme";
 
 type Order = {
@@ -238,6 +239,7 @@ function KdsTicketCard({
 
 export default function Kitchen() {
   const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
   const { theme, isDark } = useTheme();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -549,9 +551,39 @@ export default function Kitchen() {
             </Pressable>
           </View>
           
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+
+            <Pressable
+              style={{
+                backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2",
+                borderColor: isDark ? "rgba(239,68,68,0.3)" : "#FECACA",
+                borderWidth: 1,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+              }}
+              onPress={() => {
+                Alert.alert(
+                  "Sign Out",
+                  "Are you sure you want to log out of the kitchen display?",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Sign Out", style: "destructive", onPress: () => logout() }
+                  ]
+                );
+              }}
+              testID="kitchen-logout-btn"
+            >
+              <Ionicons name="log-out-outline" size={14} color="#EF4444" />
+              <Text style={{ color: "#EF4444", fontSize: 11, fontWeight: "800" }}>Logout</Text>
+            </Pressable>
           </View>
         </View>
 

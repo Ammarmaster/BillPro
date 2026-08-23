@@ -116,8 +116,9 @@ export default function WaiterScreen() {
         const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
         const kSettings = await getPrinterSettings("kitchen");
         const cSettings = await getPrinterSettings("cashier");
-        const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
-                            (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+        const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
+        const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
+        const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
         if (shouldPrint) {
           await printKitchenKOT(finalOrder);
         }
@@ -347,6 +348,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       const tblLabel = table.trim();
       const orderSubtotal = lines.reduce((acc, item) => acc + (item.price * item.quantity), 0);
       const tempId = activeOrder?.id || "temp-" + Date.now();
+      const orderItems = [...lines];
 
       // Instant optimistic order
       const optimisticOrder = {
@@ -355,51 +357,63 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
         table_number: tblLabel,
         session_id: sessId,
         customer_name: guestName,
-        items: [...lines],
+        items: orderItems,
         subtotal: orderSubtotal,
         status: activeOrder?.status || "placed",
         created_at: activeOrder?.created_at || new Date().toISOString(),
       };
 
-      // 0ms Instant UI Transition & 0ms KOT Printing
+      // 1. 0ms INSTANT UI Transition - Switch to table details immediately!
       setLines([]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       
       const tblObj = tables.find(t => isSameTable(t.label, tblLabel)) || { id: "temp-tbl", label: tblLabel, status: "occupied", seats: 4 };
       setSelectedTableObj(tblObj);
-      let realOrder: any;
-      if (isEdit) {
-        realOrder = await api.updateOrder(activeOrder.id, { items: lines, notes: "", customer_name: guestName });
-      } else {
-        realOrder = await api.createOrder({ table_number: tblLabel, items: lines, notes: "", session_id: sessId, customer_name: guestName });
-      }
-
-      const confirmedOrder = (realOrder && realOrder.id) ? realOrder : optimisticOrder;
       setTable(tblLabel);
-      setActiveOrder(confirmedOrder);
+      setActiveOrder(optimisticOrder);
       setTables(prev => prev.map(t => isSameTable(t.label, tblLabel) ? { ...t, status: "occupied" } : t));
-      setOrders(prev => [confirmedOrder, ...prev.filter(o => o.id !== tempId && o.id !== confirmedOrder.id)]);
-      api.injectCachedOrder(confirmedOrder);
+      setOrders(prev => [optimisticOrder, ...prev.filter(o => o.id !== tempId)]);
+      api.injectCachedOrder(optimisticOrder);
       setViewMode("order_details");
+      setBusy(false);
 
-      // Fire 0ms Instant Kitchen KOT Auto-Print
+      // 2. Fire 0ms Instant Kitchen KOT Auto-Print
       (async () => {
         try {
           const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
           const kSettings = await getPrinterSettings("kitchen");
           const cSettings = await getPrinterSettings("cashier");
-          const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
-                              (cSettings && cSettings.type !== "none" && cSettings.auto_print);
+          const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
+          const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
+          const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
           if (shouldPrint) {
-            await printKitchenKOT(confirmedOrder);
+            await printKitchenKOT(optimisticOrder);
           }
         } catch (printErr) {
           console.warn("Instant KOT auto-print error:", printErr);
         }
       })();
+
+      // 3. Network Background Sync
+      (async () => {
+        try {
+          let realOrder: any;
+          if (isEdit) {
+            realOrder = await api.updateOrder(activeOrder.id, { items: orderItems, notes: "", customer_name: guestName });
+          } else {
+            realOrder = await api.createOrder({ table_number: tblLabel, items: orderItems, notes: "", session_id: sessId, customer_name: guestName });
+          }
+          if (realOrder && realOrder.id) {
+            setActiveOrder(realOrder);
+            setOrders(prev => [realOrder, ...prev.filter(o => o.id !== tempId && o.id !== realOrder.id)]);
+            api.injectCachedOrder(realOrder);
+          }
+        } catch (syncErr: any) {
+          console.warn("Background order sync error:", syncErr);
+        }
+      })();
     } catch (e: any) {
       setErr(e.message || "Failed to place order.");
-    } finally {
       setBusy(false);
     }
   };
@@ -749,6 +763,34 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
               >
                 <Ionicons name="print-outline" size={16} color="#F59E0B" />
                 <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "800" }}>Printer</Text>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2",
+                  borderColor: isDark ? "rgba(239,68,68,0.3)" : "#FECACA",
+                  borderWidth: 1,
+                  paddingHorizontal: 10,
+                  paddingVertical: 7,
+                  borderRadius: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                onPress={() => {
+                  Alert.alert(
+                    "Sign Out",
+                    "Are you sure you want to log out of your account?",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Sign Out", style: "destructive", onPress: () => logout() }
+                    ]
+                  );
+                }}
+                testID="waiter-logout-btn"
+              >
+                <Ionicons name="log-out-outline" size={16} color="#EF4444" />
+                <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "800" }}>Logout</Text>
               </Pressable>
             </View>
           </View>

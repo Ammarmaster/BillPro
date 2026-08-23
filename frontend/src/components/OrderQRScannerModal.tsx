@@ -145,19 +145,17 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
       } catch {}
     }
 
-    // If local JSON parsing was insufficient, resolve from backend
-    if (!parsedOrder || !parsedOrder.items || parsedOrder.items.length === 0) {
-      try {
-        const res = await api.resolveQrOrder(raw);
-        if (res && res.items && res.items.length > 0) {
-          parsedOrder = res;
-          if (res.table_number && !tblNum) {
-            tblNum = res.table_number;
-          }
+    // Resolve order details & items from backend
+    try {
+      const res = await api.resolveQrOrder(raw);
+      if (res && res.items && res.items.length > 0) {
+        parsedOrder = res;
+        if (res.table_number && !tblNum) {
+          tblNum = res.table_number;
         }
-      } catch (resErr: any) {
-        console.warn("Backend QR resolve notice:", resErr);
       }
+    } catch (resErr: any) {
+      console.warn("Backend QR resolve notice:", resErr);
     }
 
     // Local Restaurant context validation
@@ -175,17 +173,17 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
       return;
     }
 
-    const assignedTable = tblNum || parsedOrder.table_number || "1";
-    const orderId = parsedOrder?.order_id || parsedOrder?.id || `qr_${Date.now()}`;
-    const orderNum = parsedOrder?.order_number || String(Math.floor(100 + Math.random() * 900));
+    const assignedTable = tblNum || parsedOrder.table_number || parsedOrder.tableName || "1";
+    const orderId = parsedOrder?.orderId || parsedOrder?.order_id || parsedOrder?.id || `qr_${Date.now()}`;
+    const orderNum = parsedOrder?.order_number || (typeof orderId === "string" ? orderId.slice(0, 4).toUpperCase() : "101");
     const orderItems = parsedOrder?.items || [];
-    const subtotal = parsedOrder?.subtotal || orderItems.reduce((sum: number, x: any) => sum + (Number(x.price || 0) * Number(x.quantity || 1)), 0);
+    const subtotal = Number(parsedOrder?.total ?? parsedOrder?.subtotal ?? orderItems.reduce((sum: number, x: any) => sum + (Number(x.price || 0) * Number(x.quantity || 1)), 0));
 
     const readyOrder = {
       id: orderId,
       order_number: orderNum,
       table_number: assignedTable,
-      customer_name: parsedOrder?.customer_name || "Guest",
+      customer_name: parsedOrder?.customerName || parsedOrder?.customer_name || "Guest",
       session_id: parsedOrder?.session_id || `tsess_${Date.now()}`,
       items: orderItems,
       notes: parsedOrder?.notes || "",
@@ -212,26 +210,20 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
       table_number: assignedTable,
     };
 
-    // 1. Immediately Close Modal and Attach in 0ms!
-    onClose();
     try {
-      await onScanSuccess(finalOrder, assignedTable);
+      const opId = `op_confirm_${finalOrder.id}_${Date.now()}`;
+      const res = await api.confirmQrOrder(rawScannedPayload, assignedTable, opId, targetTableId || undefined).catch(() => null);
+      const confirmedOrder = (res && res.order) ? res.order : finalOrder;
+      
+      onClose();
+      await onScanSuccess(confirmedOrder, assignedTable);
     } catch (cbErr) {
-      console.warn("onScanSuccess callback error:", cbErr);
+      console.warn("Confirm error:", cbErr);
+      onClose();
+      await onScanSuccess(finalOrder, assignedTable);
+    } finally {
+      setBusy(false);
     }
-
-    // 2. Background Authoritative Network Confirmation
-    (async () => {
-      try {
-        const opId = `op_confirm_${finalOrder.id}_${Date.now()}`;
-        const res = await api.confirmQrOrder(rawScannedPayload, assignedTable, opId, targetTableId || undefined);
-        if (res && res.order) {
-          api.updateCachedOrder(finalOrder.id, res.order);
-        }
-      } catch (e: any) {
-        console.warn("Background QR confirm sync error:", e);
-      }
-    })();
   };
 
   const handleBarcodeScanned = ({ data }: { data: string }) => {

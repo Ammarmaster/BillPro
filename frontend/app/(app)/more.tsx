@@ -174,7 +174,7 @@ export default function More() {
             <Pressable 
               style={styles.rowItem} 
               onPress={() => {
-                if (api.hasFeature("advanced_reports")) {
+                if (api.hasFeature("analytics") || api.hasFeature("advanced_reports")) {
                   router.push("/(app)/analytics");
                 } else {
                   setShowUpgradeModal(true);

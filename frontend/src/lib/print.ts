@@ -124,14 +124,6 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
 export const DEFAULT_EZBILL_LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQAAAADrRVxmAAACjElEQVR4nM2Vv2sUQRTHvzO3p3eoeIJHEEUXKyHEuzKg4PoXGAiKjWhn4X9gk9U/QLSyjZ2SJpVilWtEuxxaWCiyGJBoILkiMae5vSfz3szu3CS52OkrNnfffN6792tmgX9iyjzqVxIA+uxNAJERTt9aRI7hzzgTikVjif0bOyFKyzD7WMLP2hiiNhpzD1P8lN/ax1JTwjgA435ArOGSIWM9qwI4XH7UTJ2YC4i77LJpeiXENMsVSiNE6AEV6eVW3XlE7EFr5MpSIqx/4kRj4JwIGzRvYmRAX8BvbzEQoiUEUaKFaAvxtAk91F7FL2aTIbQh7ogw+RkaHpE3V1IhVEeEyYsY+sT36x+4fK7jl1JqauE87wZvyQ4Ba8eeWIKALaXU7MvnrmtEXf7QKQXTval7CAmUg+yFQjcUGiPC0F9GDaAKky4VEKq2XfBijFqVAYnkE+neLhrgYYzYEY6R74pxoJCHwu9Q2CwF2YbVMs4EZ24HJi6klLYTFyLn1AYloR5UlFLFgk9QzovYTz2BFxHWxQxl24xx3goXAJwKa9kxabQ9oepmpyUxYMYGE6GCLzPePdGiPMVxIlq1908GtcQ5ZGXqV1V7/VXmNvS2HBaid1Yw7rRsYxgXd7BQxrBfYl9wROSEzqVOs+43eaMIGssYDJ750y8JyBDTgojNrhMt//jIBFcy56WuTXsSLzGYO/RaQURyCL8CJMRQghzlthETnPo2uSM0KK+/VypGYyzfsB5bu901RxdmnR6/fN0Zu8GdvTnrtAepnplcS/0Ae4orL0+lZzf8S+23+O0sOeN9Ajqr3slDh9a9Dj4ifu95RHufefH5M8+/HTqiEzqZ4ph52bywAdLkdxvif7A9XHChgusoMPAAAAABJRU5ErkJggg==";
 
 export function getBillLogo(snapshot?: any, width: number = 80): string | null {
-  if (snapshot) {
-    if (width === 58 && snapshot.logo_base64_58) {
-      return snapshot.logo_base64_58;
-    }
-    if (width === 80 && snapshot.logo_base64_80) {
-      return snapshot.logo_base64_80;
-    }
-  }
   return null;
 }
 
@@ -195,12 +187,6 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     // CUSTOMER BILL RECEIPT — MATCHING GENERATED BILL
     // ==========================================
     const r = data.restaurant_snapshot || {};
-    const customLogo = getBillLogo(r, width);
-    
-    // Only print logo if compact pre-scaled logo exists
-    if (customLogo) {
-      lines.push(`[C]<img>data:image/png;base64,${customLogo}</img>\n`);
-    }
     
     // Restaurant Header (Master cheff style - Strictly Centered)
     lines.push(`[C]<b><font size='big'>${(r.name || "MASTER CHEFF").toUpperCase()}</font></b>\n`);
@@ -335,10 +321,26 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
 export async function printKitchenKOT(order: any, isManual = false): Promise<boolean> {
   if (!order) return false;
 
-  // Strict Guard: Never auto-print if order is already past "placed" / "new" status
-  if (!isManual && order.status && order.status !== "placed" && order.status !== "new") {
-    console.log("[PRINT] Suppressed KOT print for non-placed order status:", order.status);
-    return false;
+  const kSettings = await getPrinterSettings("kitchen");
+  const cSettings = await getPrinterSettings("cashier");
+
+  const hasKitchenPrinter = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
+  const hasCashierPrinter = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
+
+  // Strict Auto-Print Setting Guard:
+  // If NOT a manual print, verify that auto_print is turned ON
+  if (!isManual) {
+    const isAutoPrintEnabled = hasKitchenPrinter ? !!kSettings?.auto_print : (hasCashierPrinter ? !!cSettings?.auto_print : false);
+    if (!isAutoPrintEnabled) {
+      console.log("[PRINT] Suppressed KOT print: auto_print is disabled in printer settings.");
+      return false;
+    }
+
+    // Never auto-print if order is already past "placed" / "new" status
+    if (order.status && order.status !== "placed" && order.status !== "new") {
+      console.log("[PRINT] Suppressed KOT print for non-placed order status:", order.status);
+      return false;
+    }
   }
 
   const orderSig = getOrderPrintSignature(order);
@@ -366,14 +368,12 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   
   // 1. Try dedicated kitchen printer first
-  const kSettings = await getPrinterSettings("kitchen");
-  if (kSettings && kSettings.type !== "none" && kSettings.type !== "system") {
+  if (hasKitchenPrinter) {
     return await printThermalDirect("kitchen", order, true);
   }
   
   // 2. If no kitchen printer is configured, fallback to cashier printer
-  const cSettings = await getPrinterSettings("cashier");
-  if (cSettings && cSettings.type !== "none" && cSettings.type !== "system") {
+  if (hasCashierPrinter) {
     return await printThermalDirect("cashier", order, true);
   }
 
@@ -686,7 +686,6 @@ export function billHtml(bill: any): string {
       .center { text-align:center; }
       .l { text-align:left; }
       .r { text-align:right; }
-      .logo { max-width:44px; max-height:44px; object-fit:contain; margin:0 auto 6px; display:block; border-radius: 4px; }
       h1 { font-size:18px; margin:4px 0 2px; text-transform:uppercase; font-weight:900; text-align:center; letter-spacing: 0.5px; }
       p.small { font-size:11px; color:#555; margin:2px 0; text-align:center; }
       table { width:100%; border-collapse:collapse; margin-top:8px; }
@@ -699,7 +698,6 @@ export function billHtml(bill: any): string {
       .payment-row td { font-size:12.5px; font-weight:700; color:#111; padding-top:6px; }
       .footer { text-align:center; margin-top:14px; font-size:11.5px; color:#555; font-weight:600; }
     </style></head><body>
-      ${logoBlock ? `<div class="center">${logoBlock}</div>` : ""}
       <h1>${escapeHtml(r.name || "RESTAURANT")}</h1>
       ${r.address ? `<p class="small">${escapeHtml(r.address)}</p>` : ""}
       ${(r.phone && r.phone2) ? `<p class="small">Tel: ${escapeHtml(r.phone)} / ${escapeHtml(r.phone2)}</p>` : (r.phone ? `<p class="small">Tel: ${escapeHtml(r.phone)}</p>` : (r.phone2 ? `<p class="small">Tel: ${escapeHtml(r.phone2)}</p>` : ""))}

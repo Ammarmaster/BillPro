@@ -198,7 +198,7 @@ export default function Analytics() {
     }
   };
 
-  const showLock = !api.hasFeature("analytics");
+  const showLock = !api.hasFeature("analytics") && !api.hasFeature("advanced_reports");
 
   if (showLock) {
     return (

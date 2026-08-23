@@ -508,13 +508,15 @@ export default function Billing() {
           <View style={[styles.billCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
             
             {/* Centered Logo block */}
-            <View style={{ alignItems: "center", marginBottom: spacing.md }}>
-              <Image
-                source={{ uri: `data:image/png;base64,${logoBase64}` }}
-                style={styles.previewLogo}
-                contentFit="contain"
-              />
-            </View>
+            {!!logoBase64 && (
+              <View style={{ alignItems: "center", marginBottom: spacing.md }}>
+                <Image
+                  source={{ uri: `data:image/png;base64,${logoBase64}` }}
+                  style={styles.previewLogo}
+                  contentFit="contain"
+                />
+              </View>
+            )}
 
             <Text style={[styles.restaurantHeaderTitle, { color: theme.onSurface }]}>{restaurantName}</Text>
             {!!restaurantAddress && (

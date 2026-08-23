@@ -1925,36 +1925,25 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
     if not order:
         raise HTTPException(status_code=404, detail="Order not found. Please verify the QR code.")
 
-    if order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"]:
-        raise HTTPException(status_code=400, detail="Order already confirmed.")
-    elif order.get("status") == "cancelled":
+    if order.get("status") == "cancelled":
         raise HTTPException(status_code=400, detail="Order is already cancelled.")
 
-    created_at_str = order.get("created_at")
-    if created_at_str:
-        try:
-            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) - created_at > timedelta(hours=2):
-                raise HTTPException(status_code=400, detail="This order QR has expired. Please generate a new QR.")
-        except HTTPException:
-            raise
-        except Exception:
-            pass
-
-    table_num = data.get("table_number") or order.get("table_number")
-    table_id = data.get("table_id") or order.get("table_id")
+    table_num = data.get("table_number") or order.get("table_number") or "1"
+    table_id = data.get("table_id") or order.get("table_id") or ""
     
     table = None
     if table_id:
         table = await db.tables.find_one({"tenant_id": tid, "id": table_id})
     if not table and table_num:
         table = await db.tables.find_one({"tenant_id": tid, "label": table_num})
+    if not table and table_num:
+        clean_lbl = str(table_num).replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
+        if clean_lbl:
+            table = await db.tables.find_one({"tenant_id": tid, "label": {"$in": [clean_lbl, f"Table {clean_lbl}", f"T-{clean_lbl}"]}})
         
-    if not table:
-        raise HTTPException(status_code=400, detail="This table/order is no longer available.")
-
-    table_num = table["label"]
-    table_id = table["id"]
+    if table:
+        table_num = table.get("label", table_num)
+        table_id = table.get("id", table_id)
 
     items = []
     for it in order.get("items") or []:
@@ -1962,19 +1951,30 @@ async def qr_resolve_order(payload: QRResolveIn, current_user: dict = Depends(ge
             "id": it.get("menu_item_id") or it.get("id") or "",
             "name": it.get("name") or "",
             "quantity": it.get("quantity") or 1,
-            "price": it.get("price") or 0
+            "price": float(it.get("price", 0.0))
         })
+
+    subtot = float(order.get("subtotal", 0.0))
+    if subtot == 0.0 and items:
+        subtot = sum(float(it.get("price", 0.0)) * int(it.get("quantity", 1)) for it in items)
 
     return {
         "success": True,
         "orderId": order.get("id"),
+        "id": order.get("id"),
+        "order_number": order.get("order_number") or order.get("id")[:4].upper(),
         "restaurantId": order.get("tenant_id"),
-        "tableId": table_id,
-        "tableName": f"Table {table_num}",
+        "tableId": table_id or "temp-tbl",
+        "table_id": table_id or "temp-tbl",
+        "tableName": f"Table {table_num}" if not str(table_num).lower().startswith("table") else table_num,
+        "table_number": table_num,
         "customerName": order.get("customer_name") or "Guest 1",
+        "customer_name": order.get("customer_name") or "Guest 1",
         "items": items,
-        "total": order.get("subtotal") or 0,
-        "status": order.get("status") or "pending_scan",
+        "total": subtot,
+        "subtotal": subtot,
+        "status": order.get("status") or "placed",
+        "already_confirmed": order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"],
     }
 
 
@@ -2008,21 +2008,23 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         raise HTTPException(status_code=404, detail="Order not found.")
 
     table_num = payload.table_number or data.get("table_number") or order.get("table_number") or "1"
-    table_id = payload.table_id or data.get("table_id") or order.get("table_id")
+    table_id = payload.table_id or data.get("table_id") or order.get("table_id") or ""
     
     table = None
     if table_id:
         table = await db.tables.find_one({"tenant_id": tid, "id": table_id})
     if not table and table_num:
         table = await db.tables.find_one({"tenant_id": tid, "label": table_num})
+    if not table and table_num:
+        clean_lbl = str(table_num).replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
+        if clean_lbl:
+            table = await db.tables.find_one({"tenant_id": tid, "label": {"$in": [clean_lbl, f"Table {clean_lbl}", f"T-{clean_lbl}"]}})
         
-    if not table:
-        raise HTTPException(status_code=400, detail="This table/order is no longer available.")
+    if table:
+        table_num = table.get("label", table_num)
+        table_id = table.get("id", table_id)
 
-    table_num = table["label"]
-    table_id = table["id"]
-
-    if order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"]:
+    if order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"] and order.get("table_number") == table_num:
         order.pop("_id", None)
         res = {
             "success": True,
@@ -2038,15 +2040,12 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         raise HTTPException(status_code=400, detail="Order is already cancelled.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    result = await db.orders.update_one(
-        {
-            "id": order["id"],
-            "status": "pending_scan"
-        },
+    await db.orders.update_one(
+        {"id": order["id"], "tenant_id": tid},
         {
             "$set": {
                 "table_number": table_num,
-                "table_id": table_id,
+                "table_id": table_id or "temp-tbl",
                 "status": "placed",
                 "qr_imported": True,
                 "imported_at": now_iso,
@@ -2055,22 +2054,8 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
         }
     )
 
-    if result.modified_count == 0:
-        re_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
-        if re_order and re_order.get("status") in ["placed", "paid", "completed", "in_kitchen", "ready"]:
-            res = {
-                "success": True,
-                "already_confirmed": True,
-                "message": f"Order #{re_order['id'][:8].upper()} was already confirmed by another device.",
-                "order": re_order
-            }
-            if op_id:
-                await db.processed_operations.insert_one({"id": op_id, "response": res, "created_at": datetime.now(timezone.utc).isoformat()})
-            return res
-        raise HTTPException(status_code=400, detail="Order could not be confirmed. It might be already processed or inactive.")
-
-    # Mark the stable table status as occupied in the database
-    await db.tables.update_one({"id": table_id, "tenant_id": tid}, {"$set": {"status": "occupied"}})
+    if table_id and table:
+        await db.tables.update_one({"id": table_id, "tenant_id": tid}, {"$set": {"status": "occupied"}})
 
     updated_order = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
 
@@ -2093,6 +2078,8 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
     if op_id:
         try:
             await db.processed_operations.insert_one({"id": op_id, "response": res, "created_at": datetime.now(timezone.utc).isoformat()})
+        except Exception:
+            pass
         except Exception:
             pass
 

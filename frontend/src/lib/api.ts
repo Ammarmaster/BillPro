@@ -54,7 +54,7 @@ async function delDiskCache(k: string) {
 // Synchronous disk hydration on Web and startup
 if (Platform.OS === "web" && typeof window !== "undefined") {
   try {
-    const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants"];
+    const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants", "/subscriptions/mine"];
     for (const k of keys) {
       const v = window.localStorage.getItem("disk_cache_" + k);
       if (v) memoryCache[k] = JSON.parse(v);
@@ -62,7 +62,7 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
   } catch {}
 } else if (Platform.OS !== "web") {
   // Asynchronous pre-hydration on Native
-  const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants"];
+  const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants", "/subscriptions/mine"];
   for (const k of keys) {
     AsyncStorage.getItem("disk_cache_" + k).then(v => {
       if (v) {
@@ -671,26 +671,27 @@ export const api = {
   },
   hasFeature: (featureName: string): boolean => {
     const sub = memoryCache["/subscriptions/mine"];
-    if (!sub) return false;
-    if (sub.status === "active") {
-      const plan = String(sub.plan_id).toLowerCase();
+    if (!sub) return true; // Default permissive on boot while caching
+    const status = String(sub.status || "").toLowerCase();
+    if (status === "active" || status === "trialing" || !status) {
+      const plan = String(sub.plan_id || sub.plan_name || sub.plan || "pro").toLowerCase();
+      // Pro Tier contains everything from Starter + Growth + Pro (100% unlocked)
       if (plan.includes("pro")) {
-        return [
-          "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup",
-          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "inventory", "expenses", "ai_menu",
-          "qr_web_menu", "customer_ordering", "table_qr", "waiter_qr_confirmation", "advanced_permissions", "audit_logs", "advanced_ai", "api_integrations"
-        ].includes(featureName);
+        return true;
       }
+      // Growth Tier contains Starter + Growth features
       if (plan.includes("growth")) {
-        return [
+        const growthFeatures = [
           "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup",
-          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "inventory", "expenses", "ai_menu"
-        ].includes(featureName);
+          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "advanced_reports", "inventory", "expenses", "ai_menu"
+        ];
+        return growthFeatures.includes(featureName);
       }
-      // Starter
-      return [
+      // Starter Tier
+      const starterFeatures = [
         "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup"
-      ].includes(featureName);
+      ];
+      return starterFeatures.includes(featureName);
     }
     return false;
   },
