@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, EmailStr
 import time
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
+from bson import ObjectId
 
 from billing_engine import calculate_bill
 
@@ -142,16 +143,37 @@ async def send_expo_push_notifications(push_tokens: list[str], title: str, body:
         print("Failed to dispatch push notification task:", e)
 
 
+def sanitize_doc(doc):
+    if isinstance(doc, list):
+        return [sanitize_doc(item) for item in doc]
+    if isinstance(doc, dict):
+        clean = {}
+        for k, v in doc.items():
+            if k == "_id":
+                continue
+            if isinstance(v, ObjectId):
+                clean[k] = str(v)
+            elif isinstance(v, (dict, list)):
+                clean[k] = sanitize_doc(v)
+            else:
+                clean[k] = v
+        return clean
+    if isinstance(doc, ObjectId):
+        return str(doc)
+    return doc
+
+
 async def notify_tenant(tenant_id: str, category: str, title: str, message: str, data: dict = None):
     if not tenant_id:
         return
+    clean_data = sanitize_doc(data or {})
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "category": category,  # sales | kitchen | waiter | cashier | system | payment
         "title": title,
         "message": message,
-        "data": data or {},
+        "data": clean_data,
         "is_read": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1407,6 +1429,8 @@ def parse_db_datetime(ts):
     if isinstance(ts, datetime):
         return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
     if isinstance(ts, (int, float)):
+        if ts > 1e11:
+            ts = ts / 1000.0
         return datetime.fromtimestamp(ts, tz=timezone.utc)
     ts_str = str(ts).strip()
     if not ts_str:
@@ -1417,42 +1441,58 @@ def parse_db_datetime(ts):
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     except Exception:
         pass
+    for fmt in [
+        "%d/%m/%Y, %H:%M:%S",
+        "%d/%m/%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M:%S",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+    ]:
+        try:
+            clean_ts = ts_str.replace(",", "").strip()
+            dt = datetime.strptime(clean_ts, fmt.replace(",", ""))
+            return dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
     try:
-        dt = datetime.strptime(ts_str[:10], "%Y-%m-%d")
-        return dt.replace(tzinfo=timezone.utc)
+        num = float(ts_str)
+        if num > 1e11:
+            num = num / 1000.0
+        return datetime.fromtimestamp(num, tz=timezone.utc)
     except Exception:
-        return None
+        pass
+    return None
 
 
 def is_timestamp_in_current_business_day(ts):
+    if not ts:
+        return False
     dt = parse_db_datetime(ts)
     if not dt:
         return False
     ist_offset = timedelta(hours=5, minutes=30)
     dt_ist = dt.astimezone(timezone(ist_offset))
     now_ist = datetime.now(timezone(ist_offset))
-    
-    if now_ist.hour >= 1:
-        cutoff_ist = now_ist.replace(hour=1, minute=0, second=0, microsecond=0)
-    else:
-        cutoff_ist = (now_ist - timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
+    return dt_ist.date() == now_ist.date()
         
-    return dt_ist >= cutoff_ist
+_auto_clear_last_run: dict[str, float] = {}
 
-
-async def _auto_clear_kitchen_orders(tid: str):
+async def _auto_clear_kitchen_orders(tid: str, force: bool = False):
+    now_ts = time.time()
+    if not force and (now_ts - _auto_clear_last_run.get(tid, 0) < 600.0):
+        return
+    _auto_clear_last_run[tid] = now_ts
     try:
         ist_offset = timedelta(hours=5, minutes=30)
         now_ist = datetime.now(timezone(ist_offset))
-        if now_ist.hour >= 1:
-            cutoff_ist = now_ist.replace(hour=1, minute=0, second=0, microsecond=0)
-        else:
-            cutoff_ist = (now_ist - timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
+        cutoff_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
         cutoff_utc = cutoff_ist - ist_offset
         cutoff_iso = cutoff_utc.isoformat()
         now_iso = datetime.now(timezone.utc).isoformat()
         
-        # 1. Close/archive lingering orders created before today's 1 AM business day cutoff
+        # 1. Close/archive lingering orders created before today's 12:00 AM (00:00) business day cutoff
         res = await db.orders.update_many({
             "tenant_id": tid,
             "status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]},
@@ -1460,7 +1500,7 @@ async def _auto_clear_kitchen_orders(tid: str):
                 {"created_at": {"$lt": cutoff_iso}},
                 {"created_at": {"$lt": cutoff_ist.isoformat()}}
             ]
-        }, {"$set": {"status": "completed", "auto_cleared_at": now_iso, "clear_reason": "Daily 1 AM business reset"}})
+        }, {"$set": {"status": "completed", "auto_cleared_at": now_iso, "clear_reason": "Daily 12 AM business reset"}})
         
         # 2. Reset tables to available if no active orders from today's business cycle exist
         active_orders = await db.orders.find({
@@ -2512,14 +2552,18 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
     if tbl_num:
         tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
 
-    # 1. Find all active orders being settled for this table
-    if payload.order_ids and len(payload.order_ids) > 0:
+    # 1. Find all active orders being settled for this table (clean temp IDs)
+    clean_order_ids = [oid for oid in (payload.order_ids or []) if oid and not str(oid).startswith("temp-")]
+    active_orders = []
+    if clean_order_ids:
         active_orders = await db.orders.find({
-            "id": {"$in": payload.order_ids},
+            "id": {"$in": clean_order_ids},
             "tenant_id": tid,
             "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
-    else:
+
+    # If order_ids was temp or returned no orders, search all active orders for this table directly
+    if not active_orders:
         active_orders = await db.orders.find({
             "tenant_id": tid,
             "table_number": {"$in": tbl_patterns},
@@ -2530,13 +2574,20 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
 
     # 2. For any active order that does not have a bill, create a paid bill in db.bills to guarantee revenue tracking
     for o in active_orders:
-        existing_b = await db.bills.find_one({"order_id": o["id"], "tenant_id": tid})
+        existing_b = await db.bills.find_one({
+            "$or": [
+                {"order_id": o["id"]},
+                {"order_ids": o["id"]}
+            ],
+            "tenant_id": tid
+        })
         if not existing_b:
             bill_id = str(uuid.uuid4())
             bill_doc = {
                 "id": bill_id,
                 "tenant_id": tid,
                 "order_id": o["id"],
+                "order_ids": [o["id"]],
                 "session_id": o.get("session_id", ""),
                 "customer_name": o.get("customer_name", "Guest"),
                 "table_number": o.get("table_number", payload.table_number),
@@ -2627,8 +2678,8 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     bill = await db.bills.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
     
     if not bill:
-        # Fallback: check if bid is an order_id
-        bill = await db.bills.find_one({"order_id": bid, "tenant_id": tid}, {"_id": 0})
+        # Fallback: check if bid is an order_id or in order_ids
+        bill = await db.bills.find_one({"$or": [{"order_id": bid}, {"order_ids": bid}], "tenant_id": tid}, {"_id": 0})
         if bill:
             await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
             bill["status"] = "paid"
@@ -2725,7 +2776,22 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
 @api.get("/bills")
 async def list_bills(filter: Optional[str] = None, user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.now(timezone(ist_offset))
+    start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_7d_utc = (start_today_ist - ist_offset) - timedelta(days=7)
+    start_7d_iso = start_7d_utc.isoformat()
+
+    bills = await db.bills.find({
+        "tenant_id": tid,
+        "$or": [
+            {"paid_at": {"$gte": start_7d_iso}},
+            {"created_at": {"$gte": start_7d_iso}},
+            {"status": "pending"}
+        ]
+    }, {
+        "_id": 0, "restaurant_snapshot": 0
+    }).sort("created_at", -1).to_list(1000)
     for b in bills:
         b["is_today"] = is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"))
     if filter == "today":
@@ -2741,7 +2807,7 @@ async def list_notifications(category: Optional[str] = None, user: dict = Depend
     if category:
         q["category"] = category
     notifs = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(50)
-    return notifs
+    return sanitize_doc(notifs)
 
 
 @api.patch("/notifications/{nid}/read")
@@ -2810,15 +2876,32 @@ async def test_push_notification(payload: dict, user: dict = Depends(get_current
 @api.get("/dashboard/summary")
 async def dashboard_summary(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    await _auto_clear_kitchen_orders(tid)
+    try:
+        asyncio.create_task(_auto_clear_kitchen_orders(tid))
+    except Exception:
+        pass
     
     # 3-second cache
     cached = dashboard_summary_cache.get(tid)
     if cached and (time.time() - cached[0] < 3.0):
         return cached[1]
 
-    # 1. Fetch all orders for this tenant
-    all_orders = await db.orders.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.now(timezone(ist_offset))
+    start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_7d_utc = (start_today_ist - ist_offset) - timedelta(days=7)
+    start_7d_iso = start_7d_utc.isoformat()
+
+    # 1. Fetch orders for this tenant with lean projection
+    all_orders = await db.orders.find({
+        "tenant_id": tid,
+        "$or": [
+            {"created_at": {"$gte": start_7d_iso}},
+            {"status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]}}
+        ]
+    }, {
+        "_id": 0, "status": 1, "created_at": 1, "table_number": 1, "subtotal": 1
+    }).sort("created_at", -1).to_list(1000)
     today_orders = [o for o in all_orders if is_timestamp_in_current_business_day(o.get("created_at"))]
     
     orders_today = len(today_orders)
@@ -2836,9 +2919,29 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     occupied_tables = len(active_tables)
     tables_free = max(0, total_tables - occupied_tables) if total_tables > 0 else 5
 
-    # 2. Fetch all bills for this tenant
-    all_bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(2000)
-    paid_bills = [b for b in all_bills if str(b.get("status", "")).lower() == "paid"]
+    # 2. Fetch bills for this tenant with targeted 7-day + today + pending filter
+    all_bills = await db.bills.find({
+        "tenant_id": tid,
+        "$or": [
+            {"paid_at": {"$gte": start_7d_iso}},
+            {"created_at": {"$gte": start_7d_iso}},
+            {"status": "pending"}
+        ]
+    }, {
+        "_id": 0, "status": 1, "total": 1, "created_at": 1, "paid_at": 1, "created_by": 1, "order_id": 1, "order_ids": 1, "items.name": 1, "items.quantity": 1, "items.price": 1
+    }).sort("created_at", -1).to_list(1000)
+    
+    # Deduplicate paid bills to guarantee no duplicate sales counting
+    seen_order_ids = set()
+    paid_bills = []
+    for b in all_bills:
+        if str(b.get("status", "")).lower() != "paid":
+            continue
+        oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
+        if oids and oids.issubset(seen_order_ids):
+            continue
+        seen_order_ids.update(oids)
+        paid_bills.append(b)
     
     revenue_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills), 2)
     paid_bills_count = len(paid_bills)
@@ -4008,7 +4111,7 @@ async def customer_submit_feedback(payload: CustomerFeedbackIn, authorization: O
 @api.get("/dashboard/feedback")
 async def get_dashboard_feedback(user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
-    feedbacks = await db.customer_feedback.find({"tenant_id": tid}).sort("created_at", -1).to_list(200)
+    feedbacks = await db.customer_feedback.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return feedbacks
 
 
@@ -4090,9 +4193,20 @@ async def seed_super_admin():
         await db.bills.create_index([("tenant_id", 1), ("order_id", 1)])
         await db.bills.create_index([("tenant_id", 1), ("table_number", 1), ("status", 1)])
         await db.bills.create_index([("tenant_id", 1), ("created_at", -1)])
+        await db.bills.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)])
+        await db.bills.create_index([("tenant_id", 1), ("paid_at", -1)])
+        await db.notifications.create_index([("tenant_id", 1), ("category", 1), ("created_at", -1)])
+        await db.notifications.create_index([("tenant_id", 1), ("is_read", 1)])
         await db.customer_feedback.create_index([("tenant_id", 1), ("created_at", -1)])
         await db.menu_items.create_index([("tenant_id", 1), ("category_id", 1)])
+        await db.menu_items.create_index([("tenant_id", 1), ("is_deleted", 1)])
         await db.tables.create_index([("tenant_id", 1), ("label", 1)])
+        await db.tables.create_index([("tenant_id", 1), ("is_deleted", 1)])
+        await db.categories.create_index([("tenant_id", 1), ("display_order", 1)])
+        await db.users.create_index([("email", 1)], unique=True)
+        await db.users.create_index([("tenant_id", 1)])
+        await db.restaurants.create_index([("id", 1)])
+        await db.subscriptions.create_index([("tenant_id", 1), ("status", 1)])
         await db.processed_operations.create_index([("id", 1)], unique=True)
         await db.processed_operations.create_index([("created_at", 1)])
         logger.info("Database compound indexes verified and active.")

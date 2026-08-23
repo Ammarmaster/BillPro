@@ -70,7 +70,7 @@ interface NotificationContextProps {
 const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
 
 const PREFS_KEY = "lumina_notification_preferences";
-const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-g1th.onrender.com").replace(/\/$/, "");
+const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
 const KITCHEN_ALERT_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
 const PAYMENT_MONEY_SOUND_URL = `${BACKEND_BASE}/static/sounds/payment-money.wav`;
 const GENERAL_NOTIFICATION_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
@@ -132,6 +132,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [user]);
 
   const ws = useRef<WebSocket | null>(null);
+  const isConnectingRef = useRef(false);
+  const backoffAttemptsRef = useRef(0);
   const audioPlayer = useRef<any>(null);
   const reconnectTimer = useRef<any>(null);
   const listeners = useRef<Set<(notif: Notification) => void>>(new Set());
@@ -257,8 +259,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const connectWebSocket = () => {
-    if (!user) return;
-    if (ws.current) return;
+    if (!user || !user.tenant_id) return;
+    if (ws.current || isConnectingRef.current) return;
+    isConnectingRef.current = true;
 
     const base = BACKEND_BASE
       .replace(/\/$/, "")
@@ -268,6 +271,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     console.log("[WS] Connecting to:", wsUrl);
     
     const socket = new WebSocket(wsUrl);
+    ws.current = socket;
     let pingInterval: any = null;
 
     const cleanup = () => {
@@ -279,15 +283,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     socket.onopen = () => {
       console.log("[WS] Connected successfully");
+      isConnectingRef.current = false;
+      backoffAttemptsRef.current = 0;
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
       }
-      // Re-hydrate local caches with a silent refresh on reconnection to catch up on any missed events
-      api.listTables().catch(() => {});
-      api.listOrders().catch(() => {});
-      api.listBills().catch(() => {});
-      api.dashboardSummary().catch(() => {});
       
       // Keep connection active with 20s heartbeat ping
       pingInterval = setInterval(() => {
@@ -310,24 +311,29 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     socket.onclose = () => {
       console.log("[WS] Connection closed");
       cleanup();
+      isConnectingRef.current = false;
       ws.current = null;
       if (userRef.current?.tenant_id) {
-        reconnectTimer.current = setTimeout(connectWebSocket, 5000);
+        backoffAttemptsRef.current += 1;
+        const delay = Math.min(15000, 1000 * Math.pow(2, backoffAttemptsRef.current - 1));
+        console.log(`[WS] Reconnecting in ${delay}ms...`);
+        reconnectTimer.current = setTimeout(connectWebSocket, delay);
       }
     };
 
     socket.onerror = (e) => {
       console.warn("[WS] Socket error:", e);
       cleanup();
-      socket.close();
+      isConnectingRef.current = false;
+      try { socket.close(); } catch {}
     };
-
-    ws.current = socket;
   };
 
   const disconnectWebSocket = () => {
+    isConnectingRef.current = false;
+    backoffAttemptsRef.current = 0;
     if (ws.current) {
-      ws.current.close();
+      try { ws.current.close(); } catch {}
       ws.current = null;
     }
     if (reconnectTimer.current) {
@@ -501,14 +507,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             const first = processedPaymentIds.values().next().value;
             if (first !== undefined) processedPaymentIds.delete(first);
           }
-          const summary = api.getCachedSummary();
-          if (summary && paidAmt > 0) {
-            summary.revenue_today = Number((Number(summary.revenue_today || 0) + paidAmt).toFixed(2));
-            summary.revenue_total = Number((Number(summary.revenue_total || 0) + paidAmt).toFixed(2));
-            summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
-            api.setCachedSummary({ ...summary });
-            api.notifyCacheUpdate("/dashboard/summary", summary);
-          }
+          clearCachePrefix("/dashboard");
+          clearCachePrefix("/bills");
+          api.dashboardSummary().catch(() => {});
         }
       }
     }

@@ -53,6 +53,18 @@ export function safeParseDate(ts: any): Date | null {
       }
       return new Date(year, month, day, hour, min, sec, ms);
     }
+
+    // 4. DD/MM/YYYY or DD-MM-YYYY formats (e.g. "22/08/2026, 20:48:36")
+    const dmyMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      const hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+      const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+      const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+      return new Date(year, month, day, hour, min, sec);
+    }
   } catch {
     return null;
   }
@@ -60,8 +72,8 @@ export function safeParseDate(ts: any): Date | null {
 }
 
 /**
- * Checks if a timestamp belongs to the current restaurant business cycle.
- * Restaurant business cycle begins at 01:00:00 AM local time and runs until 01:00:00 AM next day.
+ * Checks if a timestamp belongs to the current calendar business day (00:00:00 to 23:59:59).
+ * Resets at 12:00 AM midnight standard like BharatPe / Paytm Merchant.
  */
 export function isTodayBusinessDay(ts?: any): boolean {
   if (!ts) return false;
@@ -69,15 +81,11 @@ export function isTodayBusinessDay(ts?: any): boolean {
   if (!d) return false;
 
   const now = new Date();
-  const cutoff = new Date(now);
-  if (now.getHours() >= 1) {
-    cutoff.setHours(1, 0, 0, 0);
-  } else {
-    cutoff.setDate(cutoff.getDate() - 1);
-    cutoff.setHours(1, 0, 0, 0);
-  }
-
-  return d.getTime() >= cutoff.getTime();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
 }
 
 /**

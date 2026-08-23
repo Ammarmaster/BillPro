@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { BillingEngine } from "./billingEngine";
 
-const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-g1th.onrender.com").replace(/\/$/, "");
+const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
 
 const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
 
@@ -82,10 +82,23 @@ export function clearCachePrefix(prefix: string) {
   for (const k in memoryCache) {
     if (k.startsWith(prefix)) {
       memoryCache[k] = null;
+      delete cacheTimestamps[k];
       delDiskCache("disk_cache_" + k).catch(() => {});
       notifyCacheUpdate(k, null);
     }
   }
+}
+
+const cacheTimestamps: Record<string, number> = {};
+
+function getCacheTTL(path: string): number {
+  if (path.startsWith("/tables") || path.startsWith("/orders")) {
+    return 5000; // 5 seconds
+  }
+  if (path.startsWith("/restaurant") || path.startsWith("/categories") || path.startsWith("/menu-items") || path.startsWith("/plans") || path.startsWith("/staff")) {
+    return 30000; // 30 seconds
+  }
+  return 0;
 }
 
 // Robust auth token storage with AsyncStorage and SecureStore fallback
@@ -212,7 +225,15 @@ const inFlightRequests: Record<string, Promise<any> | undefined> = {};
 
 async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = false): Promise<any> {
   const isGet = !opts.method || opts.method.toUpperCase() === "GET";
+  const ttl = getCacheTTL(path);
   
+  if (isGet && !isRetry && ttl > 0 && memoryCache[path] !== undefined && memoryCache[path] !== null) {
+    const lastFetch = cacheTimestamps[path] || 0;
+    if (Date.now() - lastFetch < ttl) {
+      return memoryCache[path];
+    }
+  }
+
   if (isGet && !isRetry) {
     const existing = inFlightRequests[path];
     if (existing !== undefined) {
@@ -270,6 +291,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 
     if (isGet) {
       memoryCache[path] = data;
+      cacheTimestamps[path] = Date.now();
       if (data) {
         setDiskCache("disk_cache_" + path, JSON.stringify(data)).catch(() => {});
       }
@@ -393,18 +415,10 @@ export const api = {
       return o;
     });
     
-    // Instantly update dashboard summary in cache
-    const summary = memoryCache["/dashboard/summary"];
-    if (summary) {
-      summary.revenue_today = Number((Number(summary.revenue_today || 0) + Number(res.total || 0)).toFixed(2));
-      summary.revenue_total = Number((Number(summary.revenue_total || 0) + Number(res.total || 0)).toFixed(2));
-      summary.orders_total = (summary.orders_total || 0) + 1;
-      summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
-      memoryCache["/dashboard/summary"] = { ...summary };
-      notifyCacheUpdate("/dashboard/summary", memoryCache["/dashboard/summary"]);
-    }
-
+    clearCachePrefix("/dashboard");
     clearCachePrefix("/tables");
+    clearCachePrefix("/bills");
+    api.dashboardSummary().catch(() => {});
     return res;
   },
   settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number) => {
@@ -425,19 +439,10 @@ export const api = {
       return o;
     });
 
-    // Instantly update dashboard summary in cache
-    const summary = memoryCache["/dashboard/summary"];
-    if (summary) {
-      summary.revenue_today = Number((Number(summary.revenue_today || 0) + Number(res.total || 0)).toFixed(2));
-      summary.revenue_total = Number((Number(summary.revenue_total || 0) + Number(res.total || 0)).toFixed(2));
-      summary.orders_total = (summary.orders_total || 0) + 1;
-      summary.orders_open = Math.max(0, (summary.orders_open || 0) - 1);
-      memoryCache["/dashboard/summary"] = { ...summary };
-      notifyCacheUpdate("/dashboard/summary", memoryCache["/dashboard/summary"]);
-    }
-
+    clearCachePrefix("/dashboard");
     clearCachePrefix("/tables");
     clearCachePrefix("/bills");
+    api.dashboardSummary().catch(() => {});
     return res;
   },
   listBills: () => req("/bills"),

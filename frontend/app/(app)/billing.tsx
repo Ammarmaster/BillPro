@@ -350,7 +350,9 @@ export default function Billing() {
 
     if (isIndividualOrder) {
       // 1. INDIVIDUAL ORDER MARK PAID: Update ONLY the specific order paid!
-      const targetOid = api.resolveTempId(orderId || bill.order_id);
+      let targetOid = api.resolveTempId(orderId || bill.order_id);
+      let realBillId = api.resolveTempId(bill.id);
+
       const updatedOrders = oList.map((o: any) => {
         if (o.id === targetOid || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
           return { ...o, status: "paid" };
@@ -359,12 +361,26 @@ export default function Billing() {
       });
       api.setCachedOrders(updatedOrders);
 
+      // If still temp ID, create the order on the backend first!
+      if ((!targetOid || targetOid.startsWith("temp-")) && (!realBillId || realBillId.startsWith("temp-"))) {
+        try {
+          const created = await api.createOrder({
+            table_number: bill.table_number || "Takeaway",
+            items: bill.items || order?.items || [],
+            notes: "Takeaway"
+          });
+          targetOid = created.id;
+          api.setTempIdMapping(orderId || bill.order_id, created.id);
+        } catch {}
+      }
+
       // Perform single targeted mutation
-      const realBillId = api.resolveTempId(bill.id);
       const mutationId = (!realBillId || realBillId.startsWith("temp-")) ? targetOid : realBillId;
-      api.markBillPaid(mutationId, method).catch((e: any) => {
-        console.warn("Individual markBillPaid sync failed:", e.message);
-      });
+      if (mutationId && !mutationId.startsWith("temp-")) {
+        api.markBillPaid(mutationId, method).catch((e: any) => {
+          console.warn("Individual markBillPaid sync failed:", e.message);
+        });
+      }
     } else {
       // 2. SETTLE ENTIRE TABLE: Update all active orders on that table to PAID!
       const targetOrderIds = bill?.order_ids || (order?.id ? [order.id] : undefined);

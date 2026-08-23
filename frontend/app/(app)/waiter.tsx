@@ -188,26 +188,35 @@ export default function WaiterScreen() {
 
   const { subscribe } = useNotifications();
 
-  // Instant WebSocket State Reconciliation
+  // Instant WebSocket State Reconciliation (0ms)
   useEffect(() => {
     return subscribe((notif) => {
-      // 0ms instant table state update on payment / order completion
       const data = notif.data;
       if (data) {
-        const { order_id, status, table_number, event } = data;
+        const { order_id, status, table_number, event, order } = data;
         if (event === "TABLE_SETTLED") {
           setOrders(prev => prev.map(o => (table_number && isSameTable(o.table_number, table_number)) ? { ...o, status: "paid" } : o));
         } else if (order_id && (event === "ORDER_PAID" || status === "paid")) {
           setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status: "paid" } : o));
+        } else if (order && order.id) {
+          setOrders(prev => {
+            const filtered = prev.filter(o => o.id !== order.id);
+            return [order, ...filtered];
+          });
+          if (order.table_number) {
+            setTables(prev => prev.map(t => isSameTable(t.label, order.table_number) ? { ...t, status: "occupied" } : t));
+          }
         } else if (order_id && status) {
           setOrders(prev => prev.map(o => o.id === order_id ? { ...o, status } : o));
         }
       }
 
-      // Refresh local cache and states from server to stay 100% consistent across all devices
-      if (notif.category === "kitchen" || notif.category === "payment" || notif.category === "waiter") {
-        api.listOrders().then(fresh => { if (fresh) setOrders(fresh); }).catch(() => {});
-        api.listBills().then(fresh => { if (fresh) setBills(fresh); }).catch(() => {});
+      // If generic notification without embedded payload, sync in background
+      if (!data?.order && !data?.order_id && !data?.bill && !data?.event) {
+        if (notif.category === "kitchen" || notif.category === "payment" || notif.category === "waiter") {
+          api.listOrders().then(fresh => { if (fresh) setOrders(fresh); }).catch(() => {});
+          api.listBills().then(fresh => { if (fresh) setBills(fresh); }).catch(() => {});
+        }
       }
     });
   }, [subscribe]);
@@ -358,51 +367,39 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       
       const tblObj = tables.find(t => isSameTable(t.label, tblLabel)) || { id: "temp-tbl", label: tblLabel, status: "occupied", seats: 4 };
       setSelectedTableObj(tblObj);
+      let realOrder: any;
+      if (isEdit) {
+        realOrder = await api.updateOrder(activeOrder.id, { items: lines, notes: "", customer_name: guestName });
+      } else {
+        realOrder = await api.createOrder({ table_number: tblLabel, items: lines, notes: "", session_id: sessId, customer_name: guestName });
+      }
+
+      const confirmedOrder = (realOrder && realOrder.id) ? realOrder : optimisticOrder;
       setTable(tblLabel);
-      setActiveOrder(optimisticOrder);
+      setActiveOrder(confirmedOrder);
       setTables(prev => prev.map(t => isSameTable(t.label, tblLabel) ? { ...t, status: "occupied" } : t));
-      setOrders(prev => [optimisticOrder, ...prev.filter(o => o.id !== tempId)]);
-      api.injectCachedOrder(optimisticOrder);
+      setOrders(prev => [confirmedOrder, ...prev.filter(o => o.id !== tempId && o.id !== confirmedOrder.id)]);
+      api.injectCachedOrder(confirmedOrder);
       setViewMode("order_details");
 
       // Fire 0ms Instant Kitchen KOT Auto-Print
       (async () => {
         try {
+          const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
           const kSettings = await getPrinterSettings("kitchen");
           const cSettings = await getPrinterSettings("cashier");
           const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
                               (cSettings && cSettings.type !== "none" && cSettings.auto_print);
           if (shouldPrint) {
-            await printKitchenKOT(optimisticOrder);
+            await printKitchenKOT(confirmedOrder);
           }
         } catch (printErr) {
           console.warn("Instant KOT auto-print error:", printErr);
         }
       })();
-
-      // API sync in background without freezing UI
-      (async () => {
-        try {
-          let realOrder: any;
-          if (isEdit) {
-            realOrder = await api.updateOrder(activeOrder.id, { items: optimisticOrder.items, notes: "", customer_name: guestName });
-          } else {
-            realOrder = await api.createOrder({ table_number: tblLabel, items: optimisticOrder.items, notes: "", session_id: sessId, customer_name: guestName });
-          }
-          if (realOrder && realOrder.id) {
-            api.setTempIdMapping(tempId, realOrder.id);
-            api.updateCachedOrder(tempId, realOrder);
-            setOrders(prev => prev.map(o => o.id === tempId ? realOrder : o));
-            setActiveOrder((prev: any) => (prev && prev.id === tempId) ? realOrder : prev);
-          }
-        } catch (e: any) {
-          console.warn("Order placement background sync error:", e);
-        } finally {
-          setBusy(false);
-        }
-      })();
     } catch (e: any) {
       setErr(e.message || "Failed to place order.");
+    } finally {
       setBusy(false);
     }
   };
@@ -477,12 +474,12 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           
           {/* Header Bar */}
           <View style={styles.detailsHeader}>
-            <Pressable onPress={() => setViewMode("tables")} style={styles.backBtn} hitSlop={12}>
-              <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
+            <Pressable onPress={() => { setSelectedTableObj(null); setViewMode("tables"); }} style={styles.backBtn} hitSlop={12}>
+              <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
             </Pressable>
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
-              <Text style={styles.detailsTitle}>Table {selectedTableObj.label}</Text>
-              <Text style={styles.detailsSub}>
+              <Text style={[styles.detailsTitle, { color: theme.onSurface }]}>Table {selectedTableObj.label}</Text>
+              <Text style={[styles.detailsSub, { color: theme.onSurfaceSecondary }]}>
                 Main • {selectedTableObj.seats} seats • {tableOrders.length} {tableOrders.length === 1 ? "Order" : "Orders"} ({uniqueGuests.length} {uniqueGuests.length === 1 ? "Customer" : "Customers"})
               </Text>
             </View>
@@ -499,12 +496,27 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                 <Ionicons name="checkmark-circle" size={48} color="#10B981" />
                 <Text style={{ fontSize: 16, fontWeight: "700", color: theme.onSurface, marginTop: 12 }}>All orders completed!</Text>
                 <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, marginTop: 4 }}>This table is ready for new guests.</Text>
-                <Pressable
-                  style={[styles.addOrderBtn, { marginTop: 20, width: "60%" }]}
-                  onPress={() => setViewMode("tables")}
-                >
-                  <Text style={styles.addOrderBtnText}>Back to Tables</Text>
-                </Pressable>
+                <View style={{ flexDirection: "row", gap: 12, marginTop: 24, justifyContent: "center", width: "100%", paddingHorizontal: spacing.lg }}>
+                  <Pressable
+                    style={[styles.addOrderBtn, { flex: 1, backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
+                    onPress={() => {
+                      setActiveOrder(null);
+                      setCurrentGuestName("Guest 1");
+                      setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
+                      setLines([]);
+                      setViewMode("menu_order");
+                    }}
+                  >
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={[styles.addOrderBtnText, { color: "#FFFFFF" }]}>+ Add Order</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.addOrderBtn, { flex: 1, backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                    onPress={() => { setSelectedTableObj(null); setViewMode("tables"); }}
+                  >
+                    <Text style={[styles.addOrderBtnText, { color: theme.onSurface }]}>Back to Tables</Text>
+                  </Pressable>
+                </View>
               </View>
             ) : (
               tableOrders.map((order: any, idx: number) => {

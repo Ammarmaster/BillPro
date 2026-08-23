@@ -9,6 +9,7 @@ import { api } from "@/src/lib/api";
 import { printBill, sharePdf } from "@/src/lib/print";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useNotifications } from "@/src/context/NotificationContext";
 import * as Haptics from "expo-haptics";
 import { isTodayBusinessDay, formatDateTime } from "@/src/lib/dateUtils";
 
@@ -17,6 +18,7 @@ export default function BillsHistory() {
   const router = useRouter();
   const params = useLocalSearchParams<{ filter?: string }>();
   const { theme, isDark } = useTheme();
+  const { subscribe } = useNotifications();
 
   const [activeFilter, setActiveFilter] = useState<"today" | "all">(() => params.filter === "today" ? "today" : "all");
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
@@ -40,6 +42,21 @@ export default function BillsHistory() {
     return () => unsubscribe();
   }, []);
 
+  // Event-driven reactive sync via WebSocket (0ms Instant Bills Refresh on Payment)
+  useEffect(() => {
+    return subscribe((notif: any) => {
+      if (notif.category === "payment" || notif.data?.event === "ORDER_PAID" || notif.data?.event === "TABLE_SETTLED") {
+        if (notif.data?.bill) {
+          const freshBill = notif.data.bill;
+          setBills(prev => [freshBill, ...prev.filter(b => b.id !== freshBill.id)]);
+        }
+        api.listBills().then(fresh => {
+          if (fresh) setBills(fresh);
+        }).catch(() => {});
+      }
+    });
+  }, [subscribe]);
+
   const load = useCallback(async () => {
     setErr(null);
     try {
@@ -49,6 +66,7 @@ export default function BillsHistory() {
     finally { setLoading(false); }
   }, []);
 
+  useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const formatTimestamp = (ts: string) => formatDateTime(ts);
@@ -56,7 +74,18 @@ export default function BillsHistory() {
   const isPaidStatus = (status?: string) => String(status || "").toLowerCase() === "paid";
 
   const todayPaidBills = useMemo(() => {
-    return bills.filter(b => isPaidStatus(b.status) && (b.is_today === true || isTodayBusinessDay(b.paid_at || b.created_at)));
+    const seenOrderIds = new Set<string>();
+    const rawPaid = bills.filter(b => isPaidStatus(b.status) && (b.is_today === true || isTodayBusinessDay(b.paid_at || b.created_at)));
+    const deduped: typeof bills = [];
+    for (const b of rawPaid) {
+      const oids: string[] = b.order_ids || (b.order_id ? [b.order_id] : []);
+      if (oids.length > 0 && oids.every(id => seenOrderIds.has(id))) {
+        continue;
+      }
+      oids.forEach(id => seenOrderIds.add(id));
+      deduped.push(b);
+    }
+    return deduped;
   }, [bills]);
 
   const filteredBills = useMemo(() => {

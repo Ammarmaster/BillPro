@@ -10,7 +10,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { spacing } from "@/src/theme";
 
 // Helper to handle API requests manually to avoid changing AuthContext
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-g1th.onrender.com";
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com";
 
 export default function ForgotPassword() {
   const { theme, isDark } = useTheme();

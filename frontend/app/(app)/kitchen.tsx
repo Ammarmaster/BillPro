@@ -249,7 +249,7 @@ export default function Kitchen() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const isRingingRef = useRef(false);
 
-  const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-g1th.onrender.com").replace(/\/$/, "");
+  const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
   const KITCHEN_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
   
   // Keep separate Audio players for Native vs Web
@@ -444,11 +444,33 @@ export default function Kitchen() {
     return () => clearInterval(iv);
   }, []);
 
-  // Event-driven reactive sync via WebSocket (Zero continuous polling requests!)
+  // Event-driven reactive sync via WebSocket (0ms Instant Kitchen Order Arrival)
   useEffect(() => {
     return subscribe((notif) => {
-      if (notif.category === "kitchen" || notif.category === "payment") {
-        load();
+      if (notif.category === "kitchen" || notif.category === "payment" || (notif.category as any) === "order") {
+        const ord = notif.data?.order;
+        if (ord && ord.id) {
+          if (ord.status === "served" || ord.status === "cancelled") {
+            setOrders(prev => prev.filter(o => o.id !== ord.id));
+          } else {
+            setOrders(prev => {
+              const exists = prev.some(o => o.id === ord.id);
+              if (exists) {
+                return prev.map(o => o.id === ord.id ? { ...o, ...ord } : o);
+              }
+              return [ord, ...prev];
+            });
+          }
+        } else if (notif.data?.order_id && notif.data?.status) {
+          const s = notif.data.status;
+          if (s === "served" || s === "cancelled") {
+            setOrders(prev => prev.filter(o => o.id !== notif.data.order_id));
+          } else {
+            setOrders(prev => prev.map(o => o.id === notif.data.order_id ? { ...o, status: s } : o));
+          }
+        } else {
+          load();
+        }
       }
     });
   }, [subscribe, load]);

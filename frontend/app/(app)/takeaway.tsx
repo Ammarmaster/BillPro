@@ -93,59 +93,22 @@ export default function TakeawayScreen() {
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
   const totalQty = useMemo(() => cart.reduce((s, l) => s + l.quantity, 0), [cart]);
 
-  // Generate Bill Workflow (Navigates to Bill Detail & Payment Method Selection Instantly in 0ms)
+  // Generate Bill Workflow (Creates order & bill and navigates to payment)
   const handleGenerateBill = async () => {
     if (cart.length === 0) { setErr("Add items to generate bill."); return; }
+    setBusy(true);
+    setErr(null);
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const cartItems = [...cart];
       
-      const tempOrderId = "temp-" + Date.now();
-      const tempBillId = "temp-bill-" + Date.now();
-      
-      // 1. Construct local optimistic order model
-      const orderSubtotal = subtotal;
-      const localOrder = {
-        id: tempOrderId,
-        order_number: String(Math.floor(100 + Math.random() * 900)),
-        table_number: "Takeaway",
-        items: cart,
-        subtotal: orderSubtotal,
-        status: "placed",
-        created_at: new Date().toISOString(),
-      };
-      
-      // 2. Construct local optimistic bill model
       const r = api.getCachedRestaurant();
-      const gst = r?.gst_enabled;
       const gstRate = Number(r?.gst_rate ?? 5);
-      const tax = gst ? Math.round(orderSubtotal * (gstRate / 100) * 100) / 100 : 0;
-      const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
-      const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
-      const total = Math.round((orderSubtotal + tax) * 100) / 100;
+
+      // 1. Create order on backend
+      const realOrder = await api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" });
       
-      const localBill = {
-        id: tempBillId,
-        order_id: tempOrderId,
-        table_number: "Takeaway",
-        items: cart,
-        subtotal: orderSubtotal,
-        tax_percent: gst ? gstRate : 0,
-        tax: tax,
-        cgst: cgst,
-        sgst: sgst,
-        gst_enabled: !!gst,
-        discount: 0,
-        total: total,
-        status: "pending",
-        restaurant_snapshot: r,
-        created_at: new Date().toISOString(),
-      };
-      
-      // 3. Inject optimistic models into in-memory cache directly!
-      api.injectCachedOrder(localOrder);
-      api.injectCachedBill(localBill);
-      
-      // 4. Fire 0ms Instant KOT auto-print
+      // 2. Fire KOT auto-print in background
       (async () => {
         try {
           const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
@@ -154,31 +117,19 @@ export default function TakeawayScreen() {
           const shouldPrint = (kSettings && kSettings.type !== "none" && kSettings.auto_print) ||
                               (cSettings && cSettings.type !== "none" && cSettings.auto_print);
           if (shouldPrint) {
-            await printKitchenKOT(localOrder);
+            await printKitchenKOT(realOrder);
           }
         } catch {}
       })();
 
-      // 5. Reset cart and redirect instantly (0ms transition lag!)
-      const cartItems = [...cart];
+      // 3. Reset cart and redirect immediately with real order ID
       setCart([]);
-      router.push({ pathname: "/(app)/billing", params: { orderId: tempOrderId, backTo: "/(app)/takeaway" } });
-      
-      // 6. Sync with server silently in the background
-      api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" }).then(realOrder => {
-        // Set ID mapping and update cached values
-        api.setTempIdMapping(tempOrderId, realOrder.id);
-        api.updateCachedOrder(tempOrderId, realOrder);
-
-        // Auto-create bill for the real order on the backend
-        api.createBill({ order_id: realOrder.id, tax_percent: gstRate, discount: 0 }).then(realBill => {
-          api.setTempIdMapping(tempBillId, realBill.id);
-          api.updateCachedBill(tempBillId, realBill);
-        }).catch(() => {});
-      }).catch(err => {
-        setErr(err.message);
-      });
-    } catch (e: any) { setErr(e.message); }
+      router.push({ pathname: "/(app)/billing", params: { orderId: realOrder.id, backTo: "/(app)/takeaway" } });
+    } catch (e: any) { 
+      setErr(e.message || "Failed to create order"); 
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

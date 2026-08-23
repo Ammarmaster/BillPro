@@ -14,12 +14,15 @@ import { colors, spacing, radius } from "@/src/theme";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 import FeatureLockModal from "@/src/components/FeatureLockModal";
 
-const formatAmount = (num: number, detailed: boolean = false) => {
-  if (detailed) return `₹${num.toLocaleString("en-IN")}`;
-  if (num >= 10000000) return `₹${(num / 10000000).toFixed(2).replace(/\.00$/, "")}Cr`;
-  if (num >= 100000) return `₹${(num / 100000).toFixed(2).replace(/\.00$/, "")}L`;
-  if (num >= 1000) return `₹${(num / 1000).toFixed(2).replace(/\.00$/, "")}k`;
-  return `₹${num}`;
+import { safeParseDate } from "@/src/lib/dateUtils";
+
+const formatAmount = (num?: number | null, detailed: boolean = false) => {
+  const val = Number(num || 0);
+  if (detailed) return `₹${val.toLocaleString("en-IN")}`;
+  if (val >= 10000000) return `₹${(val / 10000000).toFixed(2).replace(/\.00$/, "")}Cr`;
+  if (val >= 100000) return `₹${(val / 100000).toFixed(2).replace(/\.00$/, "")}L`;
+  if (val >= 1000) return `₹${(val / 1000).toFixed(2).replace(/\.00$/, "")}k`;
+  return `₹${val}`;
 };
 
 export default function Dashboard() {
@@ -152,7 +155,7 @@ function AdminConsole() {
               >
                 <View>
                   <Text style={styles.heroAdminLabel}>ESTIMATED MRR (TAP FOR DETAIL)</Text>
-                  <Text style={styles.heroAdminValue}>{formatAmount(animatedMRR, detailedMRR)}</Text>
+                  <Text style={styles.heroAdminValue}>{formatAmount(summary?.mrr ?? animatedMRR ?? 0, detailedMRR)}</Text>
                 </View>
                 <View style={styles.heroAdminIconBox}>
                   <Ionicons name="trending-up" size={24} color="#FFFFFF" />
@@ -166,7 +169,7 @@ function AdminConsole() {
                   testID="admin-metric-arr"
                 >
                   <Text style={styles.heroAdminSubLabel}>Annual Run Rate (ARR)</Text>
-                  <Text style={styles.heroAdminSubValue}>{formatAmount(animatedARR, detailedARR)}</Text>
+                  <Text style={styles.heroAdminSubValue}>{formatAmount(summary?.arr ?? animatedARR ?? 0, detailedARR)}</Text>
                 </Pressable>
                 <Pressable
                   style={styles.activeSubBadge}
@@ -189,7 +192,7 @@ function AdminConsole() {
                   <Ionicons name="storefront" size={20} color={colors.brand} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedRests}</Text>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_restaurants ?? animatedRests ?? 0}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Stores</Text>
                 </View>
               </Pressable>
@@ -203,7 +206,7 @@ function AdminConsole() {
                   <Ionicons name="people" size={20} color="#10B981" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedUsers}</Text>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_users ?? animatedUsers ?? 0}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Users</Text>
                 </View>
               </Pressable>
@@ -217,7 +220,7 @@ function AdminConsole() {
                   <Ionicons name="person-circle" size={20} color="#F59E0B" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedOwners}</Text>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_owners ?? animatedOwners ?? 0}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Owners</Text>
                 </View>
               </Pressable>
@@ -231,7 +234,7 @@ function AdminConsole() {
                   <Ionicons name="ribbon" size={20} color="#3B82F6" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{animatedSubs}</Text>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.active_subscriptions ?? animatedSubs ?? 0}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Subscriptions</Text>
                 </View>
               </Pressable>
@@ -430,36 +433,40 @@ function OwnerDashboard() {
       setErr(e.message); 
     }
   }, []);
+  useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const { subscribe } = useNotifications();
   const processedSaleIds = useRef<Set<string>>(new Set());
 
-  // Event-driven reactive dashboard metrics refresh (0ms Instant Optimistic Sales Sync)
+  // Event-driven reactive dashboard metrics refresh (0ms instant optimistic update + authoritative reconciliation)
   useEffect(() => {
     return subscribe((notif: any) => {
       const data = notif.data;
       if (notif.category === "payment" || data?.event === "ORDER_PAID" || data?.event === "TABLE_SETTLED") {
-        const saleAmt = Number(data?.total || data?.amount || 0);
-        const saleKey = data?.bill_id || data?.order_id || (data?.table_number ? `table_${data.table_number}_${saleAmt}` : null);
+        const saleAmt = Number(data?.total || data?.amount || data?.bill?.total || 0);
+        const saleKey = data?.bill_id || data?.order_id || (data?.bill && data?.bill.id) || (data?.table_number ? `table_${data.table_number}_${saleAmt}` : null);
 
+        // 1. Instant 0ms Optimistic Update
         if (saleAmt > 0 && saleKey && !processedSaleIds.current.has(saleKey)) {
           processedSaleIds.current.add(saleKey);
-          // 0ms Instant Optimistic Total Sales Increment
           setSummary((prev: any) => {
             if (!prev) return prev;
-            const updated = {
+            const newRev = Math.round((Number(prev.revenue_today || 0) + saleAmt) * 100) / 100;
+            const newOrders = Number(prev.orders_today || 0) + 1;
+            const newAvg = newOrders > 0 ? Math.round((newRev / newOrders) * 100) / 100 : 0;
+            return {
               ...prev,
-              revenue_today: Math.round((Number(prev.revenue_today || 0) + saleAmt) * 100) / 100,
+              revenue_today: newRev,
               revenue_total: Math.round((Number(prev.revenue_total || 0) + saleAmt) * 100) / 100,
-              orders_today: Number(prev.orders_today || 0) + 1,
+              orders_today: newOrders,
               orders_total: Number(prev.orders_total || 0) + 1,
+              avg_bill: newAvg,
             };
-            api.setCachedSummary(updated);
-            return updated;
           });
         }
-        // Background authoritative reconciliation
+
+        // 2. Authoritative background reconciliation from server
         api.dashboardSummary().then(sum => {
           if (sum) setSummary(sum);
         }).catch(() => {});
@@ -753,7 +760,7 @@ function OwnerDashboard() {
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.topSellingName, { color: theme.onSurface }]}>{item.name}</Text>
                         <Text style={[styles.topSellingMeta, { color: theme.onSurfaceSecondary }]}>
-                          {item.sold} units sold • Value: ₹{item.amount.toLocaleString("en-IN")}
+                          {item.sold || 0} units sold • Value: ₹{Number(item.amount || 0).toLocaleString("en-IN")}
                         </Text>
                       </View>
                     </View>
@@ -785,6 +792,8 @@ function OwnerDashboard() {
                 feedbacks.map((item: any, idx: number) => {
                   const stars = Array(5).fill(0).map((_, i) => i < item.rating);
                   const isLowRating = item.rating <= 3;
+                  const parsedD = safeParseDate(item.created_at);
+                  const dateStr = parsedD ? parsedD.toLocaleDateString("en-IN") : "";
                   return (
                     <View 
                       key={idx} 
@@ -809,7 +818,7 @@ function OwnerDashboard() {
                           ))}
                         </View>
                         <Text style={[styles.feedbackDate, { color: theme.onSurfaceSecondary }]}>
-                          {new Date(item.created_at).toLocaleDateString()}
+                          {dateStr}
                         </Text>
                       </View>
                       
