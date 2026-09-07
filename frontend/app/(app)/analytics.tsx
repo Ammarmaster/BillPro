@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Modal,
 } from "react-native";
@@ -55,7 +55,23 @@ export default function Analytics() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const currentPeriodBills = bills.filter(b => {
+  // Deduplicate bills by order_id or id to guarantee 100% real accurate calculations
+  const uniqueBills = useMemo(() => {
+    const seen = new Set<string>();
+    const result: any[] = [];
+    for (const b of bills) {
+      if (!b) continue;
+      const key = b.order_id || (Array.isArray(b.order_ids) && b.order_ids.length > 0 ? b.order_ids.sort().join(",") : b.id);
+      if (key) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      result.push(b);
+    }
+    return result;
+  }, [bills]);
+
+  const currentPeriodBills = uniqueBills.filter((b: any) => {
     if (!b) return false;
     const bDate = safeParseDate(b.created_at || b.paid_at);
     if (!bDate) return false;
@@ -81,21 +97,21 @@ export default function Analytics() {
     return true;
   });
 
-  const activeBills = currentPeriodBills.filter(b => b.status === "paid" || b.status === "PAID");
-  const refundedBills = currentPeriodBills.filter(b => b.status === "cancelled" || b.status === "refunded");
+  const activeBills = currentPeriodBills.filter((b: any) => b.status === "paid" || b.status === "PAID");
+  const refundedBills = currentPeriodBills.filter((b: any) => b.status === "cancelled" || b.status === "refunded");
 
-  const grossSales = activeBills.reduce((sum, b) => sum + (Number(b.subtotal) || 0), 0);
-  const totalDiscounts = activeBills.reduce((sum, b) => sum + (Number(b.discount) || 0), 0);
-  const totalTaxes = activeBills.reduce((sum, b) => sum + (Number(b.cgst || 0) + Number(b.sgst || 0) || Number(b.tax) || 0), 0);
-  const totalRefunds = refundedBills.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
-  const netSales = activeBills.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+  const grossSales = activeBills.reduce((sum: number, b: any) => sum + (Number(b.subtotal) || 0), 0);
+  const totalDiscounts = activeBills.reduce((sum: number, b: any) => sum + (Number(b.discount) || 0), 0);
+  const totalTaxes = activeBills.reduce((sum: number, b: any) => sum + (Number(b.cgst || 0) + Number(b.sgst || 0) || Number(b.tax) || 0), 0);
+  const totalRefunds = refundedBills.reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
+  const netSales = activeBills.reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
   
   const currentHeroRev = netSales;
   const totalOrders = activeBills.length;
   const avgBill = totalOrders > 0 ? Math.round(currentHeroRev / totalOrders) : 0;
 
   let totalItemsSold = 0;
-  activeBills.forEach(b => {
+  activeBills.forEach((b: any) => {
     if (Array.isArray(b.items)) {
       b.items.forEach((it: any) => {
         totalItemsSold += (Number(it.quantity) || 1);
@@ -104,15 +120,15 @@ export default function Analytics() {
   });
 
   const paymentBreakdown = {
-    CASH: activeBills.filter(b => b.payment_method === "CASH").reduce((s, b) => s + (Number(b.total) || 0), 0),
-    UPI: activeBills.filter(b => b.payment_method === "UPI" || b.payment_method === "UPI_QR" || b.payment_method === "online" || !b.payment_method).reduce((s, b) => s + (Number(b.total) || 0), 0),
-    CARD: activeBills.filter(b => b.payment_method === "CARD").reduce((s, b) => s + (Number(b.total) || 0), 0),
-    OTHER: activeBills.filter(b => b.payment_method && b.payment_method !== "CASH" && b.payment_method !== "UPI" && b.payment_method !== "UPI_QR" && b.payment_method !== "online" && b.payment_method !== "CARD").reduce((s, b) => s + (Number(b.total) || 0), 0)
+    CASH: activeBills.filter((b: any) => b.payment_method === "CASH").reduce((s: number, b: any) => s + (Number(b.total) || 0), 0),
+    UPI: activeBills.filter((b: any) => b.payment_method === "UPI" || b.payment_method === "UPI_QR" || b.payment_method === "online" || !b.payment_method).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0),
+    CARD: activeBills.filter((b: any) => b.payment_method === "CARD").reduce((s: number, b: any) => s + (Number(b.total) || 0), 0),
+    OTHER: activeBills.filter((b: any) => b.payment_method && b.payment_method !== "CASH" && b.payment_method !== "UPI" && b.payment_method !== "UPI_QR" && b.payment_method !== "online" && b.payment_method !== "CARD").reduce((s: number, b: any) => s + (Number(b.total) || 0), 0)
   };
 
   const totalPaidCount = activeBills.length || 1;
-  const upiCount = activeBills.filter(b => b.payment_method === "UPI" || b.payment_method === "UPI_QR" || b.payment_method === "online" || !b.payment_method).length;
-  const cashCount = activeBills.filter(b => b.payment_method === "CASH").length;
+  const upiCount = activeBills.filter((b: any) => b.payment_method === "UPI" || b.payment_method === "UPI_QR" || b.payment_method === "online" || !b.payment_method).length;
+  const cashCount = activeBills.filter((b: any) => b.payment_method === "CASH").length;
   const upiPct = Math.round((upiCount / totalPaidCount) * 100);
   const cashPct = Math.round((cashCount / totalPaidCount) * 100);
 
@@ -120,8 +136,8 @@ export default function Analytics() {
   
   const chartData = isSingleDay
     ? Array.from({ length: 24 }, (_, hour) => {
-        const hourlyBills = activeBills.filter(b => new Date(b.created_at).getHours() === hour);
-        const rev = hourlyBills.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+        const hourlyBills = activeBills.filter((b: any) => new Date(b.created_at).getHours() === hour);
+        const rev = hourlyBills.reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         const label = hour === 0 ? "12a" : hour === 12 ? "12p" : hour > 12 ? `${hour - 12}p` : `${hour}a`;
         return { label, val: rev };
       }).filter(h => h.val > 0)
@@ -130,35 +146,35 @@ export default function Analytics() {
         const d = new Date(); d.setDate(d.getDate() - daysAgo);
         const dateStr = d.toISOString().slice(0, 10);
         const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-        const dayRev = bills
-          .filter(b => b && b.created_at && (b.status === "paid" || b.status === "PAID") && String(b.created_at).slice(0, 10) === dateStr)
-          .reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+        const dayRev = uniqueBills
+          .filter((b: any) => b && b.created_at && (b.status === "paid" || b.status === "PAID") && String(b.created_at).slice(0, 10) === dateStr)
+          .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         return { label: dayName, val: dayRev };
       })
     : period === "monthly"
     ? [3, 2, 1, 0].map(weeksAgo => {
         const start = new Date(); start.setDate(start.getDate() - (weeksAgo + 1) * 7);
         const end = new Date(); end.setDate(end.getDate() - weeksAgo * 7);
-        const weekRev = bills
-          .filter(b => {
+        const weekRev = uniqueBills
+          .filter((b: any) => {
             if (!b?.created_at || (b.status !== "paid" && b.status !== "PAID")) return false;
             const bd = new Date(b.created_at);
             return bd >= start && bd <= end;
           })
-          .reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+          .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         return { label: `W${4 - weeksAgo}`, val: weekRev };
       })
     : [
-        { label: "Q1", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() <= 2).reduce((s, b) => s + (Number(b.total) || 0), 0) },
-        { label: "Q2", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s, b) => s + (Number(b.total) || 0), 0) },
-        { label: "Q3", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s, b) => s + (Number(b.total) || 0), 0) },
-        { label: "Q4", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 9).reduce((s, b) => s + (Number(b.total) || 0), 0) },
+        { label: "Q1", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() <= 2).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+        { label: "Q2", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+        { label: "Q3", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+        { label: "Q4", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 9).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
       ];
 
   const maxVal = Math.max(...chartData.map(d => d.val), 100);
 
   const itemStats: Record<string, { name: string; sold: number; amt: number }> = {};
-  activeBills.forEach(bill => {
+  activeBills.forEach((bill: any) => {
     if (bill && Array.isArray(bill.items)) {
       bill.items.forEach((it: any) => {
         if (!it) return;

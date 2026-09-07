@@ -2841,12 +2841,24 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
         "_id": 0, "restaurant_snapshot": 0
     }).sort("created_at", -1).to_list(limit or 5000)
 
+    seen_oids = set()
+    deduped_bills = []
     for b in bills:
         b["is_today"] = is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))
+        oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
+        if oids and oids.issubset(seen_oids):
+            continue
+        if oids:
+            seen_oids.update(oids)
+        elif b.get("id"):
+            if b["id"] in seen_oids:
+                continue
+            seen_oids.add(b["id"])
+        deduped_bills.append(b)
 
     if filter == "today":
-        return [b for b in bills if b.get("is_today") and str(b.get("status", "")).lower() == "paid"]
-    return bills
+        return [b for b in deduped_bills if b.get("is_today") and str(b.get("status", "")).lower() == "paid"]
+    return deduped_bills
 
 
 # ---------- notifications ----------
