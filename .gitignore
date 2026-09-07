@@ -80,6 +80,9 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+Flutterapp/linux/flutter/ephemeral/
+Flutterapp/windows/flutter/ephemeral/
+Flutterapp/build/
 frontend/android/.gradle/
 frontend/android/build/
 frontend/android/app/build/

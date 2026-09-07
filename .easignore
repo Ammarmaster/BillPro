@@ -11,3 +11,12 @@ frontend/dist/
 frontend/web-build/
 node_modules/
 .git/
+Flutterapp/
+backend/
+.emergent/
+scratch/
+test_reports/
+tests/
+memory/
+*.apk
+*.log
