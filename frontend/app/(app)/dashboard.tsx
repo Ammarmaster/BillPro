@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking, TextInput, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking, TextInput, ActivityIndicator, Alert, AppState } from "react-native";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "@/src/lib/api";
+import { api, clearCachePrefix } from "@/src/lib/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
@@ -440,10 +440,94 @@ function OwnerDashboard() {
   const { subscribe } = useNotifications();
   const processedSaleIds = useRef<Set<string>>(new Set());
 
+  // Automatic 12:00 AM Midnight Reset Scheduler & AppState Resume Listener
+  useEffect(() => {
+    let timer: any;
+    const scheduleMidnightCheck = () => {
+      const now = new Date();
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      const msUntilMidnight = Math.max(1000, tomorrow.getTime() - now.getTime());
+
+      timer = setTimeout(() => {
+        // Midnight reached! Reset today sales to 0 immediately
+        api.resetDailySalesCache();
+        setSummary((prev: any) => prev ? {
+          ...prev,
+          revenue_today: 0,
+          orders_today: 0,
+          orders_open: 0,
+          pending_count: 0,
+          cooking_count: 0,
+          ready_count: 0,
+          revenue_web_today: 0,
+          avg_bill: 0,
+        } : prev);
+
+        api.clearCachePrefix("/dashboard");
+        api.clearCachePrefix("/bills");
+        api.clearCachePrefix("/orders");
+        api.clearCachePrefix("/tables");
+        load().catch(() => {});
+        scheduleMidnightCheck();
+      }, msUntilMidnight);
+    };
+
+    scheduleMidnightCheck();
+
+    let lastActiveDate = new Date().toDateString();
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        const currentDate = new Date().toDateString();
+        if (currentDate !== lastActiveDate) {
+          lastActiveDate = currentDate;
+          // Day changed while app was backgrounded/sleeping: reset sales to 0 instantly!
+          api.resetDailySalesCache();
+          setSummary((prev: any) => prev ? {
+            ...prev,
+            revenue_today: 0,
+            orders_today: 0,
+            orders_open: 0,
+            pending_count: 0,
+            cooking_count: 0,
+            ready_count: 0,
+            revenue_web_today: 0,
+            avg_bill: 0,
+          } : prev);
+          api.clearCachePrefix("/dashboard");
+          load().catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      appStateSub.remove();
+    };
+  }, [load]);
+
   // Event-driven reactive dashboard metrics refresh (0ms instant optimistic update + authoritative reconciliation)
   useEffect(() => {
     return subscribe((notif: any) => {
       const data = notif.data;
+
+      if (data?.event === "MIDNIGHT_RESET") {
+        api.resetDailySalesCache();
+        setSummary((prev: any) => prev ? {
+          ...prev,
+          revenue_today: 0,
+          orders_today: 0,
+          orders_open: 0,
+          pending_count: 0,
+          cooking_count: 0,
+          ready_count: 0,
+          revenue_web_today: 0,
+          avg_bill: 0,
+        } : prev);
+        api.clearCachePrefix("/dashboard");
+        load().catch(() => {});
+        return;
+      }
+
       if (notif.category === "payment" || data?.event === "ORDER_PAID" || data?.event === "TABLE_SETTLED") {
         const saleAmt = Number(data?.total || data?.amount || data?.bill?.total || 0);
         const saleKey = data?.bill_id || data?.order_id || (data?.bill && data?.bill.id) || (data?.table_number ? `table_${data.table_number}_${saleAmt}` : null);
@@ -477,7 +561,7 @@ function OwnerDashboard() {
         }).catch(() => {});
       }
     });
-  }, [subscribe]);
+  }, [subscribe, load]);
 
   const [animatedRevenue, setAnimatedRevenue] = useState(() => Number(summary?.revenue_today || 0));
 

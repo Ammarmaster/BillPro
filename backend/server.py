@@ -1492,7 +1492,57 @@ async def _auto_clear_kitchen_orders(tid: str, force: bool = False):
         cutoff_iso = cutoff_utc.isoformat()
         now_iso = datetime.now(timezone.utc).isoformat()
         
-        # 1. Close/archive lingering orders created before today's 12:00 AM (00:00) business day cutoff
+        # 1. Settle all lingering pending bills from previous days and mark them paid so they are added to sales
+        await db.bills.update_many({
+            "tenant_id": tid,
+            "status": "pending",
+            "$or": [
+                {"created_at": {"$lt": cutoff_iso}},
+                {"created_at": {"$lt": cutoff_ist.isoformat()}}
+            ]
+        }, {"$set": {"status": "paid", "payment_method": "CASH", "auto_settled_at": now_iso, "clear_reason": "Daily 12 AM business auto-settle"}})
+
+        # 2. Settle lingering active orders and ensure paid bills exist for them
+        lingering_orders = await db.orders.find({
+            "tenant_id": tid,
+            "status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]},
+            "$or": [
+                {"created_at": {"$lt": cutoff_iso}},
+                {"created_at": {"$lt": cutoff_ist.isoformat()}}
+            ]
+        }).to_list(500)
+
+        for lo in lingering_orders:
+            eb = await db.bills.find_one({
+                "tenant_id": tid,
+                "$or": [{"order_id": lo["id"]}, {"order_ids": lo["id"]}]
+            })
+            if not eb:
+                await db.bills.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tid,
+                    "order_id": lo["id"],
+                    "order_ids": [lo["id"]],
+                    "session_id": lo.get("session_id", ""),
+                    "customer_name": lo.get("customer_name", "Guest"),
+                    "table_number": lo.get("table_number", "Dine-In"),
+                    "items": lo.get("items", []),
+                    "subtotal": float(lo.get("subtotal", 0.0)),
+                    "tax_percent": 0.0,
+                    "tax": 0.0,
+                    "cgst": 0.0,
+                    "sgst": 0.0,
+                    "gst_enabled": False,
+                    "discount": 0.0,
+                    "total": float(lo.get("subtotal", 0.0)),
+                    "upi_url": "",
+                    "status": "paid",
+                    "payment_method": "CASH",
+                    "created_by": "daily_auto_settle",
+                    "created_at": lo.get("created_at"),
+                    "paid_at": lo.get("created_at"),
+                })
+
         res = await db.orders.update_many({
             "tenant_id": tid,
             "status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]},
@@ -1500,7 +1550,7 @@ async def _auto_clear_kitchen_orders(tid: str, force: bool = False):
                 {"created_at": {"$lt": cutoff_iso}},
                 {"created_at": {"$lt": cutoff_ist.isoformat()}}
             ]
-        }, {"$set": {"status": "completed", "auto_cleared_at": now_iso, "clear_reason": "Daily 12 AM business reset"}})
+        }, {"$set": {"status": "paid", "auto_settled_at": now_iso, "clear_reason": "Daily 12 AM business auto-settle"}})
         
         # 2. Reset tables to available if no active orders from today's business cycle exist
         active_orders = await db.orders.find({
@@ -2605,8 +2655,7 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
     if order_id_list:
         bill_filter["$or"] = [
             {"order_id": {"$in": order_id_list}},
-            {"order_ids": {"$in": order_id_list}},
-            {"table_number": {"$in": tbl_patterns}}
+            {"order_ids": {"$in": order_id_list}}
         ]
     else:
         bill_filter["table_number"] = {"$in": tbl_patterns}
@@ -2761,26 +2810,40 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
 
 
 @api.get("/bills")
-async def list_bills(filter: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
-    ist_offset = timedelta(hours=5, minutes=30)
-    now_ist = datetime.now(timezone(ist_offset))
-    start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_7d_utc = (start_today_ist - ist_offset) - timedelta(days=7)
-    start_7d_iso = start_7d_utc.isoformat()
-
-    bills = await db.bills.find({
-        "tenant_id": tid,
-        "$or": [
+    
+    q: dict = {"tenant_id": tid}
+    if filter == "today":
+        ist_offset = timedelta(hours=5, minutes=30)
+        now_ist = datetime.now(timezone(ist_offset))
+        start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_today_utc = start_today_ist - ist_offset
+        start_today_iso = start_today_utc.isoformat()
+        q["$or"] = [
+            {"paid_at": {"$gte": start_today_iso}},
+            {"created_at": {"$gte": start_today_iso}}
+        ]
+        q["status"] = "paid"
+    elif filter == "7d":
+        ist_offset = timedelta(hours=5, minutes=30)
+        now_ist = datetime.now(timezone(ist_offset))
+        start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_7d_utc = (start_today_ist - ist_offset) - timedelta(days=7)
+        start_7d_iso = start_7d_utc.isoformat()
+        q["$or"] = [
             {"paid_at": {"$gte": start_7d_iso}},
             {"created_at": {"$gte": start_7d_iso}},
             {"status": "pending"}
         ]
-    }, {
+
+    bills = await db.bills.find(q, {
         "_id": 0, "restaurant_snapshot": 0
-    }).sort("created_at", -1).to_list(1000)
+    }).sort("created_at", -1).to_list(limit or 5000)
+
     for b in bills:
-        b["is_today"] = is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"))
+        b["is_today"] = is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))
+
     if filter == "today":
         return [b for b in bills if b.get("is_today") and str(b.get("status", "")).lower() == "paid"]
     return bills
@@ -2930,10 +2993,14 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         seen_order_ids.update(oids)
         paid_bills.append(b)
     
-    revenue_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills), 2)
-    paid_bills_count = len(paid_bills)
+    rev_agg = await db.bills.aggregate([
+        {"$match": {"tenant_id": tid, "status": "paid"}},
+        {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}}
+    ]).to_list(1)
+    revenue_total = round(float(rev_agg[0]["total"]), 2) if rev_agg else 0.0
+    paid_bills_count = int(rev_agg[0]["count"]) if rev_agg else 0
 
-    today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"))]
+    today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))]
     revenue_today = round(sum(float(b.get("total", 0.0)) for b in today_bills), 2)
     avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / paid_bills_count, 2) if paid_bills_count > 0 else 0.0)
 
@@ -2988,6 +3055,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         "menu_count": menu_count,
         "last_7_days": last_7_days,
         "top_selling": top_selling,
+        "business_date": now_ist.strftime("%Y-%m-%d"),
     }
     dashboard_summary_cache[tid] = (time.time(), res)
     return res
@@ -4290,6 +4358,37 @@ async def start_memory_trim_worker():
         except Exception as e:
             logger.warning("Logo migration notice: %s", e)
     asyncio.create_task(_migrate_restaurant_logos())
+
+    async def _midnight_reset_worker():
+        last_reset_day = None
+        while True:
+            try:
+                ist_offset = timedelta(hours=5, minutes=30)
+                now_ist = datetime.now(timezone(ist_offset))
+                current_day = now_ist.date()
+                
+                # If day changed at 12:00 AM midnight
+                if last_reset_day is not None and current_day != last_reset_day:
+                    logger.info("Midnight 12:00 AM IST detected: Running business reset across all restaurants for %s...", current_day)
+                    tenants = await db.restaurants.find({}, {"_id": 0, "id": 1}).to_list(1000)
+                    for t in tenants:
+                        tid = t.get("id")
+                        if tid:
+                            await _auto_clear_kitchen_orders(tid, force=True)
+                            await notify_tenant(
+                                tid,
+                                "system",
+                                "Daily Reset",
+                                "Daily 12:00 AM business day reset completed.",
+                                {"event": "MIDNIGHT_RESET", "date": current_day.isoformat()}
+                            )
+                    dashboard_summary_cache.clear()
+                    
+                last_reset_day = current_day
+            except Exception as e:
+                logger.error("Error in midnight_reset_worker: %s", e)
+            await asyncio.sleep(10)
+    asyncio.create_task(_midnight_reset_worker())
 
 
 @app.on_event("shutdown")

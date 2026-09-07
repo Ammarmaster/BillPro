@@ -472,6 +472,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         api.settleTableInCache(data.table_number);
       }
 
+      // 4b. Handle 12:00 AM Midnight Business Reset
+      if (eventName === "MIDNIGHT_RESET") {
+        api.resetDailySalesCache();
+        clearCachePrefix("/dashboard");
+        clearCachePrefix("/bills");
+        clearCachePrefix("/orders");
+        clearCachePrefix("/tables");
+        api.dashboardSummary().catch(() => {});
+      }
+
       // 5. Instantly increment dashboard totals on payment / creation
       if (eventName === "order.created") {
         const orderId = data.order_id || (data.order && data.order.id);

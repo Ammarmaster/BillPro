@@ -51,13 +51,46 @@ async function delDiskCache(k: string) {
   try { await AsyncStorage.removeItem(k); } catch {}
 }
 
+function getTodayDateString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function sanitizeSummaryForNewDay(summary: any): any {
+  if (!summary || typeof summary !== "object") return summary;
+  const todayStr = getTodayDateString();
+  const cacheDate = summary.__cache_date || summary.business_date;
+  if (cacheDate && cacheDate !== todayStr) {
+    return {
+      ...summary,
+      revenue_today: 0,
+      orders_today: 0,
+      orders_open: 0,
+      pending_count: 0,
+      cooking_count: 0,
+      ready_count: 0,
+      revenue_web_today: 0,
+      avg_bill: 0,
+      business_date: todayStr,
+      __cache_date: todayStr
+    };
+  }
+  return { ...summary, __cache_date: todayStr };
+}
+
 // Synchronous disk hydration on Web and startup
 if (Platform.OS === "web" && typeof window !== "undefined") {
   try {
     const keys = ["/dashboard/summary", "/tables", "/orders", "/bills", "/restaurant", "/categories", "/menu-items", "/dashboard/feedback", "/admin/summary", "/admin/restaurants", "/subscriptions/mine"];
     for (const k of keys) {
       const v = window.localStorage.getItem("disk_cache_" + k);
-      if (v) memoryCache[k] = JSON.parse(v);
+      if (v) {
+        const parsed = JSON.parse(v);
+        memoryCache[k] = k === "/dashboard/summary" ? sanitizeSummaryForNewDay(parsed) : parsed;
+      }
     }
   } catch {}
 } else if (Platform.OS !== "web") {
@@ -67,7 +100,8 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
     AsyncStorage.getItem("disk_cache_" + k).then(v => {
       if (v) {
         try {
-          memoryCache[k] = JSON.parse(v);
+          const parsed = JSON.parse(v);
+          memoryCache[k] = k === "/dashboard/summary" ? sanitizeSummaryForNewDay(parsed) : parsed;
           notifyCacheUpdate(k, memoryCache[k]);
         } catch {}
       }
@@ -290,6 +324,9 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     }
 
     if (isGet) {
+      if (path === "/dashboard/summary" && data && typeof data === "object") {
+        data.__cache_date = getTodayDateString();
+      }
       memoryCache[path] = data;
       cacheTimestamps[path] = Date.now();
       if (data) {
@@ -311,6 +348,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 }
 
 export const api = {
+  clearCachePrefix: (prefix: string) => clearCachePrefix(prefix),
   getPendingSyncCount: () => 0,
   login: (email: string, password: string) =>
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
@@ -578,7 +616,33 @@ export const api = {
   getCachedCategories: () => memoryCache['/categories'] || null,
   getCachedMenu: () => memoryCache['/menu-items'] || null,
   getCachedTables: () => memoryCache['/tables'] || null,
-  getCachedSummary: () => memoryCache['/dashboard/summary'] || null,
+  getCachedSummary: () => {
+    const cached = memoryCache['/dashboard/summary'];
+    if (!cached) return null;
+    const sanitized = sanitizeSummaryForNewDay(cached);
+    memoryCache['/dashboard/summary'] = sanitized;
+    return sanitized;
+  },
+  resetDailySalesCache: () => {
+    const cached = memoryCache['/dashboard/summary'];
+    const todayStr = getTodayDateString();
+    const reset = {
+      ...(cached || {}),
+      revenue_today: 0,
+      orders_today: 0,
+      orders_open: 0,
+      pending_count: 0,
+      cooking_count: 0,
+      ready_count: 0,
+      revenue_web_today: 0,
+      avg_bill: 0,
+      business_date: todayStr,
+      __cache_date: todayStr
+    };
+    memoryCache['/dashboard/summary'] = reset;
+    setDiskCache("disk_cache_/dashboard/summary", JSON.stringify(reset)).catch(() => {});
+    notifyCacheUpdate('/dashboard/summary', reset);
+  },
   getCachedFeedback: () => memoryCache['/dashboard/feedback'] || null,
   getCachedAdminSummary: () => memoryCache['/admin/summary'] || null,
   getCachedAdminRestaurants: () => memoryCache['/admin/restaurants'] || null,

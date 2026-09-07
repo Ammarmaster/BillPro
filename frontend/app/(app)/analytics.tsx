@@ -10,6 +10,7 @@ import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/context/ThemeContext";
 import { exportAnalyticsPDF, exportAnalyticsExcel, exportAnalyticsDocx } from "@/src/lib/exportAnalytics";
 import { spacing, radius } from "@/src/theme";
+import { safeParseDate } from "@/src/lib/dateUtils";
 
 export default function Analytics() {
   const insets = useSafeAreaInsets();
@@ -55,8 +56,9 @@ export default function Analytics() {
   yesterday.setDate(yesterday.getDate() - 1);
 
   const currentPeriodBills = bills.filter(b => {
-    if (!b || !b.created_at) return false;
-    const bDate = new Date(b.created_at);
+    if (!b) return false;
+    const bDate = safeParseDate(b.created_at || b.paid_at);
+    if (!bDate) return false;
     
     if (period === "today") return isSameDayLocal(bDate, today);
     if (period === "yesterday") return isSameDayLocal(bDate, yesterday);
@@ -72,6 +74,9 @@ export default function Analytics() {
     if (period === "monthly") {
       const d30 = new Date(); d30.setDate(d30.getDate() - 30);
       return bDate >= d30;
+    }
+    if (period === "yearly") {
+      return bDate.getFullYear() === today.getFullYear();
     }
     return true;
   });
@@ -144,10 +149,10 @@ export default function Analytics() {
         return { label: `W${4 - weeksAgo}`, val: weekRev };
       })
     : [
-        { label: "Q1", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getMonth() <= 2).reduce((s, b) => s + (Number(b.total) || 0), 0) },
-        { label: "Q2", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s, b) => s + (Number(b.total) || 0), 0) },
-        { label: "Q3", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s, b) => s + (Number(b.total) || 0), 0) },
-        { label: "Q4", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getMonth() >= 9).reduce((s, b) => s + (Number(b.total) || 0), 0) },
+        { label: "Q1", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() <= 2).reduce((s, b) => s + (Number(b.total) || 0), 0) },
+        { label: "Q2", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s, b) => s + (Number(b.total) || 0), 0) },
+        { label: "Q3", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s, b) => s + (Number(b.total) || 0), 0) },
+        { label: "Q4", val: bills.filter(b => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 9).reduce((s, b) => s + (Number(b.total) || 0), 0) },
       ];
 
   const maxVal = Math.max(...chartData.map(d => d.val), 100);
