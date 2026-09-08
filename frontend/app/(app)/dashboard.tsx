@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking, TextInput, ActivityIndicator, Alert, AppState } from "react-native";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Linking, TextInput, ActivityIndicator, Alert, AppState, Modal } from "react-native";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
@@ -39,8 +39,13 @@ function AdminConsole() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<any>(() => api.getCachedAdminSummary() || null);
   const [restaurants, setRestaurants] = useState<any[]>(() => api.getCachedAdminRestaurants() || []);
+  const [plans, setPlans] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Search & Filter state for dashboard store feed
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "expired">("all");
 
   // Toggle detail states
   const [detailedMRR, setDetailedMRR] = useState(false);
@@ -54,17 +59,33 @@ function AdminConsole() {
   const [animatedOwners, setAnimatedOwners] = useState(() => summary?.total_owners || 0);
   const [animatedSubs, setAnimatedSubs] = useState(() => summary?.active_subscriptions || 0);
 
+  // Direct Quick Subscription Grant Modal State
+  const [grantModal, setGrantModal] = useState(false);
+  const [grantTargetRest, setGrantTargetRest] = useState<any>(null);
+  const [grantPlanId, setGrantPlanId] = useState<string>("");
+  const [grantDays, setGrantDays] = useState<number>(30);
+  const [grantBusy, setGrantBusy] = useState(false);
+  const [grantMsg, setGrantMsg] = useState<string | null>(null);
+  const [restSearchQuery, setRestSearchQuery] = useState("");
+
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [sum, rests] = await Promise.all([
+      const [sum, rests, pList] = await Promise.all([
         api.adminSummary().catch(() => null),
         api.adminListRestaurants().catch(() => []),
+        api.adminListPlans().catch(() => []),
       ]);
       if (sum) setSummary(sum);
       if (rests) setRestaurants(rests);
+      if (pList && Array.isArray(pList)) {
+        setPlans(pList);
+        if (pList.length > 0 && !grantPlanId) {
+          setGrantPlanId(pList[0].id);
+        }
+      }
     } catch (e: any) { setErr(e.message); }
-  }, []);
+  }, [grantPlanId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -95,8 +116,6 @@ function AdminConsole() {
     }
   }, [summary]);
 
-
-
   const handleCall = (phone: string) => {
     if (!phone) return;
     Linking.openURL(`tel:${phone}`).catch(() => {});
@@ -111,27 +130,101 @@ function AdminConsole() {
     }
   };
 
-  const unreadRests = restaurants.filter(r => !r.is_read);
+  const openGrantForStore = (store: any) => {
+    setGrantTargetRest(store);
+    setGrantMsg(null);
+    setErr(null);
+    if (plans.length > 0) {
+      // Pick current plan if already set, or first
+      const currentPlan = plans.find(p => p.name.toLowerCase() === store.subscription?.plan_name?.toLowerCase());
+      setGrantPlanId(currentPlan ? currentPlan.id : plans[0].id);
+    }
+    setGrantModal(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  };
+
+  const executeGrantSubscription = async () => {
+    if (!grantTargetRest || !grantPlanId) {
+      setErr("Please select both a business and a subscription plan.");
+      return;
+    }
+    setGrantBusy(true);
+    setErr(null);
+    setGrantMsg(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    try {
+      await api.adminAssignSubscription(grantTargetRest.id, grantPlanId, grantDays, "active");
+      setGrantMsg(`Successfully granted subscription for ${grantDays >= 3650 ? "👑 Lifetime" : `${grantDays} days`}!`);
+      await load();
+      setTimeout(() => {
+        setGrantModal(false);
+        setGrantMsg(null);
+      }, 1500);
+    } catch (e: any) {
+      setErr(e.message || "Failed to assign subscription.");
+    } finally {
+      setGrantBusy(false);
+    }
+  };
+
   const isSuperAdmin = user?.role === "super_admin";
+  const unreadRests = restaurants.filter(r => !r.is_read);
+
+  // Filtered restaurants for dashboard list
+  const filteredRestaurants = useMemo(() => {
+    return restaurants.filter(r => {
+      const matchesSearch = !searchQuery.trim() ||
+        r.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.owner_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.phone?.includes(searchQuery);
+
+      if (!matchesSearch) return false;
+      if (statusFilter === "active") return r.subscription?.status === "active";
+      if (statusFilter === "expired") return !r.subscription || r.subscription.status !== "active";
+      return true;
+    });
+  }, [restaurants, searchQuery, statusFilter]);
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-console">
       {/* Visual Header */}
       <View style={styles.adminHeader}>
-        <View>
-          <Text style={[styles.greet, { color: theme.onSurfaceSecondary }]}>
-            {user?.role?.replace("_", " ").toUpperCase()}
-          </Text>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={styles.adminBadgePill}>
+              <Ionicons name="shield-checkmark" size={12} color="#635BFF" />
+              <Text style={styles.adminBadgeText}>
+                {user?.role === "super_admin" ? "SUPER ADMIN" : "ADMIN"}
+              </Text>
+            </View>
+            <View style={styles.livePulseDot} />
+          </View>
           <Text style={[styles.name, { color: theme.onSurface, marginTop: 4, marginBottom: 0 }]}>
-            System Console
+            Control Center
           </Text>
         </View>
-        <View style={[styles.adminAvatar, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.2)" : "rgba(99, 91, 255, 0.1)" }]}>
-          <Text style={[styles.avatarText, { color: colors.brand }]}>
-            {user?.full_name?.charAt(0).toUpperCase() || "A"}
-          </Text>
-          <View style={styles.activeIndicator} />
-        </View>
+
+        {isSuperAdmin && (
+          <Pressable
+            style={styles.quickGrantHeaderBtn}
+            onPress={() => {
+              setGrantTargetRest(restaurants[0] || null);
+              setGrantMsg(null);
+              setErr(null);
+              setGrantModal(true);
+            }}
+          >
+            <LinearGradient
+              colors={["#635BFF", "#8B5CF6"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.quickGrantGrad}
+            >
+              <Ionicons name="sparkles" size={14} color="#FFFFFF" />
+              <Text style={styles.quickGrantText}>Grant Sub</Text>
+            </LinearGradient>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView
@@ -143,7 +236,7 @@ function AdminConsole() {
           <>
             {/* Elegant Main MRR/ARR Cards */}
             <LinearGradient
-              colors={["#635BFF", "#4F46E5"]}
+              colors={["#4F46E5", "#635BFF", "#7C3AED"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.heroAdminCard}
@@ -154,7 +247,7 @@ function AdminConsole() {
                 testID="admin-metric-mrr"
               >
                 <View>
-                  <Text style={styles.heroAdminLabel}>ESTIMATED MRR (TAP FOR DETAIL)</Text>
+                  <Text style={styles.heroAdminLabel}>PLATFORM MRR (TAP FOR DETAIL)</Text>
                   <Text style={styles.heroAdminValue}>{formatAmount(summary?.mrr ?? animatedMRR ?? 0, detailedMRR)}</Text>
                 </View>
                 <View style={styles.heroAdminIconBox}>
@@ -175,8 +268,8 @@ function AdminConsole() {
                   style={styles.activeSubBadge}
                   onPress={() => router.push("/(app)/admin-restaurants")}
                 >
-                  <Ionicons name="ribbon" size={12} color="#FFFFFF" />
-                  <Text style={styles.activeSubText}>{summary?.active_subscriptions ?? 0} Active Subs</Text>
+                  <Ionicons name="ribbon" size={13} color="#34D399" />
+                  <Text style={styles.activeSubText}>{summary?.active_subscriptions ?? animatedSubs ?? 0} Active Subs</Text>
                 </Pressable>
               </View>
             </LinearGradient>
@@ -188,8 +281,8 @@ function AdminConsole() {
                 onPress={() => router.push("/(app)/admin-restaurants")}
                 testID="admin-metric-restaurants"
               >
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(99, 91, 255, 0.1)" }]}>
-                  <Ionicons name="storefront" size={20} color={colors.brand} />
+                <View style={[styles.metricIconBox, { backgroundColor: "rgba(99, 91, 255, 0.12)" }]}>
+                  <Ionicons name="storefront" size={20} color="#635BFF" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_restaurants ?? animatedRests ?? 0}</Text>
@@ -199,15 +292,29 @@ function AdminConsole() {
 
               <Pressable
                 style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={() => router.push("/(app)/admin-restaurants")}
+                testID="admin-metric-subs"
+              >
+                <View style={[styles.metricIconBox, { backgroundColor: "rgba(16, 185, 129, 0.12)" }]}>
+                  <Ionicons name="ribbon" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.active_subscriptions ?? animatedSubs ?? 0}</Text>
+                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Active Plans</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
                 onPress={() => router.push("/(app)/admin-users")}
                 testID="admin-metric-users"
               >
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(16, 185, 129, 0.1)" }]}>
-                  <Ionicons name="people" size={20} color="#10B981" />
+                <View style={[styles.metricIconBox, { backgroundColor: "rgba(59, 130, 246, 0.12)" }]}>
+                  <Ionicons name="people" size={20} color="#3B82F6" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_users ?? animatedUsers ?? 0}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Users</Text>
+                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Total Users</Text>
                 </View>
               </Pressable>
 
@@ -216,7 +323,7 @@ function AdminConsole() {
                 onPress={() => router.push("/(app)/admin-users")}
                 testID="admin-metric-owners"
               >
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(245, 158, 11, 0.1)" }]}>
+                <View style={[styles.metricIconBox, { backgroundColor: "rgba(245, 158, 11, 0.12)" }]}>
                   <Ionicons name="person-circle" size={20} color="#F59E0B" />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -224,145 +331,388 @@ function AdminConsole() {
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Owners</Text>
                 </View>
               </Pressable>
-
-              <Pressable
-                style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-                onPress={() => router.push("/(app)/admin-restaurants")}
-                testID="admin-metric-subs"
-              >
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(59, 130, 246, 0.1)" }]}>
-                  <Ionicons name="ribbon" size={20} color="#3B82F6" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.active_subscriptions ?? animatedSubs ?? 0}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Subscriptions</Text>
-                </View>
-              </Pressable>
             </View>
-          </>
-        )}
 
-        {/* New Restaurants Queue Card */}
-        <Text style={[styles.adminSecHeader, { color: theme.onSurface, marginTop: isSuperAdmin ? spacing.md : 0 }]}>New Restaurant Onboardings</Text>
-        {unreadRests.length === 0 ? (
-          <View style={[styles.noUnreadCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-            <LinearGradient
-              colors={isDark ? ["rgba(22, 163, 74, 0.15)", "rgba(22, 163, 74, 0.05)"] : ["#E8F5E9", "#F1F8E9"]}
-              style={styles.greenCircle}
-            >
-              <Ionicons name="checkmark-done" size={24} color="#16A34A" />
-            </LinearGradient>
-            <Text style={[styles.noUnreadTitle, { color: theme.onSurface }]}>All caught up!</Text>
-            <Text style={[styles.noUnreadSub, { color: theme.onSurfaceSecondary }]}>
-              There are no unread new business registrations at this time.
-            </Text>
-          </View>
-        ) : (
-          <View style={{ gap: spacing.md }}>
-            {unreadRests.map(r => (
-              <View key={r.id} style={[styles.newRestCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <View style={{ flex: 1, marginRight: spacing.sm }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={[styles.newRestName, { color: theme.onSurface }]} numberOfLines={1}>
-                        {r.name}
-                      </Text>
-                      <View style={styles.glowingDot} />
-                    </View>
-                    <Text style={[styles.newRestOwner, { color: theme.onSurfaceSecondary }]}>
-                      Owner: {r.owner_name}
-                    </Text>
-                  </View>
-                  {!!r.phone && (
-                    <Pressable
-                      style={styles.actionCallBtn}
-                      onPress={() => handleCall(r.phone)}
-                    >
-                      <Ionicons name="call" size={14} color="#FFFFFF" />
-                      <Text style={styles.actionCallText}>Call</Text>
-                    </Pressable>
-                  )}
-                </View>
-
-                {(!!r.address || !!r.owner_email) && (
-                  <View style={[styles.newRestDetailsBox, { backgroundColor: theme.surfaceTertiary }]}>
-                    {!!r.owner_email && (
-                      <Text style={[styles.newRestDetailText, { color: theme.onSurfaceSecondary }]}>
-                        📧 {r.owner_email}
-                      </Text>
-                    )}
-                    {!!r.address && (
-                      <Text style={[styles.newRestDetailText, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
-                        📍 {r.address}
-                      </Text>
-                    )}
-                  </View>
-                )}
-
-                <Pressable
-                  style={[styles.actionReadBtn, { borderColor: isDark ? "rgba(22, 163, 74, 0.4)" : "#A5D6A7" }]}
-                  onPress={() => markRead(r.id)}
-                >
-                  <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
-                  <Text style={styles.actionReadText}>Mark as Read</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {isSuperAdmin && (
-          <>
-            {/* Manage Links Section */}
-            <Text style={[styles.adminSecHeader, { color: theme.onSurface, marginTop: spacing.xl }]}>Console Directory</Text>
-            <View style={{ gap: spacing.sm }}>
+            {/* Quick Action Navigation Dock */}
+            <View style={styles.quickNavDock}>
               <Pressable
-                style={[styles.dirRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-                onPress={() => router.push("/(app)/admin-restaurants")}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={() => {
+                  setGrantTargetRest(restaurants[0] || null);
+                  setGrantMsg(null);
+                  setErr(null);
+                  setGrantModal(true);
+                }}
               >
-                <View style={[styles.dirIconBox, { backgroundColor: "rgba(99, 91, 255, 0.1)" }]}>
-                  <Ionicons name="storefront" size={20} color={colors.brand} />
+                <View style={[styles.dockIconBg, { backgroundColor: "#635BFF18" }]}>
+                  <Ionicons name="sparkles" size={18} color="#635BFF" />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.dirTitle, { color: theme.onSurface }]}>Business Directory</Text>
-                  <Text style={[styles.dirSub, { color: theme.onSurfaceSecondary }]}>View details, edit subs, delete stores</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Grant Plan</Text>
               </Pressable>
 
               <Pressable
-                style={[styles.dirRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={() => router.push("/(app)/admin-restaurants")}
+              >
+                <View style={[styles.dockIconBg, { backgroundColor: "#10B98118" }]}>
+                  <Ionicons name="business" size={18} color="#10B981" />
+                </View>
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Businesses</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
                 onPress={() => router.push("/(app)/admin-users")}
               >
-                <View style={[styles.dirIconBox, { backgroundColor: "rgba(16, 185, 129, 0.1)" }]}>
-                  <Ionicons name="people" size={20} color="#10B981" />
+                <View style={[styles.dockIconBg, { backgroundColor: "#3B82F618" }]}>
+                  <Ionicons name="person-add" size={18} color="#3B82F6" />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.dirTitle, { color: theme.onSurface }]}>User & Passwords CRUD</Text>
-                  <Text style={[styles.dirSub, { color: theme.onSurfaceSecondary }]}>Reset passwords, create admin employees</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Users & PINs</Text>
               </Pressable>
 
               <Pressable
-                style={[styles.dirRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
                 onPress={() => router.push("/(app)/admin-plans")}
               >
-                <View style={[styles.dirIconBox, { backgroundColor: "rgba(245, 158, 11, 0.1)" }]}>
-                  <Ionicons name="pricetags" size={20} color="#F59E0B" />
+                <View style={[styles.dockIconBg, { backgroundColor: "#F59E0B18" }]}>
+                  <Ionicons name="pricetag" size={18} color="#F59E0B" />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.dirTitle, { color: theme.onSurface }]}>Subscription Plans</Text>
-                  <Text style={[styles.dirSub, { color: theme.onSurfaceSecondary }]}>Create, edit, or toggle pricing tiers</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceSecondary} />
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Plans</Text>
               </Pressable>
             </View>
           </>
+        )}
+
+        {/* Live Business Directory & Instant Grant Feed */}
+        <View style={{ marginTop: spacing.xl }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
+            <Text style={[styles.adminSecHeader, { color: theme.onSurface, marginBottom: 0 }]}>
+              Live Restaurants ({filteredRestaurants.length})
+            </Text>
+            <Pressable onPress={() => router.push("/(app)/admin-restaurants")} style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+              <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "700" }}>Manage All</Text>
+              <Ionicons name="chevron-forward" size={14} color="#635BFF" />
+            </Pressable>
+          </View>
+
+          {/* Search bar */}
+          <View style={[styles.searchBox, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <Ionicons name="search" size={16} color={theme.onSurfaceSecondary} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search store name, owner, phone..."
+              placeholderTextColor={theme.onSurfaceTertiary}
+              style={[styles.searchInput, { color: theme.onSurface }]}
+            />
+            {!!searchQuery && (
+              <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={theme.onSurfaceSecondary} />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Status Filter Tabs */}
+          <View style={styles.filterTabsRow}>
+            {[
+              { key: "all", label: `All (${restaurants.length})` },
+              { key: "active", label: `Active Subs (${restaurants.filter(r => r.subscription?.status === "active").length})` },
+              { key: "expired", label: `Expired (${restaurants.filter(r => !r.subscription || r.subscription.status !== "active").length})` },
+            ].map(tab => (
+              <Pressable
+                key={tab.key}
+                style={[
+                  styles.filterTabPill,
+                  { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                  statusFilter === tab.key && { backgroundColor: "#635BFF", borderColor: "#635BFF" }
+                ]}
+                onPress={() => setStatusFilter(tab.key as any)}
+              >
+                <Text style={[styles.filterTabText, { color: theme.onSurfaceSecondary }, statusFilter === tab.key && { color: "#FFFFFF", fontWeight: "800" }]}>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Store Feed List */}
+          {filteredRestaurants.length === 0 ? (
+            <View style={[styles.emptyStoreCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Ionicons name="storefront-outline" size={32} color={theme.onSurfaceTertiary} />
+              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 8, fontWeight: "600" }}>No stores match your search.</Text>
+            </View>
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              {filteredRestaurants.map(r => {
+                const isSubActive = r.subscription?.status === "active";
+                return (
+                  <View
+                    key={r.id}
+                    style={[styles.storeFeedCard, { backgroundColor: theme.surfaceSecondary, borderColor: isSubActive ? theme.border : "#EF444430" }]}
+                  >
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <View style={{ flex: 1, marginRight: spacing.sm }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={[styles.storeFeedName, { color: theme.onSurface }]} numberOfLines={1}>
+                            {r.name}
+                          </Text>
+                          {isSubActive ? (
+                            <View style={styles.activeSubGlowDot} />
+                          ) : (
+                            <View style={styles.expiredSubDot} />
+                          )}
+                        </View>
+                        <Text style={[styles.storeFeedMeta, { color: theme.onSurfaceSecondary }]}>
+                          Owner: {r.owner_name} {r.phone ? `· ${r.phone}` : ""}
+                        </Text>
+                      </View>
+
+                      {/* Plan Badge */}
+                      <View style={[
+                        styles.planStatusBadge,
+                        { backgroundColor: isSubActive ? "#064E3B" : "#7F1D1D" }
+                      ]}>
+                        <Text style={[styles.planStatusText, { color: isSubActive ? "#34D399" : "#F87171" }]}>
+                          {isSubActive ? `${r.subscription.plan_name.toUpperCase()}` : "EXPIRED"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Quick Action Footer on Card */}
+                    <View style={styles.storeCardFooter}>
+                      {!!r.phone && (
+                        <Pressable
+                          style={[styles.cardCallBtn, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                          onPress={() => handleCall(r.phone)}
+                        >
+                          <Ionicons name="call" size={13} color="#10B981" />
+                          <Text style={[styles.cardCallText, { color: theme.onSurface }]}>Call</Text>
+                        </Pressable>
+                      )}
+
+                      <Pressable
+                        style={styles.cardGrantBtn}
+                        onPress={() => openGrantForStore(r)}
+                      >
+                        <LinearGradient
+                          colors={["#635BFF", "#4F46E5"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.cardGrantGrad}
+                        >
+                          <Ionicons name="flash" size={13} color="#FFFFFF" />
+                          <Text style={styles.cardGrantText}>
+                            {isSubActive ? "Extend Plan" : "Grant Plan"}
+                          </Text>
+                        </LinearGradient>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {/* New Restaurants Queue Card */}
+        {unreadRests.length > 0 && (
+          <View style={{ marginTop: spacing.xl }}>
+            <Text style={[styles.adminSecHeader, { color: theme.onSurface }]}>New Registrations ({unreadRests.length})</Text>
+            <View style={{ gap: spacing.md }}>
+              {unreadRests.map(r => (
+                <View key={r.id} style={[styles.newRestCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={[styles.newRestName, { color: theme.onSurface }]}>{r.name}</Text>
+                      <Text style={[styles.newRestOwner, { color: theme.onSurfaceSecondary }]}>Owner: {r.owner_name}</Text>
+                    </View>
+                    {!!r.phone && (
+                      <Pressable style={styles.actionCallBtn} onPress={() => handleCall(r.phone)}>
+                        <Ionicons name="call" size={14} color="#FFFFFF" />
+                        <Text style={styles.actionCallText}>Call</Text>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  <Pressable
+                    style={[styles.actionReadBtn, { borderColor: isDark ? "rgba(22, 163, 74, 0.4)" : "#A5D6A7" }]}
+                    onPress={() => markRead(r.id)}
+                  >
+                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    <Text style={styles.actionReadText}>Mark as Read</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          </View>
         )}
 
         {err && <Text style={styles.err} testID="admin-error">{err}</Text>}
       </ScrollView>
+
+      {/* SUPER ADMIN DIRECT SUBSCRIPTION GRANT MODAL */}
+      <Modal transparent visible={grantModal} animationType="slide" onRequestClose={() => setGrantModal(false)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={styles.grantModalIconBox}>
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitle, { color: theme.onSurface, marginBottom: 0 }]}>Grant Subscription</Text>
+                  <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "500" }}>Super Admin Instant Access Override</Text>
+                </View>
+              </View>
+              <Pressable onPress={() => setGrantModal(false)} hitSlop={12}>
+                <Ionicons name="close-circle" size={28} color={theme.onSurfaceSecondary} />
+              </Pressable>
+            </View>
+
+            {grantMsg && <Text style={styles.successMsg}>{grantMsg}</Text>}
+            {err && <Text style={styles.err}>{err}</Text>}
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 450 }}>
+              {/* Step 1: Select Target Store */}
+              <Text style={[styles.modalSecLabel, { color: theme.onSurface }]}>1. Select Target Business</Text>
+              
+              {/* Store search filter if not pre-locked */}
+              <View style={[styles.searchBox, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, marginBottom: 8 }]}>
+                <Ionicons name="search" size={14} color={theme.onSurfaceSecondary} />
+                <TextInput
+                  value={restSearchQuery}
+                  onChangeText={setRestSearchQuery}
+                  placeholder="Filter stores..."
+                  placeholderTextColor={theme.onSurfaceTertiary}
+                  style={[styles.searchInput, { color: theme.onSurface, fontSize: 13 }]}
+                />
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 6 }}>
+                {restaurants
+                  .filter(r => !restSearchQuery.trim() || r.name.toLowerCase().includes(restSearchQuery.toLowerCase()))
+                  .map(r => {
+                    const isSelected = grantTargetRest?.id === r.id;
+                    const hasSub = r.subscription?.status === "active";
+                    return (
+                      <Pressable
+                        key={r.id}
+                        style={[
+                          styles.storeSelectPill,
+                          { backgroundColor: theme.surfaceTertiary, borderColor: theme.border },
+                          isSelected && styles.storeSelectPillActive
+                        ]}
+                        onPress={() => setGrantTargetRest(r)}
+                      >
+                        <Text style={[styles.storeSelectPillName, { color: theme.onSurface }, isSelected && { color: "#FFFFFF", fontWeight: "800" }]}>
+                          {r.name}
+                        </Text>
+                        <Text style={[styles.storeSelectPillStatus, { color: hasSub ? "#10B981" : "#EF4444" }, isSelected && { color: "rgba(255,255,255,0.85)" }]}>
+                          {hasSub ? "Active" : "Expired"}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+              </ScrollView>
+
+              {/* Step 2: Duration Selector */}
+              <Text style={[styles.modalSecLabel, { color: theme.onSurface, marginTop: spacing.md }]}>2. Choose Duration</Text>
+              <View style={styles.durationRow}>
+                {[
+                  { label: "1 Month (30d)", days: 30 },
+                  { label: "3 Months (90d)", days: 90 },
+                  { label: "6 Months (180d)", days: 180 },
+                  { label: "1 Year (365d)", days: 365 },
+                  { label: "👑 Lifetime", days: 36500 },
+                ].map(d => (
+                  <Pressable
+                    key={d.days}
+                    style={[
+                      styles.durationPill,
+                      { backgroundColor: theme.surfaceTertiary, borderColor: theme.border },
+                      grantDays === d.days && styles.durationPillActive
+                    ]}
+                    onPress={() => setGrantDays(d.days)}
+                  >
+                    <Text style={[styles.durationPillText, { color: theme.onSurfaceSecondary }, grantDays === d.days && styles.durationPillTextActive]}>
+                      {d.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Step 3: Select Plan */}
+              <Text style={[styles.modalSecLabel, { color: theme.onSurface, marginTop: spacing.md }]}>3. Select Tier</Text>
+              <View style={{ gap: 8 }}>
+                {plans.map(p => {
+                  const isSelected = grantPlanId === p.id;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      style={[
+                        styles.planSelectCard,
+                        { backgroundColor: theme.surfaceTertiary, borderColor: theme.border },
+                        isSelected && styles.planSelectCardActive
+                      ]}
+                      onPress={() => setGrantPlanId(p.id)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={[styles.planSelectName, { color: theme.onSurface }, isSelected && { color: "#635BFF", fontWeight: "900" }]}>
+                            {p.name}
+                          </Text>
+                          <Text style={[styles.planSelectInterval, { color: theme.onSurfaceSecondary }]}>
+                            ({p.interval})
+                          </Text>
+                        </View>
+                        {!!p.features?.length && (
+                          <Text style={[styles.planSelectFeat, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>
+                            {p.features.slice(0, 2).join(" · ")}
+                          </Text>
+                        )}
+                      </View>
+
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[styles.planSelectPrice, { color: "#635BFF" }]}>
+                          ₹{p.price}
+                        </Text>
+                        {isSelected && (
+                          <Ionicons name="checkmark-circle" size={18} color="#635BFF" style={{ marginTop: 2 }} />
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Action Button */}
+              <Pressable
+                style={[styles.executeGrantBtn, grantBusy && { opacity: 0.7 }]}
+                onPress={executeGrantSubscription}
+                disabled={grantBusy}
+              >
+                <LinearGradient
+                  colors={["#635BFF", "#4F46E5"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.executeGrantGrad}
+                >
+                  {grantBusy ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="flash" size={18} color="#FFFFFF" />
+                      <Text style={styles.executeGrantText}>
+                        Activate {grantTargetRest?.name ? `for ${grantTargetRest.name}` : "Subscription"}
+                      </Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1152,6 +1502,70 @@ const styles = StyleSheet.create({
   dirIconBox: { width: 40, height: 40, borderRadius: radius.md, justifyContent: "center", alignItems: "center" },
   dirTitle: { fontSize: 14, fontWeight: "800" },
   dirSub: { fontSize: 11, marginTop: 2, fontWeight: "500" },
+
+  // Super Admin Console & Direct Subscription Grant styles
+  adminBadgePill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(99, 91, 255, 0.12)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, borderColor: "rgba(99, 91, 255, 0.25)" },
+  adminBadgeText: { color: colors.brand, fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  livePulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#34D399" },
+  quickGrantHeaderBtn: { borderRadius: radius.pill, overflow: "hidden", elevation: 2 },
+  quickGrantGrad: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
+  quickGrantText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  
+  quickNavDock: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm, marginBottom: spacing.lg },
+  dockActionBtn: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, borderRadius: radius.lg, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 6 },
+  dockIconBg: { width: 34, height: 34, borderRadius: 17, justifyContent: "center", alignItems: "center" },
+  dockActionText: { fontSize: 11, fontWeight: "700" },
+
+  searchBox: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, height: 42, borderRadius: radius.md, borderWidth: 1, gap: 8, marginBottom: spacing.md },
+  searchInput: { flex: 1, fontSize: 13, fontWeight: "500" },
+  filterTabsRow: { flexDirection: "row", gap: 8, marginBottom: spacing.md },
+  filterTabPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1 },
+  filterTabText: { fontSize: 11, fontWeight: "700" },
+  emptyStoreCard: { padding: spacing.xxl, borderRadius: radius.xl, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+
+  storeFeedCard: { padding: spacing.md, borderRadius: radius.xl, borderWidth: 1, gap: spacing.sm },
+  activeSubGlowDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#34D399" },
+  expiredSubDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444" },
+  storeFeedName: { fontSize: 15, fontWeight: "800" },
+  storeFeedMeta: { fontSize: 12, marginTop: 2, fontWeight: "500" },
+  planStatusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  planStatusText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+
+  storeCardFooter: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 4 },
+  cardCallBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm, borderWidth: 1 },
+  cardCallText: { fontSize: 11, fontWeight: "700" },
+  cardGrantBtn: { borderRadius: radius.sm, overflow: "hidden" },
+  cardGrantGrad: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 6 },
+  cardGrantText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  modalCard: { padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: "90%" },
+  modalTitle: { fontSize: 18, fontWeight: "900", marginBottom: 2 },
+  modalSecLabel: { fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
+  grantModalIconBox: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#635BFF", justifyContent: "center", alignItems: "center" },
+  successMsg: { color: "#34D399", backgroundColor: "#064E3B", marginVertical: spacing.sm, padding: spacing.md, borderRadius: radius.md, fontSize: 13, fontWeight: "700" },
+
+  storeSelectPill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1, alignItems: "center", minWidth: 100 },
+  storeSelectPillActive: { backgroundColor: "#635BFF", borderColor: "#635BFF" },
+  storeSelectPillName: { fontSize: 12, fontWeight: "700" },
+  storeSelectPillStatus: { fontSize: 10, fontWeight: "600", marginTop: 2 },
+
+  durationRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: spacing.sm },
+  durationPill: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.sm, borderWidth: 1 },
+  durationPillActive: { backgroundColor: "#635BFF", borderColor: "#635BFF" },
+  durationPillText: { fontSize: 11, fontWeight: "700" },
+  durationPillTextActive: { color: "#FFFFFF", fontWeight: "800" },
+
+  planSelectCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.md, borderRadius: radius.md, borderWidth: 1 },
+  planSelectCardActive: { borderColor: "#635BFF", backgroundColor: "rgba(99, 91, 255, 0.08)" },
+  planSelectName: { fontSize: 14, fontWeight: "800" },
+  planSelectInterval: { fontSize: 12, fontWeight: "500" },
+  planSelectFeat: { fontSize: 11, marginTop: 2 },
+  planSelectPrice: { fontSize: 16, fontWeight: "900" },
+
+  executeGrantBtn: { marginTop: spacing.lg, borderRadius: radius.lg, overflow: "hidden", elevation: 3 },
+  executeGrantGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14 },
+  executeGrantText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
   
   // Online Web Sales Styles
   webPaymentsCard: {

@@ -1,12 +1,14 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, ScrollView, Linking, Switch, Alert,
+  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, ScrollView, Linking, Switch, Alert, TextInput,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import * as Haptics from "expo-haptics";
 
 type Sub = { id: string; plan_name: string; price: number; interval: string; status: string; ends_at?: string };
@@ -15,11 +17,13 @@ type Rest = {
   phone: string; address: string; upi_id: string; gst?: string; subscription?: Sub | null;
   custom_features?: Record<string, boolean>; custom_staff_limit?: number;
 };
-type Plan = { id: string; name: string; price: number; interval: string };
+type Plan = { id: string; name: string; price: number; interval: string; features?: string[] };
 
 export default function AdminRestaurants() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { theme, isDark } = useTheme();
+
   const [items, setItems] = useState<Rest[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +31,10 @@ export default function AdminRestaurants() {
   const [msg, setMsg] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "expired">("all");
 
   // Admin Duration Selector for plan assignment
   const [assignDurationDays, setAssignDurationDays] = useState<number>(30);
@@ -68,7 +76,7 @@ export default function AdminRestaurants() {
       await api.adminAssignSubscription(detail.id, planId, assignDurationDays, "active"); 
       const fresh = await api.adminRestaurantDetail(detail.id);
       setDetail(fresh);
-      setMsg(`Plan assigned for ${assignDurationDays >= 3650 ? "Lifetime" : `${assignDurationDays} days`}!`);
+      setMsg(`Plan assigned for ${assignDurationDays >= 3650 ? "👑 Lifetime" : `${assignDurationDays} days`}!`);
       await load(); 
     } catch (e: any) { 
       setErr(e.message); 
@@ -167,60 +175,174 @@ export default function AdminRestaurants() {
     );
   };
 
+  const filteredItems = useMemo(() => {
+    return items.filter(r => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchQuery = !q ||
+        r.name?.toLowerCase().includes(q) ||
+        r.owner_name?.toLowerCase().includes(q) ||
+        r.phone?.includes(q) ||
+        r.address?.toLowerCase().includes(q);
+
+      if (!matchQuery) return false;
+      if (statusFilter === "active") return r.subscription?.status === "active";
+      if (statusFilter === "expired") return !r.subscription || r.subscription.status !== "active";
+      return true;
+    });
+  }, [items, searchQuery, statusFilter]);
+
   const getSubBadge = (sub?: Sub | null) => {
-    if (!sub) return { label: "NO PLAN", bg: "#2E2E38", text: "#94A3B8" };
-    if (sub.status === "active") return { label: `${sub.plan_name.toUpperCase()} · ACTIVE`, bg: "#064E3B", text: "#34D399" };
+    if (!sub) return { label: "NO PLAN", bg: isDark ? "#2A2A38" : "#E2E8F0", text: isDark ? "#94A3B8" : "#64748B" };
+    if (sub.status === "active") return { label: `${sub.plan_name.toUpperCase()}`, bg: "#064E3B", text: "#34D399" };
     if (sub.status === "expired") return { label: "EXPIRED", bg: "#7F1D1D", text: "#F87171" };
     return { label: sub.status.toUpperCase(), bg: "#78350F", text: "#FBBF24" };
   };
 
   return (
-    <View style={[styles.wrap, { paddingTop: insets.top }]} testID="admin-restaurants-screen">
+    <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-restaurants-screen">
+      {/* Header Bar */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} testID="admin-rest-back-btn" hitSlop={12}>
-          <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
+        <Pressable onPress={() => router.back()} testID="admin-rest-back-btn" hitSlop={12} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Businesses ({items.length})</Text>
-        <Pressable onPress={load} hitSlop={12}>
-          <Ionicons name="refresh" size={22} color={colors.brand} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={[styles.title, { color: theme.onSurface }]}>Businesses</Text>
+          <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, fontWeight: "600" }}>
+            {items.length} registered · {items.filter(i => i.subscription?.status === "active").length} active
+          </Text>
+        </View>
+        <Pressable onPress={load} hitSlop={12} style={[styles.reloadBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <Ionicons name="refresh" size={18} color="#635BFF" />
         </Pressable>
       </View>
 
+      {/* Search & Filter Section */}
+      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
+        <View style={[styles.searchBox, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <Ionicons name="search" size={16} color={theme.onSurfaceSecondary} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search stores, owners, phone..."
+            placeholderTextColor={theme.onSurfaceTertiary}
+            style={[styles.searchInput, { color: theme.onSurface }]}
+          />
+          {!!searchQuery && (
+            <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={theme.onSurfaceSecondary} />
+            </Pressable>
+          )}
+        </View>
+
+        {/* Filter Tabs */}
+        <View style={styles.filterTabsRow}>
+          {[
+            { key: "all", label: `All (${items.length})` },
+            { key: "active", label: `Active (${items.filter(i => i.subscription?.status === "active").length})` },
+            { key: "expired", label: `Expired (${items.filter(i => !i.subscription || i.subscription.status !== "active").length})` },
+          ].map(tab => (
+            <Pressable
+              key={tab.key}
+              style={[
+                styles.filterTabPill,
+                { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                statusFilter === tab.key && { backgroundColor: "#635BFF", borderColor: "#635BFF" }
+              ]}
+              onPress={() => setStatusFilter(tab.key as any)}
+            >
+              <Text style={[styles.filterTabText, { color: theme.onSurfaceSecondary }, statusFilter === tab.key && { color: "#FFFFFF", fontWeight: "800" }]}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
-      ) : items.length === 0 ? (
-        <View style={styles.center}><Text style={{ color: colors.onSurfaceTertiary }}>No businesses yet.</Text></View>
+        <View style={styles.center}><ActivityIndicator color="#635BFF" size="large" /></View>
+      ) : filteredItems.length === 0 ? (
+        <View style={styles.center}>
+          <Ionicons name="storefront-outline" size={48} color={theme.onSurfaceTertiary} />
+          <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, fontWeight: "600", marginTop: 8 }}>
+            No businesses match your search.
+          </Text>
+        </View>
       ) : (
         <FlatList
-          data={items}
+          data={filteredItems}
           keyExtractor={r => r.id}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md }}
           renderItem={({ item }) => {
             const badge = getSubBadge(item.subscription);
+            const isSubActive = item.subscription?.status === "active";
             return (
-              <Pressable style={styles.card} onPress={() => open(item)} testID={`admin-rest-${item.id}`}>
+              <Pressable
+                style={[
+                  styles.card,
+                  { backgroundColor: theme.surfaceSecondary, borderColor: isSubActive ? theme.border : "#EF444440" }
+                ]}
+                onPress={() => open(item)}
+                testID={`admin-rest-${item.id}`}
+              >
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cardName}>{item.name}</Text>
-                  <Text style={styles.cardMeta}>{item.owner_name}{item.phone ? ` · ${item.phone}` : ""}</Text>
-                  {!!item.address && <Text style={styles.cardAddr} numberOfLines={1}>{item.address}</Text>}
-                </View>
-                <View style={{ gap: spacing.xs, alignItems: "flex-end" }}>
-                  {!!item.phone && (
-                    <Pressable
-                      style={styles.callPill}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        Linking.openURL(`tel:${item.phone}`).catch(() => {});
-                      }}
-                    >
-                      <Ionicons name="call" size={11} color="#FFFFFF" />
-                      <Text style={styles.callPillText}>Call</Text>
-                    </Pressable>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={[styles.cardName, { color: theme.onSurface }]} numberOfLines={1}>{item.name}</Text>
+                    {isSubActive ? (
+                      <View style={styles.activeDot} />
+                    ) : (
+                      <View style={styles.expiredDot} />
+                    )}
+                  </View>
+                  <Text style={[styles.cardMeta, { color: theme.onSurfaceSecondary }]}>
+                    {item.owner_name} {item.phone ? `· ${item.phone}` : ""}
+                  </Text>
+                  {!!item.address && (
+                    <Text style={[styles.cardAddr, { color: theme.onSurfaceTertiary }]} numberOfLines={1}>
+                      {item.address}
+                    </Text>
                   )}
+                </View>
+
+                <View style={{ gap: spacing.xs, alignItems: "flex-end" }}>
                   <View style={[styles.subBadge, { backgroundColor: badge.bg }]}>
                     <Text style={[styles.subBadgeText, { color: badge.text }]}>
                       {badge.label}
                     </Text>
+                  </View>
+                  
+                  <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+                    {!!item.phone && (
+                      <Pressable
+                        style={[styles.callPill, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Linking.openURL(`tel:${item.phone}`).catch(() => {});
+                        }}
+                      >
+                        <Ionicons name="call" size={12} color="#10B981" />
+                        <Text style={[styles.callPillText, { color: theme.onSurface }]}>Call</Text>
+                      </Pressable>
+                    )}
+
+                    <Pressable
+                      style={styles.grantQuickBtn}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        open(item);
+                      }}
+                    >
+                      <LinearGradient
+                        colors={["#635BFF", "#4F46E5"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.grantQuickGrad}
+                      >
+                        <Ionicons name="flash" size={11} color="#FFFFFF" />
+                        <Text style={styles.grantQuickText}>
+                          {isSubActive ? "Extend" : "Grant"}
+                        </Text>
+                      </LinearGradient>
+                    </Pressable>
                   </View>
                 </View>
               </Pressable>
@@ -234,46 +356,59 @@ export default function AdminRestaurants() {
       {/* Restaurant Detail & Super-Admin Feature Control Modal */}
       <Modal transparent visible={!!detail} animationType="slide" onRequestClose={() => setDetail(null)}>
         <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]}>
+          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
             {detail && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={styles.modalTitle}>{detail.name}</Text>
+                {/* Modal Header */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={[styles.modalTitle, { color: theme.onSurface }]} numberOfLines={1}>{detail.name}</Text>
+                    <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "600" }}>Restaurant Management & Subscriptions</Text>
+                  </View>
                   <Pressable onPress={() => setDetail(null)} hitSlop={12}>
-                    <Ionicons name="close-circle" size={28} color={colors.onSurfaceSecondary} />
+                    <Ionicons name="close-circle" size={28} color={theme.onSurfaceSecondary} />
                   </Pressable>
                 </View>
 
                 {msg && <Text style={styles.successMsg}>{msg}</Text>}
                 {err && <Text style={styles.err}>{err}</Text>}
 
-                <Text style={styles.detailRow}>Owner: <Text style={styles.detailVal}>{detail.owner_name}</Text></Text>
-                {!!detail.phone && (
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 3 }}>
-                    <Text style={styles.detailRow}>Phone: <Text style={styles.detailVal}>{detail.phone}</Text></Text>
-                    <Pressable
-                      style={styles.callOwnerBtn}
-                      onPress={() => Linking.openURL(`tel:${detail.phone}`).catch(() => {})}
-                    >
-                      <Ionicons name="call" size={13} color="#FFFFFF" />
-                      <Text style={styles.callOwnerText}>Call Owner</Text>
-                    </Pressable>
+                {/* Business Info Overview Card */}
+                <View style={[styles.infoCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                  <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>
+                    Owner: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.owner_name}</Text>
+                  </Text>
+                  {!!detail.phone && (
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 3 }}>
+                      <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>
+                        Phone: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.phone}</Text>
+                      </Text>
+                      <Pressable
+                        style={styles.callOwnerBtn}
+                        onPress={() => Linking.openURL(`tel:${detail.phone}`).catch(() => {})}
+                      >
+                        <Ionicons name="call" size={13} color="#FFFFFF" />
+                        <Text style={styles.callOwnerText}>Call Owner</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {!!detail.address && <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Address: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.address}</Text></Text>}
+                  {!!detail.gst && <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>GSTIN: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.gst}</Text></Text>}
+                  {!!detail.upi_id && <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>UPI: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.upi_id}</Text></Text>}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.border }}>
+                    <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Orders: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.orders_total}</Text></Text>
+                    <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Revenue: <Text style={[styles.detailVal, { color: "#10B981", fontWeight: "800" }]}>₹{detail.revenue_total}</Text></Text>
                   </View>
-                )}
-                {!!detail.address && <Text style={styles.detailRow}>Address: <Text style={styles.detailVal}>{detail.address}</Text></Text>}
-                {!!detail.gst && <Text style={styles.detailRow}>GSTIN: <Text style={styles.detailVal}>{detail.gst}</Text></Text>}
-                {!!detail.upi_id && <Text style={styles.detailRow}>UPI: <Text style={styles.detailVal}>{detail.upi_id}</Text></Text>}
-                <Text style={styles.detailRow}>Orders: <Text style={styles.detailVal}>{detail.orders_total}</Text></Text>
-                <Text style={styles.detailRow}>Revenue: <Text style={styles.detailVal}>₹{detail.revenue_total}</Text></Text>
+                </View>
 
                 {/* SUBSCRIPTION STATUS & MANAGEMENT */}
-                <Text style={styles.section}>Subscription Control</Text>
+                <Text style={[styles.section, { color: "#635BFF" }]}>Current Subscription</Text>
                 {detail.subscription?.status === "active" ? (
-                  <View style={styles.subCardActive}>
+                  <View style={[styles.subCardActive, { backgroundColor: theme.surfaceTertiary }]}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <View>
-                        <Text style={styles.subActiveTitle}>{detail.subscription.plan_name} Plan</Text>
-                        <Text style={styles.subActiveMeta}>₹{detail.subscription.price} / {detail.subscription.interval}</Text>
+                        <Text style={[styles.subActiveTitle, { color: theme.onSurface }]}>{detail.subscription.plan_name} Plan</Text>
+                        <Text style={[styles.subActiveMeta, { color: theme.onSurfaceSecondary }]}>₹{detail.subscription.price} / {detail.subscription.interval}</Text>
                         {detail.subscription.ends_at && (
                           <Text style={styles.subActiveEnds}>
                             Ends: {new Date(detail.subscription.ends_at).toLocaleDateString()}
@@ -290,13 +425,13 @@ export default function AdminRestaurants() {
                         <Ionicons name="flash-off-outline" size={15} color="#FFFFFF" />
                         <Text style={styles.expireBtnText}>Expire Now</Text>
                       </Pressable>
-                      <Pressable style={styles.cancelBtn} onPress={cancel} disabled={busy}>
-                        <Text style={styles.cancelBtnText}>Cancel</Text>
+                      <Pressable style={[styles.cancelBtn, { borderColor: theme.border }]} onPress={cancel} disabled={busy}>
+                        <Text style={[styles.cancelBtnText, { color: theme.onSurfaceSecondary }]}>Cancel</Text>
                       </Pressable>
                     </View>
                   </View>
                 ) : (
-                  <View style={styles.subCardInactive}>
+                  <View style={[styles.subCardInactive, { backgroundColor: theme.surfaceTertiary }]}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ color: "#F87171", fontWeight: "700" }}>Subscription Inactive / Expired</Text>
                       <View style={[styles.subBadge, { backgroundColor: "#7F1D1D" }]}>
@@ -307,105 +442,130 @@ export default function AdminRestaurants() {
                 )}
 
                 {/* ASSIGN OR EXTEND PLAN */}
-                <Text style={[styles.section, { marginTop: spacing.lg }]}>Assign / Extend Plan</Text>
-                <Text style={styles.hint}>Choose duration & tap a plan to grant access:</Text>
+                <Text style={[styles.section, { color: "#635BFF", marginTop: spacing.lg }]}>Grant / Extend Subscription</Text>
+                <Text style={[styles.hint, { color: theme.onSurfaceSecondary }]}>Choose duration & tap a plan to activate instantly:</Text>
                 
                 {/* Duration Pills */}
                 <View style={styles.durationRow}>
                   {[
                     { label: "1 Month (30d)", days: 30 },
+                    { label: "3 Months (90d)", days: 90 },
+                    { label: "6 Months (180d)", days: 180 },
                     { label: "1 Year (365d)", days: 365 },
                     { label: "👑 Lifetime", days: 36500 },
                   ].map(d => (
                     <Pressable
                       key={d.days}
-                      style={[styles.durationPill, assignDurationDays === d.days && styles.durationPillActive]}
+                      style={[
+                        styles.durationPill,
+                        { backgroundColor: theme.surfaceTertiary, borderColor: theme.border },
+                        assignDurationDays === d.days && styles.durationPillActive
+                      ]}
                       onPress={() => setAssignDurationDays(d.days)}
                     >
-                      <Text style={[styles.durationPillText, assignDurationDays === d.days && styles.durationPillTextActive]}>
+                      <Text style={[styles.durationPillText, { color: theme.onSurfaceSecondary }, assignDurationDays === d.days && styles.durationPillTextActive]}>
                         {d.label}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
 
-                {plans.map(p => (
-                  <Pressable key={p.id} style={styles.planRow} onPress={() => assign(p.id)} disabled={busy}>
-                    <View>
-                      <Text style={styles.planName}>{p.name}</Text>
-                      <Text style={styles.planInterval}>{p.interval}</Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={styles.planPrice}>₹{p.price}</Text>
-                      <Text style={styles.planAction}>Grant Plan →</Text>
-                    </View>
-                  </Pressable>
-                ))}
+                <View style={{ gap: 8 }}>
+                  {plans.map(p => (
+                    <Pressable
+                      key={p.id}
+                      style={[styles.planRow, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                      onPress={() => assign(p.id)}
+                      disabled={busy}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.planName, { color: theme.onSurface }]}>{p.name}</Text>
+                        <Text style={[styles.planInterval, { color: theme.onSurfaceSecondary }]}>{p.interval}</Text>
+                        {!!p.features?.length && (
+                          <Text style={{ fontSize: 11, color: theme.onSurfaceTertiary, marginTop: 2 }} numberOfLines={1}>
+                            {p.features.slice(0, 2).join(" · ")}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[styles.planPrice, { color: "#635BFF" }]}>₹{p.price}</Text>
+                        <View style={styles.grantBadge}>
+                          <Ionicons name="flash" size={10} color="#FFFFFF" />
+                          <Text style={styles.grantBadgeText}>Grant</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
 
                 {/* FEATURE TOGGLES & LIMITS OVERRIDE MATRIX */}
-                <Text style={[styles.section, { marginTop: spacing.xl }]}>Feature Flags & Permissions</Text>
-                <Text style={styles.hint}>Override specific feature access for this business:</Text>
+                <Text style={[styles.section, { color: "#635BFF", marginTop: spacing.xl }]}>Feature Flags & Permissions</Text>
+                <Text style={[styles.hint, { color: theme.onSurfaceSecondary }]}>Override specific feature access for this business:</Text>
 
-                <View style={styles.featureMatrix}>
+                <View style={[styles.featureMatrix, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
                   <View style={styles.featureRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.featureName}>🤖 AI Smart Menu Import</Text>
-                      <Text style={styles.featureSub}>Scan physical menu via OCR & AI parsing</Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={[styles.featureName, { color: theme.onSurface }]}>🤖 AI Smart Menu Import</Text>
+                      <Text style={[styles.featureSub, { color: theme.onSurfaceSecondary }]}>Scan physical menu via OCR & AI parsing</Text>
                     </View>
                     <Switch
                       value={customFeatures.ai_menu ?? true}
                       onValueChange={v => setCustomFeatures(p => ({ ...p, ai_menu: v }))}
-                      trackColor={{ false: "#3E3E4A", true: colors.brand }}
+                      trackColor={{ false: "#3E3E4A", true: "#635BFF" }}
                     />
                   </View>
 
                   <View style={styles.featureRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.featureName}>📱 Customer QR Web Menu</Text>
-                      <Text style={styles.featureSub}>Customer self-ordering via table QR</Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={[styles.featureName, { color: theme.onSurface }]}>📱 Customer QR Web Menu</Text>
+                      <Text style={[styles.featureSub, { color: theme.onSurfaceSecondary }]}>Customer self-ordering via table QR</Text>
                     </View>
                     <Switch
                       value={customFeatures.qr_web_menu ?? true}
                       onValueChange={v => setCustomFeatures(p => ({ ...p, qr_web_menu: v }))}
-                      trackColor={{ false: "#3E3E4A", true: colors.brand }}
+                      trackColor={{ false: "#3E3E4A", true: "#635BFF" }}
                     />
                   </View>
 
                   <View style={styles.featureRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.featureName}>📦 Inventory & Expense Control</Text>
-                      <Text style={styles.featureSub}>Stock levels and daily expenses</Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={[styles.featureName, { color: theme.onSurface }]}>📦 Inventory & Expense Control</Text>
+                      <Text style={[styles.featureSub, { color: theme.onSurfaceSecondary }]}>Stock levels and daily expenses</Text>
                     </View>
                     <Switch
                       value={customFeatures.inventory ?? true}
                       onValueChange={v => setCustomFeatures(p => ({ ...p, inventory: v, expenses: v }))}
-                      trackColor={{ false: "#3E3E4A", true: colors.brand }}
+                      trackColor={{ false: "#3E3E4A", true: "#635BFF" }}
                     />
                   </View>
 
                   <View style={styles.featureRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.featureName}>📊 Advanced Reports & Analytics</Text>
-                      <Text style={styles.featureSub}>Revenue trends, item charts, & exports</Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={[styles.featureName, { color: theme.onSurface }]}>📊 Advanced Reports & Analytics</Text>
+                      <Text style={[styles.featureSub, { color: theme.onSurfaceSecondary }]}>Revenue trends, item charts, & exports</Text>
                     </View>
                     <Switch
                       value={customFeatures.advanced_reports ?? true}
                       onValueChange={v => setCustomFeatures(p => ({ ...p, advanced_reports: v }))}
-                      trackColor={{ false: "#3E3E4A", true: colors.brand }}
+                      trackColor={{ false: "#3E3E4A", true: "#635BFF" }}
                     />
                   </View>
 
                   {/* Staff Limit Controls */}
-                  <View style={{ paddingTop: 10 }}>
-                    <Text style={styles.featureName}>👥 Maximum Waiter Staff Limit</Text>
+                  <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border }}>
+                    <Text style={[styles.featureName, { color: theme.onSurface }]}>👥 Maximum Waiter Staff Limit</Text>
                     <View style={styles.staffLimitsRow}>
                       {[0, 4, 14, 50, 100].map(cnt => (
                         <Pressable
                           key={cnt}
-                          style={[styles.staffLimitPill, customStaffLimit === cnt && styles.staffLimitPillActive]}
+                          style={[
+                            styles.staffLimitPill,
+                            { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                            customStaffLimit === cnt && styles.staffLimitPillActive
+                          ]}
                           onPress={() => setCustomStaffLimit(cnt)}
                         >
-                          <Text style={[styles.staffLimitText, customStaffLimit === cnt && styles.staffLimitTextActive]}>
+                          <Text style={[styles.staffLimitText, { color: theme.onSurfaceSecondary }, customStaffLimit === cnt && styles.staffLimitTextActive]}>
                             {cnt === 0 ? "Owner" : `${cnt} Staff`}
                           </Text>
                         </Pressable>
@@ -414,7 +574,14 @@ export default function AdminRestaurants() {
                   </View>
 
                   <Pressable style={styles.saveFeaturesBtn} onPress={saveFeatures} disabled={busy}>
-                    <Text style={styles.saveFeaturesText}>Save Feature Overrides</Text>
+                    <LinearGradient
+                      colors={["#635BFF", "#4F46E5"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.saveFeaturesGrad}
+                    >
+                      <Text style={styles.saveFeaturesText}>Save Feature Overrides</Text>
+                    </LinearGradient>
                   </Pressable>
                 </View>
 
@@ -425,7 +592,7 @@ export default function AdminRestaurants() {
                 </Pressable>
 
                 <Pressable style={styles.ghostBtn} onPress={() => setDetail(null)} testID="admin-rest-close">
-                  <Text style={styles.ghostText}>Close</Text>
+                  <Text style={[styles.ghostText, { color: theme.onSurfaceSecondary }]}>Close</Text>
                 </Pressable>
               </ScrollView>
             )}
@@ -437,70 +604,90 @@ export default function AdminRestaurants() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
-  title: { color: colors.onSurface, fontSize: 22, fontFamily: "serif", fontWeight: "800" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  card: { flexDirection: "row", padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, alignItems: "center", gap: spacing.md },
-  cardName: { color: colors.onSurface, fontSize: 16, fontWeight: "700" },
-  cardMeta: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 4 },
-  cardAddr: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
-  callPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#16A34A", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  callPillText: { color: "#FFFFFF", fontSize: 10, fontWeight: "700", marginLeft: 3 },
-  subBadge: { paddingHorizontal: spacing.md, paddingVertical: 5, borderRadius: radius.pill },
-  subBadgeText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
-  err: { color: colors.onError, backgroundColor: colors.error, marginVertical: spacing.sm, padding: spacing.md, borderRadius: radius.md, fontSize: 13 },
+  wrap: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  backBtn: { width: 38, height: 38, borderRadius: 19, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 20, fontWeight: "900" },
+  reloadBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
+
+  searchBox: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, height: 42, borderRadius: radius.md, borderWidth: 1, gap: 8, marginBottom: spacing.sm },
+  searchInput: { flex: 1, fontSize: 13, fontWeight: "500" },
+  filterTabsRow: { flexDirection: "row", gap: 8 },
+  filterTabPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1 },
+  filterTabText: { fontSize: 11, fontWeight: "700" },
+
+  card: { flexDirection: "row", padding: spacing.md, borderRadius: radius.xl, borderWidth: 1, alignItems: "center", gap: spacing.md },
+  cardName: { fontSize: 15, fontWeight: "800" },
+  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#34D399" },
+  expiredDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#EF4444" },
+  cardMeta: { fontSize: 12, marginTop: 2, fontWeight: "500" },
+  cardAddr: { fontSize: 11, marginTop: 2 },
+  
+  callPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm, borderWidth: 1 },
+  callPillText: { fontSize: 11, fontWeight: "700" },
+  grantQuickBtn: { borderRadius: radius.sm, overflow: "hidden" },
+  grantQuickGrad: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5 },
+  grantQuickText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+
+  subBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  subBadgeText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  err: { color: colors.onError, backgroundColor: colors.error, marginVertical: spacing.sm, padding: spacing.md, borderRadius: radius.md, fontSize: 13, fontWeight: "700" },
   successMsg: { color: "#34D399", backgroundColor: "#064E3B", marginVertical: spacing.sm, padding: spacing.md, borderRadius: radius.md, fontSize: 13, fontWeight: "700" },
   
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: colors.surfaceSecondary, padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: "90%" },
-  modalTitle: { color: colors.onSurface, fontSize: 22, fontWeight: "900", marginBottom: spacing.md },
-  section: { color: colors.brand, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", fontWeight: "800", marginTop: spacing.lg, marginBottom: spacing.sm },
-  hint: { color: colors.onSurfaceTertiary, fontSize: 12, marginBottom: spacing.sm },
-  detailRow: { color: colors.onSurfaceSecondary, marginVertical: 3, fontSize: 13 },
-  detailVal: { color: colors.onSurface, fontWeight: "600" },
-  callOwnerBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#16A34A", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  callOwnerText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700", marginLeft: 4 },
+  modalCard: { padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: "92%" },
+  modalTitle: { fontSize: 20, fontWeight: "900", marginBottom: 2 },
+  infoCard: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, marginBottom: spacing.md },
+  section: { fontSize: 12, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: "800", marginTop: spacing.md, marginBottom: spacing.xs },
+  hint: { fontSize: 12, marginBottom: spacing.sm, fontWeight: "500" },
+  detailRow: { marginVertical: 3, fontSize: 13 },
+  detailVal: { fontWeight: "700" },
+  callOwnerBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#10B981", paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, gap: 4 },
+  callOwnerText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
 
-  subCardActive: { padding: spacing.lg, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: "#064E3B", marginBottom: spacing.sm },
-  subActiveTitle: { color: colors.onSurface, fontSize: 16, fontWeight: "800" },
-  subActiveMeta: { color: colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
-  subActiveEnds: { color: "#34D399", fontSize: 12, marginTop: 4, fontWeight: "600" },
-  expireBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#DC2626", paddingVertical: 8, borderRadius: 8, gap: 5 },
+  subCardActive: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: "#064E3B", marginBottom: spacing.sm },
+  subActiveTitle: { fontSize: 16, fontWeight: "800" },
+  subActiveMeta: { fontSize: 12, marginTop: 2, fontWeight: "500" },
+  subActiveEnds: { color: "#34D399", fontSize: 12, marginTop: 4, fontWeight: "700" },
+  expireBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#DC2626", paddingVertical: 8, borderRadius: radius.sm, gap: 5 },
   expireBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
-  cancelBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: "600" },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  cancelBtnText: { fontSize: 12, fontWeight: "600" },
 
-  subCardInactive: { padding: spacing.lg, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: "#7F1D1D", marginBottom: spacing.sm },
+  subCardInactive: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: "#7F1D1D", marginBottom: spacing.sm },
 
-  durationRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  durationPill: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
-  durationPillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  durationPillText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "700" },
-  durationPillTextActive: { color: "#FFFFFF" },
+  durationRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  durationPill: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.sm, borderWidth: 1 },
+  durationPillActive: { backgroundColor: "#635BFF", borderColor: "#635BFF" },
+  durationPillText: { fontSize: 11, fontWeight: "700" },
+  durationPillTextActive: { color: "#FFFFFF", fontWeight: "800" },
 
-  planRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: spacing.md, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  planName: { color: colors.onSurface, fontSize: 15, fontWeight: "700" },
-  planInterval: { color: colors.onSurfaceSecondary, fontSize: 12, textTransform: "capitalize" },
-  planPrice: { color: colors.brand, fontSize: 15, fontWeight: "800" },
-  planAction: { color: colors.brand, fontSize: 11, fontWeight: "700", marginTop: 2 },
+  planRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: spacing.md, borderRadius: radius.md, borderWidth: 1 },
+  planName: { fontSize: 14, fontWeight: "800" },
+  planInterval: { fontSize: 12, textTransform: "capitalize", fontWeight: "500" },
+  planPrice: { fontSize: 15, fontWeight: "900" },
+  grantBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#635BFF", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, marginTop: 2 },
+  grantBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "800" },
 
-  featureMatrix: { backgroundColor: colors.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, gap: 14, borderWidth: 1, borderColor: colors.border },
+  featureMatrix: { padding: spacing.md, borderRadius: radius.lg, gap: 12, borderWidth: 1 },
   featureRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  featureName: { color: colors.onSurface, fontSize: 13, fontWeight: "700" },
-  featureSub: { color: colors.onSurfaceSecondary, fontSize: 11, marginTop: 2 },
+  featureName: { fontSize: 13, fontWeight: "700" },
+  featureSub: { fontSize: 11, marginTop: 2 },
 
   staffLimitsRow: { flexDirection: "row", gap: 6, marginTop: 8 },
-  staffLimitPill: { flex: 1, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceSecondary, alignItems: "center", borderWidth: 1, borderColor: colors.border },
-  staffLimitPillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  staffLimitText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "700" },
-  staffLimitTextActive: { color: "#FFFFFF" },
+  staffLimitPill: { flex: 1, paddingVertical: 6, borderRadius: radius.sm, alignItems: "center", borderWidth: 1 },
+  staffLimitPillActive: { backgroundColor: "#635BFF", borderColor: "#635BFF" },
+  staffLimitText: { fontSize: 11, fontWeight: "700" },
+  staffLimitTextActive: { color: "#FFFFFF", fontWeight: "800" },
 
-  saveFeaturesBtn: { backgroundColor: colors.brand, paddingVertical: 12, borderRadius: radius.md, alignItems: "center", marginTop: 8 },
+  saveFeaturesBtn: { borderRadius: radius.md, overflow: "hidden", marginTop: 8 },
+  saveFeaturesGrad: { paddingVertical: 12, alignItems: "center" },
   saveFeaturesText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
 
   dangerBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, justifyContent: "center", padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.error, marginTop: spacing.xl },
   dangerText: { color: colors.onError, fontWeight: "700" },
   ghostBtn: { padding: spacing.md, alignItems: "center", marginTop: spacing.xs },
-  ghostText: { color: colors.onSurfaceSecondary, fontWeight: "600" },
+  ghostText: { fontWeight: "600" },
 });
+

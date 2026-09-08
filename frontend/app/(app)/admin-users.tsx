@@ -1,29 +1,35 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, TextInput, ScrollView, Alert,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
+import * as Haptics from "expo-haptics";
 
 type U = { id: string; email: string; full_name: string; role: string; tenant_id?: string | null; pin?: string };
 
 const ROLE_COLORS: Record<string, string> = {
-  super_admin: colors.brand,
-  admin_employee: colors.brand,
-  owner: colors.onSurface,
-  manager: colors.onSurfaceSecondary,
-  waiter: colors.onSurfaceSecondary,
-  kitchen: colors.onSurfaceSecondary,
+  super_admin: "#635BFF",
+  admin_employee: "#8B5CF6",
+  owner: "#10B981",
+  manager: "#3B82F6",
+  waiter: "#F59E0B",
+  kitchen: "#EC4899",
 };
 
 export default function AdminUsers() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { theme, isDark } = useTheme();
+
   const [users, setUsers] = useState<U[]>([]);
   const [filter, setFilter] = useState<string | "all">("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -49,11 +55,24 @@ export default function AdminUsers() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const shown = filter === "all" ? users : users.filter(u => u.role === filter);
+  const shown = useMemo(() => {
+    return users.filter(u => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q ||
+        u.full_name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q) ||
+        u.role?.toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+      if (filter === "all") return true;
+      return u.role === filter;
+    });
+  }, [users, filter, searchQuery]);
 
   const resetPw = async () => {
     if (!target || newPw.length < 4) { setErr("Password must be ≥ 4 chars (waiter PIN 4-6 digits)."); return; }
     setBusy(true); setErr(null); setMsg(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     try {
       await api.adminResetPassword(target.id, newPw);
       setMsg(target.role === "waiter" ? `PIN updated to ${newPw}` : "Password updated successfully");
@@ -90,6 +109,7 @@ export default function AdminUsers() {
       return;
     }
     setBusy(true); setErr(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     try {
       await api.adminCreateUser({
         full_name: createForm.fullName.trim(),
@@ -107,6 +127,7 @@ export default function AdminUsers() {
     if (!target) return;
     if (!editName.trim() || !editEmail.trim()) { setErr("Name and email are required."); return; }
     setBusy(true); setErr(null); setMsg(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     try {
       const updated = await api.adminUpdateUser(target.id, {
         full_name: editName.trim(),
@@ -121,14 +142,19 @@ export default function AdminUsers() {
   };
 
   return (
-    <View style={[styles.wrap, { paddingTop: insets.top }]} testID="admin-users-screen">
+    <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-users-screen">
       
       {/* Header bar */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} testID="admin-users-back-btn" hitSlop={12}>
-          <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
+        <Pressable onPress={() => router.back()} testID="admin-users-back-btn" hitSlop={12} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Users ({shown.length})</Text>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={[styles.title, { color: theme.onSurface }]}>Users & Staff</Text>
+          <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, fontWeight: "600" }}>
+            {users.length} accounts configured
+          </Text>
+        </View>
         <Pressable
           style={styles.addBtn}
           onPress={() => {
@@ -138,51 +164,105 @@ export default function AdminUsers() {
           }}
           testID="admin-users-add-btn"
         >
-          <Ionicons name="add" size={16} color={colors.onBrand} />
-          <Text style={styles.addBtnText}>New</Text>
+          <LinearGradient
+            colors={["#635BFF", "#4F46E5"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.addBtnGrad}
+          >
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.addBtnText}>New User</Text>
+          </LinearGradient>
         </Pressable>
       </View>
 
+      {/* Search Box */}
+      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.xs }}>
+        <View style={[styles.searchBox, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <Ionicons name="search" size={16} color={theme.onSurfaceSecondary} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search name, email, or role..."
+            placeholderTextColor={theme.onSurfaceTertiary}
+            style={[styles.searchInput, { color: theme.onSurface }]}
+          />
+          {!!searchQuery && (
+            <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={theme.onSurfaceSecondary} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
       {/* Role filter chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={{ maxHeight: 56, minHeight: 56 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={{ maxHeight: 48, minHeight: 48 }}>
         {["all", "super_admin", "admin_employee", "owner", "manager", "waiter", "kitchen"].map(r => (
-          <Pressable key={r} onPress={() => setFilter(r)} style={[styles.chip, filter === r && styles.chipActive, { flexShrink: 0 }]} testID={`admin-users-chip-${r}`}>
-            <Text style={[styles.chipText, filter === r && styles.chipTextActive]}>{r.replace("_", " ")}</Text>
+          <Pressable
+            key={r}
+            onPress={() => setFilter(r)}
+            style={[
+              styles.chip,
+              { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+              filter === r && { backgroundColor: "#635BFF", borderColor: "#635BFF" }
+            ]}
+            testID={`admin-users-chip-${r}`}
+          >
+            <Text style={[styles.chipText, { color: theme.onSurfaceSecondary }, filter === r && { color: "#FFFFFF", fontWeight: "800" }]}>
+              {r.replace("_", " ")}
+            </Text>
           </Pressable>
         ))}
       </ScrollView>
 
       {/* User list */}
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        <View style={styles.center}><ActivityIndicator color="#635BFF" size="large" /></View>
       ) : shown.length === 0 ? (
-        <View style={styles.center}><Text style={{ color: colors.onSurfaceTertiary }}>No users found.</Text></View>
+        <View style={styles.center}>
+          <Ionicons name="people-outline" size={48} color={theme.onSurfaceTertiary} />
+          <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, fontWeight: "600", marginTop: 8 }}>
+            No users match your filter.
+          </Text>
+        </View>
       ) : (
         <FlatList
           data={shown}
           keyExtractor={u => u.id}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.sm }}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.userRow}
-              onPress={() => {
-                setTarget(item);
-                setEditName(item.full_name);
-                setEditEmail(item.email);
-                setEditRole(item.role);
-                setNewPw("");
-                setMsg(null);
-                setErr(null);
-              }}
-              testID={`admin-user-${item.id}`}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.userName}>{item.full_name}</Text>
-                <Text style={styles.userMeta} numberOfLines={1}>{item.email}</Text>
-              </View>
-              <Text style={[styles.roleTag, { color: ROLE_COLORS[item.role] || colors.onSurfaceSecondary }]}>{item.role?.replace("_", " ")}</Text>
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const roleColor = ROLE_COLORS[item.role] || "#635BFF";
+            return (
+              <Pressable
+                style={[styles.userRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={() => {
+                  setTarget(item);
+                  setEditName(item.full_name);
+                  setEditEmail(item.email);
+                  setEditRole(item.role);
+                  setNewPw("");
+                  setMsg(null);
+                  setErr(null);
+                }}
+                testID={`admin-user-${item.id}`}
+              >
+                <View style={[styles.userAvatar, { backgroundColor: `${roleColor}18` }]}>
+                  <Text style={[styles.avatarInitial, { color: roleColor }]}>
+                    {item.full_name?.charAt(0)?.toUpperCase() || "U"}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.userName, { color: theme.onSurface }]}>{item.full_name}</Text>
+                  <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>{item.email}</Text>
+                </View>
+                <View style={[styles.roleBadge, { backgroundColor: `${roleColor}15` }]}>
+                  <Text style={[styles.roleTag, { color: roleColor }]}>
+                    {item.role?.replace("_", " ")}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }}
         />
       )}
 
@@ -191,59 +271,70 @@ export default function AdminUsers() {
       {/* Edit User Modal */}
       <Modal transparent visible={!!target} animationType="slide" onRequestClose={() => setTarget(null)}>
         <View style={styles.modalBg}>
-          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]}>
+          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
             {target && (
               <>
-                <Text style={styles.modalTitle}>User Account settings</Text>
-                <Text style={[styles.userMeta, { marginBottom: spacing.md }]}>Modify privileges, reset passwords, or delete staff profiles.</Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
+                  <View>
+                    <Text style={[styles.modalTitle, { color: theme.onSurface }]}>User Settings</Text>
+                    <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]}>Modify credentials, roles, or access privileges.</Text>
+                  </View>
+                  <Pressable onPress={() => setTarget(null)} hitSlop={12}>
+                    <Ionicons name="close-circle" size={28} color={theme.onSurfaceSecondary} />
+                  </Pressable>
+                </View>
                 
                 {/* Section 1: Account Info */}
-                <View style={styles.settingCard}>
-                  <Text style={styles.cardHeaderTitle}>Profile Information</Text>
+                <View style={[styles.settingCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                  <Text style={[styles.cardHeaderTitle, { color: theme.onSurface }]}>Profile Information</Text>
                   
-                  <Text style={styles.label}>Full Name</Text>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="person-outline" size={16} color={colors.onSurfaceSecondary} style={{ marginRight: 8 }} />
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Full Name</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                    <Ionicons name="person-outline" size={16} color={theme.onSurfaceSecondary} style={{ marginRight: 8 }} />
                     <TextInput
                       value={editName}
                       onChangeText={setEditName}
-                      style={styles.premiumInput}
+                      style={[styles.premiumInput, { color: theme.onSurface }]}
                     />
                   </View>
 
-                  <Text style={styles.label}>Email Address</Text>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="mail-outline" size={16} color={colors.onSurfaceSecondary} style={{ marginRight: 8 }} />
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Email Address</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                    <Ionicons name="mail-outline" size={16} color={theme.onSurfaceSecondary} style={{ marginRight: 8 }} />
                     <TextInput
                       value={editEmail}
                       onChangeText={setEditEmail}
                       keyboardType="email-address"
                       autoCapitalize="none"
-                      style={styles.premiumInput}
+                      style={[styles.premiumInput, { color: theme.onSurface }]}
                     />
                   </View>
 
-                  <Text style={styles.label}>Account Access Role</Text>
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Account Access Role</Text>
                   <View style={styles.rolesGrid}>
                     {["super_admin", "admin_employee", "owner", "manager", "waiter", "kitchen"].map(r => {
                       const isActive = editRole === r;
                       return (
                         <Pressable
                           key={r}
-                          style={[styles.roleCard, isActive && styles.roleCardActive]}
+                          style={[
+                            styles.roleCard,
+                            { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                            isActive && styles.roleCardActive
+                          ]}
                           onPress={() => setEditRole(r)}
                         >
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                             <Ionicons
                               name={r === "super_admin" ? "shield-checkmark" : r === "admin_employee" ? "ribbon-outline" : r === "owner" ? "storefront" : "person"}
                               size={14}
-                              color={isActive ? colors.brand : colors.onSurfaceSecondary}
+                              color={isActive ? "#635BFF" : theme.onSurfaceSecondary}
                             />
-                            <Text style={[styles.roleCardText, isActive && styles.roleCardTextActive]}>
+                            <Text style={[styles.roleCardText, { color: theme.onSurfaceSecondary }, isActive && styles.roleCardTextActive]}>
                               {r.replace("_", " ")}
                             </Text>
                           </View>
-                          {isActive && <Ionicons name="checkmark-circle" size={14} color={colors.brand} />}
+                          {isActive && <Ionicons name="checkmark-circle" size={14} color="#635BFF" />}
                         </Pressable>
                       );
                     })}
@@ -253,37 +344,49 @@ export default function AdminUsers() {
                   {err && <Text style={[styles.err, { margin: 0, marginBottom: spacing.md }]} testID="admin-user-error">{err}</Text>}
 
                   <Pressable style={styles.primaryBtn} onPress={updateUser} disabled={busy} testID="admin-user-update-btn">
-                    {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save Changes</Text>}
+                    <LinearGradient
+                      colors={["#635BFF", "#4F46E5"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.primaryGrad}
+                    >
+                      {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>Save Changes</Text>}
+                    </LinearGradient>
                   </Pressable>
                 </View>
 
                 {/* Section 2: Security */}
-                <View style={styles.settingCard}>
-                  <Text style={styles.cardHeaderTitle}>Security & Credentials</Text>
-                  <Text style={styles.label}>{target.role === "waiter" ? "Reset PIN" : "Reset Password"}</Text>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="key-outline" size={16} color={colors.onSurfaceSecondary} style={{ marginRight: 8 }} />
+                <View style={[styles.settingCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                  <Text style={[styles.cardHeaderTitle, { color: theme.onSurface }]}>Security & Credentials</Text>
+                  <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>{target.role === "waiter" ? "Reset Waiter PIN" : "Reset Password"}</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                    <Ionicons name="key-outline" size={16} color={theme.onSurfaceSecondary} style={{ marginRight: 8 }} />
                     <TextInput
                       value={newPw} onChangeText={setNewPw}
                       placeholder={target.role === "waiter" ? "New 4-6 digit PIN" : "New password (≥ 6 chars)"}
-                      placeholderTextColor={colors.onSurfaceTertiary}
+                      placeholderTextColor={theme.onSurfaceTertiary}
                       secureTextEntry
-                      style={styles.premiumInput}
+                      style={[styles.premiumInput, { color: theme.onSurface }]}
                       keyboardType={target.role === "waiter" ? "number-pad" : "default"}
                       maxLength={target.role === "waiter" ? 6 : 40}
                       testID="admin-user-newpw-input"
                     />
                   </View>
                   
-                  <Pressable style={[styles.primaryBtn, { backgroundColor: colors.brandSecondary }]} onPress={resetPw} disabled={busy} testID="admin-user-reset-btn">
-                    {busy ? <ActivityIndicator color={colors.brand} /> : <Text style={[styles.primaryText, { color: colors.brand }]}>Reset Password / PIN</Text>}
+                  <Pressable
+                    style={[styles.resetPwBtn, { borderColor: "#635BFF" }]}
+                    onPress={resetPw}
+                    disabled={busy}
+                    testID="admin-user-reset-btn"
+                  >
+                    {busy ? <ActivityIndicator color="#635BFF" /> : <Text style={styles.resetPwText}>Update Password / PIN</Text>}
                   </Pressable>
                 </View>
 
                 {/* Section 3: Danger Zone */}
-                <View style={[styles.settingCard, { borderColor: "#EF444450" }]}>
+                <View style={[styles.settingCard, { backgroundColor: theme.surfaceTertiary, borderColor: "#EF444450" }]}>
                   <Text style={[styles.cardHeaderTitle, { color: "#EF4444" }]}>Danger Zone</Text>
-                  <Text style={[styles.userMeta, { fontSize: 11 }]}>Permanently terminate this user profile. The user will lose app access immediately.</Text>
+                  <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>Permanently delete this user profile.</Text>
                   <Pressable style={styles.dangerBtn} onPress={() => removeUser(target.id)} testID="admin-user-delete-btn">
                     <Ionicons name="trash" size={16} color={colors.onError} />
                     <Text style={styles.dangerText}>Delete User Account</Text>
@@ -291,7 +394,7 @@ export default function AdminUsers() {
                 </View>
 
                 <Pressable style={styles.ghostBtn} onPress={() => setTarget(null)} testID="admin-user-close-btn">
-                  <Text style={styles.ghostText}>Close Settings</Text>
+                  <Text style={[styles.ghostText, { color: theme.onSurfaceSecondary }]}>Close</Text>
                 </Pressable>
               </>
             )}
@@ -302,71 +405,82 @@ export default function AdminUsers() {
       {/* Create User Modal */}
       <Modal transparent visible={createModal} animationType="slide" onRequestClose={() => setCreateModal(false)}>
         <View style={styles.modalBg}>
-          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]}>
-            <Text style={styles.modalTitle}>New Admin User / Employee</Text>
-            <Text style={[styles.userMeta, { marginBottom: spacing.md }]}>Add a new staff login account with select access roles.</Text>
+          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
+              <View>
+                <Text style={[styles.modalTitle, { color: theme.onSurface }]}>New Admin User / Staff</Text>
+                <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]}>Create a staff login account.</Text>
+              </View>
+              <Pressable onPress={() => setCreateModal(false)} hitSlop={12}>
+                <Ionicons name="close-circle" size={28} color={theme.onSurfaceSecondary} />
+              </Pressable>
+            </View>
             
-            <View style={styles.settingCard}>
-              <Text style={styles.label}>Full Name</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="person-outline" size={16} color={colors.onSurfaceSecondary} style={{ marginRight: 8 }} />
+            <View style={[styles.settingCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Full Name</Text>
+              <View style={[styles.inputContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Ionicons name="person-outline" size={16} color={theme.onSurfaceSecondary} style={{ marginRight: 8 }} />
                 <TextInput
                   value={createForm.fullName}
                   onChangeText={t => setCreateForm({ ...createForm, fullName: t })}
                   placeholder="e.g. Employee Name"
-                  placeholderTextColor={colors.onSurfaceTertiary}
-                  style={styles.premiumInput}
+                  placeholderTextColor={theme.onSurfaceTertiary}
+                  style={[styles.premiumInput, { color: theme.onSurface }]}
                 />
               </View>
 
-              <Text style={styles.label}>Email Address</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={16} color={colors.onSurfaceSecondary} style={{ marginRight: 8 }} />
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Email Address</Text>
+              <View style={[styles.inputContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Ionicons name="mail-outline" size={16} color={theme.onSurfaceSecondary} style={{ marginRight: 8 }} />
                 <TextInput
                   value={createForm.email}
                   onChangeText={t => setCreateForm({ ...createForm, email: t })}
-                  placeholder="employee@prodevopz.com"
-                  placeholderTextColor={colors.onSurfaceTertiary}
+                  placeholder="employee@business.com"
+                  placeholderTextColor={theme.onSurfaceTertiary}
                   keyboardType="email-address"
                   autoCapitalize="none"
-                  style={styles.premiumInput}
+                  style={[styles.premiumInput, { color: theme.onSurface }]}
                 />
               </View>
 
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="key-outline" size={16} color={colors.onSurfaceSecondary} style={{ marginRight: 8 }} />
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Password</Text>
+              <View style={[styles.inputContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Ionicons name="key-outline" size={16} color={theme.onSurfaceSecondary} style={{ marginRight: 8 }} />
                 <TextInput
                   value={createForm.password}
                   onChangeText={t => setCreateForm({ ...createForm, password: t })}
                   placeholder="Password (≥ 6 chars)"
-                  placeholderTextColor={colors.onSurfaceTertiary}
+                  placeholderTextColor={theme.onSurfaceTertiary}
                   secureTextEntry
-                  style={styles.premiumInput}
+                  style={[styles.premiumInput, { color: theme.onSurface }]}
                 />
               </View>
 
-              <Text style={styles.label}>Role</Text>
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Role</Text>
               <View style={styles.rolesGrid}>
                 {["admin_employee", "super_admin"].map(r => {
                   const isActive = createForm.role === r;
                   return (
                     <Pressable
                       key={r}
-                      style={[styles.roleCard, isActive && styles.roleCardActive]}
+                      style={[
+                        styles.roleCard,
+                        { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                        isActive && styles.roleCardActive
+                      ]}
                       onPress={() => setCreateForm({ ...createForm, role: r })}
                     >
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                         <Ionicons
                           name={r === "super_admin" ? "shield-checkmark" : "ribbon-outline"}
                           size={14}
-                          color={isActive ? colors.brand : colors.onSurfaceSecondary}
+                          color={isActive ? "#635BFF" : theme.onSurfaceSecondary}
                         />
-                        <Text style={[styles.roleCardText, isActive && styles.roleCardTextActive]}>
+                        <Text style={[styles.roleCardText, { color: theme.onSurfaceSecondary }, isActive && styles.roleCardTextActive]}>
                           {r.replace("_", " ")}
                         </Text>
                       </View>
-                      {isActive && <Ionicons name="checkmark-circle" size={14} color={colors.brand} />}
+                      {isActive && <Ionicons name="checkmark-circle" size={14} color="#635BFF" />}
                     </Pressable>
                   );
                 })}
@@ -375,12 +489,19 @@ export default function AdminUsers() {
               {err && <Text style={[styles.err, { margin: 0, marginBottom: spacing.md }]} testID="admin-user-error">{err}</Text>}
 
               <Pressable style={styles.primaryBtn} onPress={createUser} disabled={busy}>
-                {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Create User</Text>}
+                <LinearGradient
+                  colors={["#635BFF", "#4F46E5"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.primaryGrad}
+                >
+                  {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>Create User Account</Text>}
+                </LinearGradient>
               </Pressable>
             </View>
 
             <Pressable style={styles.ghostBtn} onPress={() => setCreateModal(false)}>
-              <Text style={styles.ghostText}>Cancel</Text>
+              <Text style={[styles.ghostText, { color: theme.onSurfaceSecondary }]}>Cancel</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -391,44 +512,56 @@ export default function AdminUsers() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
-  title: { color: colors.onSurface, fontSize: 22, fontFamily: "serif" },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.brand },
-  addBtnText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
+  wrap: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  backBtn: { width: 38, height: 38, borderRadius: 19, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 20, fontWeight: "900" },
+  addBtn: { borderRadius: radius.pill, overflow: "hidden", elevation: 2 },
+  addBtnGrad: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 8 },
+  addBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+
+  searchBox: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, height: 40, borderRadius: radius.md, borderWidth: 1, gap: 8 },
+  searchInput: { flex: 1, fontSize: 13, fontWeight: "500" },
+
   chipsRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center" },
-  chip: { paddingHorizontal: 14, height: 36, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, justifyContent: "center" },
-  chipActive: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
-  chipText: { color: colors.onSurfaceSecondary, fontSize: 12, textTransform: "capitalize" },
-  chipTextActive: { color: colors.brand, fontWeight: "600" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  userRow: { flexDirection: "row", alignItems: "center", padding: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, gap: spacing.md },
-  userName: { color: colors.onSurface, fontSize: 15 },
-  userMeta: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
-  roleTag: { fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase" },
-  err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
-  msg: { color: colors.onSuccess, backgroundColor: colors.success, padding: spacing.md, borderRadius: radius.md, marginTop: spacing.md },
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: colors.surfaceSecondary, padding: spacing.xl, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, maxHeight: "90%" },
-  modalTitle: { color: colors.onSurface, fontSize: 22, fontFamily: "serif" },
-  section: { color: colors.onSurfaceSecondary, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", marginTop: spacing.md, marginBottom: spacing.sm },
-  label: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "700", letterSpacing: 0.5, marginTop: spacing.sm, marginBottom: 6, textTransform: "uppercase" },
-  input: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, padding: spacing.md, color: colors.onSurface, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md },
-  primaryBtn: { backgroundColor: colors.brand, paddingVertical: 14, borderRadius: radius.md, alignItems: "center", marginTop: spacing.sm },
-  primaryText: { color: colors.onBrand, fontWeight: "600" },
+  chip: { paddingHorizontal: 12, height: 34, borderRadius: radius.pill, borderWidth: 1, justifyContent: "center" },
+  chipText: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
+
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
+  userRow: { flexDirection: "row", alignItems: "center", padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, gap: spacing.md },
+  userAvatar: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+  avatarInitial: { fontSize: 16, fontWeight: "900" },
+  userName: { fontSize: 15, fontWeight: "800" },
+  userMeta: { fontSize: 12, marginTop: 2, fontWeight: "500" },
+  roleBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  roleTag: { fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: "800" },
+
+  err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md, fontWeight: "700", fontSize: 13 },
+  msg: { color: "#34D399", backgroundColor: "#064E3B", padding: spacing.md, borderRadius: radius.md, marginTop: spacing.md, fontWeight: "700", fontSize: 13 },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
+  modalCard: { padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: "92%" },
+  modalTitle: { fontSize: 20, fontWeight: "900" },
+  label: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5, marginTop: spacing.sm, marginBottom: 6, textTransform: "uppercase" },
+
+  primaryBtn: { borderRadius: radius.md, overflow: "hidden", marginTop: spacing.sm },
+  primaryGrad: { paddingVertical: 14, alignItems: "center", justifyContent: "center" },
+  primaryText: { color: "#FFFFFF", fontWeight: "800", fontSize: 13 },
+  resetPwBtn: { paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, alignItems: "center", marginTop: spacing.xs },
+  resetPwText: { color: "#635BFF", fontWeight: "800", fontSize: 13 },
+
   dangerBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, justifyContent: "center", padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.error, marginTop: spacing.md },
-  dangerText: { color: colors.onError, fontWeight: "600" },
+  dangerText: { color: colors.onError, fontWeight: "700" },
   ghostBtn: { padding: spacing.md, alignItems: "center", marginTop: spacing.sm },
-  ghostText: { color: colors.onSurfaceSecondary },
+  ghostText: { fontWeight: "600" },
   
-  // Premium inputs & setting card designs
-  inputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 8, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.xs },
-  premiumInput: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: "500" },
+  inputContainer: { flexDirection: "row", alignItems: "center", borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 8, borderWidth: 1, marginBottom: spacing.xs },
+  premiumInput: { flex: 1, fontSize: 13, fontWeight: "500" },
   rolesGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: spacing.sm, marginVertical: spacing.sm },
-  roleCard: { width: "48%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceTertiary },
-  roleCardActive: { borderColor: colors.brand, backgroundColor: "rgba(99, 91, 255, 0.05)" },
-  roleCardText: { color: colors.onSurfaceSecondary, fontSize: 12, textTransform: "capitalize", fontWeight: "600" },
-  roleCardTextActive: { color: colors.brand, fontWeight: "700" },
-  settingCard: { padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, marginBottom: spacing.lg, gap: spacing.sm },
-  cardHeaderTitle: { color: colors.onSurface, fontSize: 14, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.xs },
+  roleCard: { width: "48%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.md, borderRadius: radius.md, borderWidth: 1 },
+  roleCardActive: { borderColor: "#635BFF", backgroundColor: "rgba(99, 91, 255, 0.08)" },
+  roleCardText: { fontSize: 12, textTransform: "capitalize", fontWeight: "600" },
+  roleCardTextActive: { color: "#635BFF", fontWeight: "800" },
+  settingCard: { padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, marginBottom: spacing.md, gap: spacing.xs },
+  cardHeaderTitle: { fontSize: 13, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.xs },
 });
+
