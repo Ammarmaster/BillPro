@@ -549,21 +549,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // 4. Alert alerts sound & vibration (unless quiet hours are on)
     if (isQuietHours()) return;
 
-    if (Platform.OS !== "web" && Notifications) {
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: notif.title,
-          body: notif.message,
-          sound: currentPrefs.sound_enabled ? "default" : undefined,
-          badge: unreadCount + 1,
-          android: {
-            channelId: "default",
-          },
-        },
-        trigger: null,
-      }).catch((e: any) => console.warn("Failed to schedule local notification:", e));
-    }
-
     if (currentPrefs.sound_enabled) {
       playSound(notif);
     }

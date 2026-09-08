@@ -119,7 +119,8 @@ def _sync_send_push(messages: list):
 
 async def send_expo_push_notifications(push_tokens: list[str], title: str, body: str, category: str, data: dict = None):
     messages = []
-    for token in push_tokens:
+    unique_tokens = list(dict.fromkeys(push_tokens))
+    for token in unique_tokens:
         if not token or not (token.startswith("ExponentPushToken") or token.startswith("ExpoPushToken")):
             continue
         messages.append({
@@ -190,8 +191,7 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
     # Query all users under this tenant who have registered push tokens
     try:
         cursor = db.users.find({"tenant_id": tenant_id, "push_token": {"$exists": True, "$ne": None}})
-        users_list = await cursor.to_list(length=100)
-        tokens = [u["push_token"] for u in users_list if u.get("push_token")]
+        tokens = list(dict.fromkeys([u["push_token"] for u in users_list if u.get("push_token")]))
         if tokens:
             await send_expo_push_notifications(tokens, title, message, category, data)
     except Exception as e:
