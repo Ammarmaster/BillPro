@@ -1065,17 +1065,73 @@ async def me(user: dict = Depends(get_current_user)):
     return user
 
 
+DEFAULT_LEGAL_CONFIG = {
+    "company_name": "ProDevOpz Solutions",
+    "brand_name": "EzBill / BillPro",
+    "registered_address": "ProDevOpz Solutions, India",
+    "support_email": "contactprodevopz@gmail.com",
+    "grievance_email": "grievance@prodevopz.com",
+    "grievance_officer_name": "Grievance Redressal Officer",
+    "contact_number": "+91 81520 75375",
+    "terms_version": "v1.0",
+    "privacy_version": "v1.0",
+    "effective_date": "2026-03-01",
+    "refund_policy": "EZBill is provided as a SaaS subscription. We offer free tier features and demo trials to evaluate functionality. Active paid subscriptions auto-renew according to your chosen cycle. AutoPay mandates can be cancelled at any time before renewal with immediate effect for future cycles. Once a subscription period begins, fees for that active period are non-refundable.",
+    "cancellation_policy": "You may cancel recurring AutoPay subscription mandates at any time directly through the app (More -> Subscription -> Cancel AutoPay) or through your UPI/Bank mandate management portal. Upon cancellation, your access remains active until the end of the paid billing period, and no further renewals will be charged."
+}
+
+
+class LegalConfigUpdateIn(BaseModel):
+    company_name: Optional[str] = None
+    brand_name: Optional[str] = None
+    registered_address: Optional[str] = None
+    support_email: Optional[str] = None
+    grievance_email: Optional[str] = None
+    grievance_officer_name: Optional[str] = None
+    contact_number: Optional[str] = None
+    terms_version: Optional[str] = None
+    privacy_version: Optional[str] = None
+    refund_policy: Optional[str] = None
+    cancellation_policy: Optional[str] = None
+
+
 class ConsentUpdateIn(BaseModel):
     consent_type: str
     status: str
 
 
+@api.get("/legal/config")
+@api.get("/legal-config")
+async def get_legal_config():
+    doc = await db.legal_settings.find_one({"id": "default_legal_config"}, {"_id": 0})
+    if not doc:
+        return DEFAULT_LEGAL_CONFIG
+    merged = {**DEFAULT_LEGAL_CONFIG, **doc}
+    return merged
+
+
+@api.post("/admin/legal/config")
+async def update_legal_config(payload: LegalConfigUpdateIn, user: dict = Depends(require_roles("super_admin"))):
+    update_data = {k: v for k, v in payload.dict().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_data["updated_by"] = user["id"]
+    await db.legal_settings.update_one(
+        {"id": "default_legal_config"},
+        {"$set": update_data},
+        upsert=True
+    )
+    doc = await db.legal_settings.find_one({"id": "default_legal_config"}, {"_id": 0})
+    return {**DEFAULT_LEGAL_CONFIG, **(doc or {})}
+
+
 @api.post("/users/consent")
+@api.post("/consent")
 async def update_user_consent(payload: ConsentUpdateIn, current_user: dict = Depends(get_current_user), request: Request = None):
     field_map = {
         "TERMS_AND_CONDITIONS": "terms_accepted",
         "PRIVACY_POLICY": "privacy_consent",
-        "MARKETING_CONSENT": "marketing_consent"
+        "MARKETING_CONSENT": "marketing_consent",
+        "ANALYTICS_CONSENT": "analytics_consent"
     }
     field_name = field_map.get(payload.consent_type)
     if not field_name:
@@ -1087,7 +1143,8 @@ async def update_user_consent(payload: ConsentUpdateIn, current_user: dict = Dep
     purpose_map = {
         "TERMS_AND_CONDITIONS": "To accept service terms",
         "PRIVACY_POLICY": "To allow data processing",
-        "MARKETING_CONSENT": "To receive promotional messages"
+        "MARKETING_CONSENT": "To receive promotional messages",
+        "ANALYTICS_CONSENT": "To analyze product performance"
     }
     
     ip = request.client.host if (request and request.client) else ""
@@ -1097,7 +1154,7 @@ async def update_user_consent(payload: ConsentUpdateIn, current_user: dict = Dep
         current_user["id"],
         current_user.get("tenant_id"),
         payload.consent_type,
-        purpose_map[payload.consent_type],
+        purpose_map.get(payload.consent_type, "Consent update"),
         "v1.0",
         payload.status,
         "settings",
@@ -1107,22 +1164,115 @@ async def update_user_consent(payload: ConsentUpdateIn, current_user: dict = Dep
     return {"success": True, "status": payload.status}
 
 
+@api.get("/users/consent/my-records")
+@api.get("/consent/my-records")
+async def get_my_consent_records(current_user: dict = Depends(get_current_user)):
+    records = await db.consent_records.find(
+        {"userId": current_user["id"]},
+        {"_id": 0}
+    ).sort("createdAt", -1).to_list(100)
+    return {"records": records}
+
+
+@api.get("/users/export-my-data")
+async def export_my_data(current_user: dict = Depends(get_current_user)):
+    uid = current_user["id"]
+    tid = current_user.get("tenant_id")
+    
+    user_doc = await db.users.find_one({"id": uid}, {"_id": 0, "password": 0, "reset_token_hash": 0, "reset_otp": 0})
+    restaurant_doc = await db.restaurants.find_one({"id": tid}, {"_id": 0}) if tid else None
+    
+    categories = []
+    menu_items = []
+    tables = []
+    bills = []
+    consents = []
+    
+    if tid:
+        categories = await db.categories.find({"tenant_id": tid}, {"_id": 0}).to_list(500)
+        menu_items = await db.menu_items.find({"tenant_id": tid}, {"_id": 0}).to_list(1000)
+        tables = await db.tables.find({"tenant_id": tid}, {"_id": 0}).to_list(200)
+        bills = await db.bills.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+        
+    consents = await db.consent_records.find({"userId": uid}, {"_id": 0}).sort("createdAt", -1).to_list(100)
+    
+    export_payload = {
+        "export_metadata": {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "data_principal_id": uid,
+            "legal_framework": "DPDP Act 2023 / DPDP Rules 2025 (Data Portability Right)",
+            "format": "JSON"
+        },
+        "user_profile": user_doc,
+        "restaurant_profile": restaurant_doc,
+        "consent_audit_history": consents,
+        "categories": categories,
+        "menu_items": menu_items,
+        "tables": tables,
+        "historical_bills_summary": bills
+    }
+    return export_payload
+
+
 @api.delete("/auth/delete-account")
-async def delete_my_account(user: dict = Depends(get_current_user)):
+async def delete_my_account(user: dict = Depends(get_current_user), request: Request = None):
     uid = user["id"]
     tid = user.get("tenant_id")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ip = request.client.host if (request and request.client) else ""
+    ua = request.headers.get("user-agent", "") if request else ""
+    
+    # Log DPDP Right to Erasure / Consent Withdrawal
+    await log_consent_event(
+        uid,
+        tid,
+        "PRIVACY_POLICY",
+        "Data Principal requested account deletion & erasure",
+        "v1.0",
+        "withdrawn",
+        "account_deletion",
+        ip,
+        ua
+    )
+    
     if user["role"] == "owner" and tid:
-        await db.restaurants.delete_one({"id": tid})
+        # 1. Delete menu items, categories, tables, notifications, waiter logins
         await db.categories.delete_many({"tenant_id": tid})
         await db.menu_items.delete_many({"tenant_id": tid})
         await db.tables.delete_many({"tenant_id": tid})
-        await db.orders.delete_many({"tenant_id": tid})
-        await db.bills.delete_many({"tenant_id": tid})
+        await db.notifications.delete_many({"tenant_id": tid})
         await db.subscriptions.delete_many({"tenant_id": tid})
         await db.users.delete_many({"tenant_id": tid})
+        await db.restaurants.delete_one({"id": tid})
+        
+        # 2. Section 36 CGST Act Compliance: Anonymize past invoices/bills for mandatory 72-month tax audit retention
+        await db.bills.update_many(
+            {"tenant_id": tid},
+            {"$set": {
+                "customer_phone": "",
+                "customer_name": "Deleted Account",
+                "notes": "",
+                "account_deleted": True,
+                "account_deleted_at": now_iso
+            }}
+        )
+        await db.orders.update_many(
+            {"tenant_id": tid},
+            {"$set": {
+                "customer_phone": "",
+                "customer_name": "Deleted Account",
+                "notes": "",
+                "account_deleted": True,
+                "account_deleted_at": now_iso
+            }}
+        )
     else:
         await db.users.delete_one({"id": uid})
-    return {"ok": True}
+        
+    return {
+        "ok": True,
+        "message": "Account and personal data deleted successfully. Tax invoices anonymized and preserved for statutory tax audit requirements."
+    }
 
 
 @api.post("/auth/refresh", response_model=TokenOut)

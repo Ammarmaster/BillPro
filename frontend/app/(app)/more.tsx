@@ -191,6 +191,19 @@ export default function More() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* 10. Legal, Privacy & Compliance */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/legal")} testID="manage-legal-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="shield-checkmark" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Legal, Privacy & DPDP</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Terms, Privacy notice, data export & grievance</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
 
           </View>
 

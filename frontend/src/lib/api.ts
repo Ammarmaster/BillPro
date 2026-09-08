@@ -560,6 +560,10 @@ export const api = {
     return req("/subscriptions/verify", { method: "POST", body: JSON.stringify(payload) });
   },
   deleteAccount: () => req("/auth/delete-account", { method: "DELETE" }),
+  getLegalConfig: () => req("/legal/config"),
+  adminUpdateLegalConfig: (payload: any) => req("/admin/legal/config", { method: "POST", body: JSON.stringify(payload) }),
+  myConsentRecords: () => req("/users/consent/my-records"),
+  exportMyData: () => req("/users/export-my-data"),
 
   // Notifications API bindings
   listNotifications: (category?: string) => {

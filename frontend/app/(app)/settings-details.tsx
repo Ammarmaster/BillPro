@@ -298,7 +298,7 @@ export default function SettingsDetails() {
                   </View>
 
                   {/* Marketing / Promotional Consent (Optional) */}
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border }}>
                     <View style={{ flex: 1, marginRight: spacing.sm }}>
                       <Text style={{ fontSize: 14, fontWeight: "700", color: theme.onSurface }}>Marketing & Promotions</Text>
                       <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary }}>Receive promotional alerts and product updates (Optional)</Text>
@@ -310,6 +310,17 @@ export default function SettingsDetails() {
                       thumbColor={marketingConsent ? "#FFFFFF" : "#F4F3F4"}
                     />
                   </View>
+
+                  {/* Link to Legal & Rights */}
+                  <Pressable
+                    style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 12 }}
+                    onPress={() => router.push("/(app)/legal")}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#635BFF" }}>
+                      View Full Legal Policies & Data Export →
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color="#635BFF" />
+                  </Pressable>
                 </View>
 
                 {err && <Text style={styles.err}>{err}</Text>}

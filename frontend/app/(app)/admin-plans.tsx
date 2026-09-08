@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, TextInput, Alert,
+  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, TextInput, Alert, ScrollView,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +21,7 @@ export default function AdminPlans() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -30,14 +31,60 @@ export default function AdminPlans() {
   const [razorpayPlanId, setRazorpayPlanId] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Legal Settings Modal
+  const [legalModal, setLegalModal] = useState(false);
+  const [legalForm, setLegalForm] = useState({
+    company_name: "ProDevOpz Solutions",
+    brand_name: "EzBill / BillPro",
+    registered_address: "ProDevOpz Solutions, India",
+    support_email: "contactprodevopz@gmail.com",
+    grievance_email: "grievance@prodevopz.com",
+    grievance_officer_name: "Grievance Redressal Officer",
+    contact_number: "+91 81520 75375",
+    terms_version: "v1.0",
+    privacy_version: "v1.0",
+  });
+
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    try { setPlans(await api.adminListPlans()); }
+    try {
+      const [pList, lCfg] = await Promise.all([
+        api.adminListPlans(),
+        api.getLegalConfig().catch(() => null),
+      ]);
+      setPlans(pList || []);
+      if (lCfg) {
+        setLegalForm({
+          company_name: lCfg.company_name || "ProDevOpz Solutions",
+          brand_name: lCfg.brand_name || "EzBill / BillPro",
+          registered_address: lCfg.registered_address || "ProDevOpz Solutions, India",
+          support_email: lCfg.support_email || "contactprodevopz@gmail.com",
+          grievance_email: lCfg.grievance_email || "grievance@prodevopz.com",
+          grievance_officer_name: lCfg.grievance_officer_name || "Grievance Redressal Officer",
+          contact_number: lCfg.contact_number || "+91 81520 75375",
+          terms_version: lCfg.terms_version || "v1.0",
+          privacy_version: lCfg.privacy_version || "v1.0",
+        });
+      }
+    }
     catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const saveLegalConfig = async () => {
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      await api.adminUpdateLegalConfig(legalForm);
+      setLegalModal(false);
+      Alert.alert("Success", "Legal entity and compliance settings updated successfully.");
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const save = async () => {
     const p = parseFloat(price);
@@ -94,21 +141,30 @@ export default function AdminPlans() {
             {plans.length} subscription packages
           </Text>
         </View>
-        <Pressable
-          style={styles.addBtn}
-          onPress={() => { setErr(null); setModal(true); }}
-          testID="admin-plans-add-btn"
-        >
-          <LinearGradient
-            colors={["#635BFF", "#4F46E5"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.addBtnGrad}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderWidth: 1, borderColor: theme.border }]}
+            onPress={() => { setErr(null); setLegalModal(true); }}
+            testID="admin-legal-settings-btn"
           >
-            <Ionicons name="add" size={16} color="#FFFFFF" />
-            <Text style={styles.addBtnText}>New Tier</Text>
-          </LinearGradient>
-        </Pressable>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#635BFF" />
+          </Pressable>
+          <Pressable
+            style={styles.addBtn}
+            onPress={() => { setErr(null); setModal(true); }}
+            testID="admin-plans-add-btn"
+          >
+            <LinearGradient
+              colors={["#635BFF", "#4F46E5"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.addBtnGrad}
+            >
+              <Ionicons name="add" size={16} color="#FFFFFF" />
+              <Text style={styles.addBtnText}>New Tier</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
       </View>
 
       {loading ? (
@@ -283,6 +339,116 @@ export default function AdminPlans() {
                 </LinearGradient>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* SUPER ADMIN LEGAL CONFIGURATION MODAL */}
+      <Modal visible={legalModal} animationType="slide" transparent onRequestClose={() => setLegalModal(false)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
+              <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Legal & Compliance Setup</Text>
+              <Pressable onPress={() => setLegalModal(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color={theme.onSurfaceSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Company Legal Entity Name</Text>
+              <TextInput
+                value={legalForm.company_name}
+                onChangeText={t => setLegalForm(f => ({ ...f, company_name: t }))}
+                placeholder="ProDevOpz Solutions"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Brand / App Name</Text>
+              <TextInput
+                value={legalForm.brand_name}
+                onChangeText={t => setLegalForm(f => ({ ...f, brand_name: t }))}
+                placeholder="EzBill"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Registered Office Address</Text>
+              <TextInput
+                value={legalForm.registered_address}
+                onChangeText={t => setLegalForm(f => ({ ...f, registered_address: t }))}
+                placeholder="Address in India"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+                multiline
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Grievance Officer Name</Text>
+              <TextInput
+                value={legalForm.grievance_officer_name}
+                onChangeText={t => setLegalForm(f => ({ ...f, grievance_officer_name: t }))}
+                placeholder="Grievance Redressal Officer"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Grievance Email</Text>
+              <TextInput
+                value={legalForm.grievance_email}
+                onChangeText={t => setLegalForm(f => ({ ...f, grievance_email: t }))}
+                placeholder="grievance@prodevopz.com"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Support Email</Text>
+              <TextInput
+                value={legalForm.support_email}
+                onChangeText={t => setLegalForm(f => ({ ...f, support_email: t }))}
+                placeholder="contactprodevopz@gmail.com"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Support Phone</Text>
+              <TextInput
+                value={legalForm.contact_number}
+                onChangeText={t => setLegalForm(f => ({ ...f, contact_number: t }))}
+                placeholder="+91 XXXXX XXXXX"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Terms Version</Text>
+              <TextInput
+                value={legalForm.terms_version}
+                onChangeText={t => setLegalForm(f => ({ ...f, terms_version: t }))}
+                placeholder="v1.0"
+                placeholderTextColor={theme.onSurfaceTertiary}
+                style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
+              />
+
+              <View style={styles.modalActions}>
+                <Pressable style={[styles.ghostBtn, { borderColor: theme.border }]} onPress={() => setLegalModal(false)}>
+                  <Text style={[styles.ghostBtnText, { color: theme.onSurfaceSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.primaryBtn} onPress={saveLegalConfig} disabled={busy}>
+                  <LinearGradient
+                    colors={["#635BFF", "#4F46E5"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.primaryGrad}
+                  >
+                    {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>Save Legal Config</Text>}
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>

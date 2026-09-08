@@ -25,6 +25,7 @@ export default function Register() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyConsent, setPrivacyConsent] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
+  const [analyticsConsent, setAnalyticsConsent] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
@@ -54,6 +55,11 @@ export default function Register() {
     try {
       // 1. Create the user owner account
       await register(email.trim(), password, ownerName.trim(), "owner", true, privacyConsent, marketingConsent);
+      
+      // If analytics consent was selected, update it
+      if (analyticsConsent) {
+        api.updateConsent("ANALYTICS_CONSENT", "accepted").catch(() => {});
+      }
       
       // 2. Automatically save the restaurant details
       await api.saveRestaurant({
@@ -253,7 +259,7 @@ export default function Register() {
               <Text style={styles.termsText}>
                 I acknowledge the{" "}
                 <Text style={styles.termsLink} onPress={() => setShowPrivacyModal(true)}>
-                  Privacy Notice & Consent to Data Processing *
+                  Privacy Notice & Data Processing Consent *
                 </Text>
               </Text>
             </Pressable>
@@ -267,7 +273,20 @@ export default function Register() {
                 {marketingConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
               </View>
               <Text style={styles.termsText}>
-                I consent to receive marketing and promotional messages (Optional)
+                I consent to receive marketing and promotional updates (Optional)
+              </Text>
+            </Pressable>
+
+            {/* Analytics Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setAnalyticsConsent(!analyticsConsent)}
+            >
+              <View style={[styles.checkbox, analyticsConsent && styles.checkboxChecked]}>
+                {analyticsConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to share anonymous product telemetry to help improve app reliability (Optional)
               </Text>
             </Pressable>
 
@@ -320,12 +339,13 @@ export default function Register() {
             </View>
             <ScrollView contentContainerStyle={styles.modalScroll}>
               <Text style={styles.modalText}>
-                Welcome to EzBill Restaurant ERP. By creating an account, you agree to these terms:{"\n\n"}
-                1. Service: We provide billing, KOT management, and analytics features.{"\n\n"}
-                2. Subscription: The service is offered on a trial and paid monthly/yearly basis. Plans renew automatically unless cancelled.{"\n\n"}
-                3. Data: We store your restaurant menu, sales, and employee accounts securely. We are not responsible for user-deleted data.{"\n\n"}
-                4. Local Operations: High-speed local POS cache is provided, but cloud sync requires active internet connectivity.{"\n\n"}
-                5. Compliance: You agree to comply with all local GST regulations and licensing terms.
+                Welcome to EzBill Restaurant ERP (ProDevOpz Solutions). By creating an account, you agree to these legally binding terms:{"\n\n"}
+                1. Scope of Service: We provide billing POS, kitchen order routing (KOT), thermal printer synchronization, menu management, and sales reporting software for restaurants.{"\n\n"}
+                2. User Obligations: You are responsible for maintaining confidentiality of all waiter PINs, owner login credentials, and billing data. You agree not to misuse the platform for unauthorized purposes.{"\n\n"}
+                3. Subscriptions & Billing: Paid tiers auto-renew based on chosen monthly or yearly periods. AutoPay recurring mandates may be cancelled anytime with 1-click in the app or through your bank portal prior to renewal. Active pre-paid periods are non-refundable.{"\n\n"}
+                4. Statutory Tax Compliance: You are solely responsible for setting accurate GST rates and verifying tax invoices generated for your guests in compliance with applicable Indian GST laws.{"\n\n"}
+                5. Limitation of Liability: EzBill is provided on an "as-is" and "as-available" basis. ProDevOpz Solutions is not liable for indirect losses, network outages, or hardware printer failures.{"\n\n"}
+                6. Governing Law & Dispute Resolution: These terms are governed by the laws of India. Any disputes shall be subject to arbitration in accordance with the Arbitration and Conciliation Act, 1996.
               </Text>
             </ScrollView>
           </View>
@@ -337,18 +357,19 @@ export default function Register() {
         <SafeAreaView style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Privacy Policy</Text>
+              <Text style={styles.modalTitle}>Privacy Notice & DPDP Notice</Text>
               <Pressable onPress={() => setShowPrivacyModal(false)} hitSlop={12}>
                 <Ionicons name="close" size={24} color="#94A3B8" />
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.modalScroll}>
               <Text style={styles.modalText}>
-                Your privacy is important to us. Here is how we handle your information:{"\n\n"}
-                1. Information Collection: We collect your name, email, phone number, and restaurant metadata.{"\n\n"}
-                2. Usage: Collected data is strictly used to run the EzBill POS system, sync KOT, and process orders.{"\n\n"}
-                3. Security: We use industry-standard encryption to protect access credentials and billing data.{"\n\n"}
-                4. Third Parties: Payment processing is handled securely by Razorpay. We do not sell your data to advertisers.
+                Notice under the Digital Personal Data Protection (DPDP) Act, 2023 & DPDP Rules 2025:{"\n\n"}
+                1. Data Collected: We collect your name, email, phone number, restaurant metadata, menu details, waiter profiles, and billing logs to provide the ERP service.{"\n\n"}
+                2. Purpose of Processing: Data is processed strictly to maintain restaurant operations, sync orders in real time, generate tax-compliant bills, and handle customer support.{"\n\n"}
+                3. Sub-Processors: We use Razorpay (secure PCI-DSS payment gateway), Brevo (transactional OTP delivery), Expo (push notifications), Google Gemini (AI menu OCR), and MongoDB Atlas (encrypted database). We never sell your data to advertisers.{"\n\n"}
+                4. Data Retention & Erasure: You may exercise your DPDP Right to Erasure / Account Deletion at any time. When deleted, personal identifiers are erased; historical invoices are anonymized and retained strictly under statutory Section 36 CGST Act requirements (72-month tax audit hold).{"\n\n"}
+                5. Grievance Redressal: For any DPDP or data inquiries, contact our designated Grievance Officer at grievance@prodevopz.com. We acknowledge complaints within 48 hours and resolve them within statutory timelines.
               </Text>
             </ScrollView>
           </View>

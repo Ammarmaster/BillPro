@@ -511,6 +511,31 @@ export default function Subscribe() {
               </View>
             </View>
           )}
+          <View style={[styles.legalDisclosureCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.brand} />
+              <Text style={[styles.legalDisclosureTitle, { color: theme.onSurface }]}>Billing Transparency & Policies</Text>
+            </View>
+            <Text style={[styles.legalDisclosureText, { color: theme.onSurfaceSecondary }]}>
+              • <Text style={{ fontWeight: "700" }}>Pricing & Taxes</Text>: All prices listed in INR (Indian Rupees). Taxes applicable per statutory Indian GST regulations.{"\n"}
+              • <Text style={{ fontWeight: "700" }}>AutoPay Mandates</Text>: AutoPay recurring mandates can be cancelled at any time with 1-click in the app without cancellation fees. Access remains active until the end of the paid billing cycle.{"\n"}
+              • <Text style={{ fontWeight: "700" }}>Payment Processing</Text>: Payments are processed securely via Razorpay Software Pvt. Ltd. (PCI-DSS Level 1 certified). We never store card credentials.{"\n"}
+              • <Text style={{ fontWeight: "700" }}>Refunds</Text>: SaaS subscriptions are non-refundable once an active billing period commences.
+            </Text>
+            <View style={styles.legalLinksRow}>
+              <Pressable onPress={() => router.push("/(app)/legal")}>
+                <Text style={styles.legalLinkText}>Terms of Service</Text>
+              </Pressable>
+              <Text style={{ color: theme.onSurfaceTertiary }}>•</Text>
+              <Pressable onPress={() => router.push("/(app)/legal")}>
+                <Text style={styles.legalLinkText}>Refund & Cancellation Policy</Text>
+              </Pressable>
+              <Text style={{ color: theme.onSurfaceTertiary }}>•</Text>
+              <Pressable onPress={() => router.push("/(app)/legal")}>
+                <Text style={styles.legalLinkText}>Grievance Officer</Text>
+              </Pressable>
+            </View>
+          </View>
 
         </ScrollView>
       </View>
@@ -962,5 +987,37 @@ const styles = StyleSheet.create({
   },
   btnPressed: {
     opacity: 0.85,
+  },
+  legalDisclosureCard: {
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  legalDisclosureTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  legalDisclosureText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  legalLinksRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0,0,0,0.05)",
+  },
+  legalLinkText: {
+    color: colors.brand,
+    fontSize: 12,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
 });
