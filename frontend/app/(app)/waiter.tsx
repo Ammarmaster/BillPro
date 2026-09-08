@@ -438,17 +438,33 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
   const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
 
+  // Persistent refs so BackHandler never gets unsubscribed or drops off on state mutations
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  const selectedTableObjRef = useRef(selectedTableObj);
+  selectedTableObjRef.current = selectedTableObj;
+
+  const tableOrdersRef = useRef(tableOrders);
+  tableOrdersRef.current = tableOrders;
+
+  const showScannerRef = useRef(showScanner);
+  showScannerRef.current = showScanner;
+
+  const showGuestPickerRef = useRef(showGuestPicker);
+  showGuestPickerRef.current = showGuestPicker;
+
   const handleStepBack = useCallback(() => {
-    if (showScanner) {
+    if (showScannerRef.current) {
       setShowScanner(false);
       return true;
     }
-    if (showGuestPicker) {
+    if (showGuestPickerRef.current) {
       setShowGuestPicker(false);
       return true;
     }
-    if (viewMode === "menu_order") {
-      if (tableOrders.length > 0) {
+    if (viewModeRef.current === "menu_order") {
+      if (tableOrdersRef.current && tableOrdersRef.current.length > 0) {
         setViewMode("order_details");
       } else {
         setSelectedTableObj(null);
@@ -456,14 +472,24 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       }
       return true;
     }
-    if (viewMode === "order_details") {
+    if (viewModeRef.current === "order_details" || selectedTableObjRef.current !== null) {
       setSelectedTableObj(null);
       setViewMode("tables");
       return true;
     }
     return false;
-  }, [showScanner, showGuestPicker, viewMode, tableOrders.length]);
+  }, []);
 
+  // Permanent listener for component lifecycle
+  useEffect(() => {
+    const onBackPress = () => {
+      return handleStepBack();
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [handleStepBack]);
+
+  // Screen focus listener
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Modal, Keyboard, BackHandler,
 } from "react-native";
@@ -25,6 +25,11 @@ export default function TablesScreen() {
   const [label, setLabel] = useState("");
   const [seats, setSeats] = useState("4");
   const [busy, setBusy] = useState(false);
+
+  const qrTableRef = useRef(qrTable);
+  qrTableRef.current = qrTable;
+  const modalRef = useRef(modal);
+  modalRef.current = modal;
 
   useEffect(() => {
     const { subscribeToCache } = require("@/src/lib/api");
@@ -54,27 +59,35 @@ export default function TablesScreen() {
   }, [user]);
 
   const handleBack = useCallback(() => {
-    if (qrTable) {
+    if (qrTableRef.current) {
       setQrTable(null);
-      return;
+      return true;
     }
-    if (modal) {
+    if (modalRef.current) {
       setModal(false);
-      return;
+      return true;
     }
     if (router.canGoBack()) {
       router.back();
     } else {
       router.replace("/(app)/waiter");
     }
-  }, [qrTable, modal, router]);
+    return true;
+  }, [router]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      return handleBack();
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [handleBack]);
 
   useFocusEffect(
     useCallback(() => {
       load();
       const onBackPress = () => {
-        handleBack();
-        return true;
+        return handleBack();
       };
       const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => subscription.remove();

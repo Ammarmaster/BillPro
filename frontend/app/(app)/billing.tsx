@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar, BackHandler,
 } from "react-native";
@@ -326,25 +326,38 @@ export default function Billing() {
     }
   }, [orderId, tableNumber, orderIds]);
 
+  const payModalRef = useRef(payModal);
+  payModalRef.current = payModal;
+  const backToRef = useRef(backTo);
+  backToRef.current = backTo;
+
   const handleBack = useCallback(() => {
-    if (payModal) {
+    if (payModalRef.current) {
       setPayModal(false);
-      return;
+      return true;
     }
-    if (backTo) {
-      router.replace(backTo as any);
+    if (backToRef.current) {
+      router.replace(backToRef.current as any);
     } else if (router.canGoBack()) {
       router.back();
     } else {
       router.replace("/(app)/waiter");
     }
-  }, [payModal, backTo, router]);
+    return true;
+  }, [router]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      return handleBack();
+    };
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [handleBack]);
 
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
-        handleBack();
-        return true;
+        return handleBack();
       };
       const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => subscription.remove();
