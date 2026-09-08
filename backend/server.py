@@ -190,7 +190,7 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
     
     # Query all users under this tenant who have registered push tokens
     try:
-        cursor = db.users.find({"tenant_id": tenant_id, "push_token": {"$exists": True, "$ne": None}})
+        users_list = await db.users.find({"tenant_id": tenant_id, "push_token": {"$exists": True, "$ne": None}}).to_list(100)
         tokens = list(dict.fromkeys([u["push_token"] for u in users_list if u.get("push_token")]))
         if tokens:
             await send_expo_push_notifications(tokens, title, message, category, data)
@@ -3096,6 +3096,17 @@ class AdminFeaturesIn(BaseModel):
     custom_staff_limit: Optional[int] = None
 
 
+class AdminBroadcastIn(BaseModel):
+    title: str = Field(min_length=2)
+    message: str = Field(min_length=2)
+    category: str = "system"  # system | sales | payment
+    target_role: Optional[str] = "all"  # all | owner | waiter | kitchen
+
+
+class RestaurantStatusIn(BaseModel):
+    is_active: Optional[bool] = None
+
+
 class ResetPasswordIn(BaseModel):
     new_password: str = Field(min_length=4)
 
@@ -3107,6 +3118,30 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
         total_users = await db.users.count_documents({})
         total_owners = await db.users.count_documents({"role": "owner"})
         total_waiters = await db.users.count_documents({"role": "waiter"})
+        total_kitchen = await db.users.count_documents({"role": "kitchen"})
+        
+        # Platform scale metrics
+        total_bills = await db.bills.count_documents({"status": "paid"})
+        total_orders = await db.orders.count_documents({})
+        total_menu_items = await db.menu_items.count_documents({"is_deleted": {"$ne": True}})
+        total_tables = await db.tables.count_documents({"is_deleted": {"$ne": True}})
+
+        # Lifetime platform GMV (gross merchandise value)
+        agg_gmv = await db.bills.aggregate([
+            {"$match": {"status": "paid"}},
+            {"$group": {"_id": None, "total": {"$sum": "$total"}}}
+        ]).to_list(1)
+        lifetime_gmv = round(agg_gmv[0]["total"], 2) if agg_gmv else 0.0
+
+        # Today's platform stats across all restaurants
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_orders_count = await db.orders.count_documents({"created_at": {"$gte": today_start}})
+        agg_today = await db.bills.aggregate([
+            {"$match": {"status": "paid", "created_at": {"$gte": today_start}}},
+            {"$group": {"_id": None, "total": {"$sum": "$total"}}}
+        ]).to_list(1)
+        today_sales_total = round(agg_today[0]["total"], 2) if agg_today else 0.0
+
         active_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0}).to_list(2000)
         # Compute MRR safely: monthly plans + yearly plans / 12
         mrr = 0.0
@@ -3120,14 +3155,45 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
                     mrr += price
             except:
                 pass
+
+        # Recent Platform Activity (latest registrations & subs)
+        recent_rests = await db.restaurants.find({}, {"_id": 0, "id": 1, "name": 1, "owner_name": 1, "created_at": 1}).sort("created_at", -1).to_list(5)
+        recent_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0, "tenant_id": 1, "plan_name": 1, "price": 1, "created_at": 1}).sort("created_at", -1).to_list(5)
+        
+        recent_activity = []
+        for r in recent_rests:
+            recent_activity.append({
+                "type": "restaurant_registered",
+                "title": f"🏪 New Restaurant: {r.get('name', 'Unknown')}",
+                "meta": f"Owner: {r.get('owner_name', 'N/A')}",
+                "timestamp": r.get("created_at") or datetime.now(timezone.utc).isoformat()
+            })
+        for s in recent_subs:
+            recent_activity.append({
+                "type": "subscription_activated",
+                "title": f"⚡ Plan Activated: {s.get('plan_name', 'Plan')}",
+                "meta": f"Amount: ₹{s.get('price', 0)}",
+                "timestamp": s.get("created_at") or datetime.now(timezone.utc).isoformat()
+            })
+        recent_activity.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
         return {
             "total_restaurants": total_restaurants,
             "total_users": total_users,
             "total_owners": total_owners,
             "total_waiters": total_waiters,
+            "total_kitchen": total_kitchen,
             "active_subscriptions": len(active_subs),
             "mrr": round(mrr, 2),
             "arr": round(mrr * 12, 2),
+            "total_bills": total_bills,
+            "lifetime_gmv": lifetime_gmv,
+            "total_orders": total_orders,
+            "total_menu_items": total_menu_items,
+            "total_tables": total_tables,
+            "today_orders_count": today_orders_count,
+            "today_sales_total": today_sales_total,
+            "recent_activity": recent_activity[:8],
         }
     except Exception as e:
         logger.error(f"Error in admin_summary: {e}")
@@ -3136,10 +3202,84 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
             "total_users": 0,
             "total_owners": 0,
             "total_waiters": 0,
+            "total_kitchen": 0,
             "active_subscriptions": 0,
             "mrr": 0.0,
             "arr": 0.0,
+            "total_bills": 0,
+            "lifetime_gmv": 0.0,
+            "total_orders": 0,
+            "total_menu_items": 0,
+            "total_tables": 0,
+            "today_orders_count": 0,
+            "today_sales_total": 0.0,
+            "recent_activity": [],
         }
+
+
+@api.get("/admin/system-health")
+async def admin_system_health(user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    import time
+    start_t = time.time()
+    db_status = "connected"
+    ping_ms = 0.0
+    try:
+        await db.command("ping")
+        ping_ms = round((time.time() - start_t) * 1000, 2)
+    except Exception as e:
+        db_status = f"degraded ({e})"
+
+    return {
+        "status": "operational",
+        "database": db_status,
+        "ping_ms": ping_ms,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "node_env": "production",
+        "version": "2.4.0-pro",
+    }
+
+
+@api.post("/admin/broadcast-notification")
+async def admin_broadcast_notification(payload: AdminBroadcastIn, user: dict = Depends(require_roles("super_admin"))):
+    try:
+        restaurants = await db.restaurants.find({}, {"id": 1}).to_list(5000)
+        tenant_ids = [r["id"] for r in restaurants if r.get("id")]
+        
+        # Dispatch notification to all tenants
+        created_docs = []
+        now_str = datetime.now(timezone.utc).isoformat()
+        for tid in tenant_ids:
+            doc = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "category": payload.category,
+                "title": f"📢 {payload.title}",
+                "message": payload.message,
+                "data": {"broadcast": True, "sender": "super_admin"},
+                "is_read": False,
+                "created_at": now_str,
+            }
+            created_docs.append(doc)
+            await manager.broadcast_to_tenant(tid, doc)
+            dashboard_summary_cache.pop(tid, None)
+
+        if created_docs:
+            await db.notifications.insert_many(created_docs)
+
+        # Broadcast push notifications to all users with push tokens
+        push_filter = {"push_token": {"$exists": True, "$ne": None}}
+        if payload.target_role and payload.target_role != "all":
+            push_filter["role"] = payload.target_role
+
+        users_with_tokens = await db.users.find(push_filter, {"push_token": 1}).to_list(10000)
+        tokens = list(dict.fromkeys([u["push_token"] for u in users_with_tokens if u.get("push_token")]))
+        if tokens:
+            await send_expo_push_notifications(tokens, f"📢 {payload.title}", payload.message, payload.category, {"broadcast": True})
+
+        return {"ok": True, "tenants_notified": len(tenant_ids), "push_delivered": len(tokens)}
+    except Exception as e:
+        logger.error(f"Error in admin_broadcast_notification: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api.get("/admin/restaurants")
@@ -3158,6 +3298,7 @@ async def admin_list_restaurants(user: dict = Depends(require_roles("super_admin
             "address": r.get("address", ""),
             "upi_id": r.get("upi_id", ""),
             "gst": r.get("gst", ""),
+            "is_active": r.get("is_active", True),
             "created_at": r.get("created_at"),
             "subscription": sub,
             "is_read": r.get("is_read", False),
@@ -3177,7 +3318,32 @@ async def admin_restaurant_detail(tid: str, user: dict = Depends(require_roles("
     ]).to_list(1)
     revenue = round(agg[0]["total"], 2) if agg else 0.0
     sub = await db.subscriptions.find_one({"tenant_id": tid}, {"_id": 0}, sort=[("created_at", -1)])
-    return {**r, "orders_total": orders_total, "revenue_total": revenue, "subscription": sub}
+    tables_count = await db.tables.count_documents({"tenant_id": tid, "is_deleted": {"$ne": True}})
+    menu_count = await db.menu_items.count_documents({"tenant_id": tid, "is_deleted": {"$ne": True}})
+    staff_count = await db.users.count_documents({"tenant_id": tid})
+    recent_bills = await db.bills.find({"tenant_id": tid, "status": "paid"}, {"_id": 0, "id": 1, "total": 1, "table_number": 1, "created_at": 1, "payment_method": 1}).sort("created_at", -1).to_list(5)
+
+    return {
+        **r,
+        "is_active": r.get("is_active", True),
+        "orders_total": orders_total,
+        "revenue_total": revenue,
+        "subscription": sub,
+        "tables_count": tables_count,
+        "menu_count": menu_count,
+        "staff_count": staff_count,
+        "recent_bills": recent_bills,
+    }
+
+
+@api.post("/admin/restaurants/{tid}/toggle-status")
+async def admin_toggle_restaurant_status(tid: str, payload: Optional[RestaurantStatusIn] = None, user: dict = Depends(require_roles("super_admin"))):
+    rest = await db.restaurants.find_one({"id": tid})
+    if not rest:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    new_status = not bool(rest.get("is_active", True)) if (payload is None or payload.is_active is None) else payload.is_active
+    await db.restaurants.update_one({"id": tid}, {"$set": {"is_active": new_status}})
+    return {"ok": True, "is_active": new_status, "message": f"Business is now {'ACTIVE' if new_status else 'SUSPENDED'}."}
 
 
 @api.post("/admin/restaurants/{tid}/read")

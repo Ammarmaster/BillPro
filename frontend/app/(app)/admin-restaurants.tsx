@@ -175,6 +175,29 @@ export default function AdminRestaurants() {
     );
   };
 
+  const handleWhatsApp = (phone: string) => {
+    const num = phone.replace(/[^0-9]/g, "");
+    if (!num) return;
+    const finalNum = num.length === 10 ? `91${num}` : num;
+    Linking.openURL(`https://wa.me/${finalNum}`).catch(() => {});
+  };
+
+  const toggleStatus = async () => {
+    if (!detail) return;
+    setBusy(true); setErr(null); setMsg(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      const res = await api.adminToggleRestaurantStatus(detail.id);
+      setDetail((p: any) => p ? { ...p, is_active: res.is_active } : p);
+      setMsg(res.message);
+      await load();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const filteredItems = useMemo(() => {
     return items.filter(r => {
       const q = searchQuery.toLowerCase().trim();
@@ -312,16 +335,29 @@ export default function AdminRestaurants() {
                   
                   <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
                     {!!item.phone && (
-                      <Pressable
-                        style={[styles.callPill, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          Linking.openURL(`tel:${item.phone}`).catch(() => {});
-                        }}
-                      >
-                        <Ionicons name="call" size={12} color="#10B981" />
-                        <Text style={[styles.callPillText, { color: theme.onSurface }]}>Call</Text>
-                      </Pressable>
+                      <>
+                        <Pressable
+                          style={[styles.callPill, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Linking.openURL(`tel:${item.phone}`).catch(() => {});
+                          }}
+                        >
+                          <Ionicons name="call" size={12} color="#10B981" />
+                          <Text style={[styles.callPillText, { color: theme.onSurface }]}>Call</Text>
+                        </Pressable>
+
+                        <Pressable
+                          style={[styles.callPill, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleWhatsApp(item.phone);
+                          }}
+                        >
+                          <Ionicons name="logo-whatsapp" size={12} color="#25D366" />
+                          <Text style={[styles.callPillText, { color: theme.onSurface }]}>Chat</Text>
+                        </Pressable>
+                      </>
                     )}
 
                     <Pressable
@@ -375,6 +411,32 @@ export default function AdminRestaurants() {
 
                 {/* Business Info Overview Card */}
                 <View style={[styles.infoCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                  {/* Status Toggle Row */}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={[styles.activeDot, { backgroundColor: detail.is_active !== false ? "#10B981" : "#EF4444" }]} />
+                      <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 13 }}>
+                        Status: {detail.is_active !== false ? "OPERATIONAL (ACTIVE)" : "SUSPENDED"}
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: radius.pill,
+                        backgroundColor: detail.is_active !== false ? "rgba(239, 68, 68, 0.12)" : "rgba(16, 185, 129, 0.12)",
+                        borderWidth: 1,
+                        borderColor: detail.is_active !== false ? "#EF4444" : "#10B981"
+                      }}
+                      onPress={toggleStatus}
+                      disabled={busy}
+                    >
+                      <Text style={{ color: detail.is_active !== false ? "#EF4444" : "#10B981", fontSize: 11, fontWeight: "800" }}>
+                        {detail.is_active !== false ? "Suspend Store" : "Reactivate"}
+                      </Text>
+                    </Pressable>
+                  </View>
+
                   <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>
                     Owner: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.owner_name}</Text>
                   </Text>
@@ -383,19 +445,33 @@ export default function AdminRestaurants() {
                       <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>
                         Phone: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.phone}</Text>
                       </Text>
-                      <Pressable
-                        style={styles.callOwnerBtn}
-                        onPress={() => Linking.openURL(`tel:${detail.phone}`).catch(() => {})}
-                      >
-                        <Ionicons name="call" size={13} color="#FFFFFF" />
-                        <Text style={styles.callOwnerText}>Call Owner</Text>
-                      </Pressable>
+                      <View style={{ flexDirection: "row", gap: 6 }}>
+                        <Pressable
+                          style={styles.callOwnerBtn}
+                          onPress={() => Linking.openURL(`tel:${detail.phone}`).catch(() => {})}
+                        >
+                          <Ionicons name="call" size={12} color="#FFFFFF" />
+                          <Text style={styles.callOwnerText}>Call</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.callOwnerBtn, { backgroundColor: "#25D366" }]}
+                          onPress={() => handleWhatsApp(detail.phone)}
+                        >
+                          <Ionicons name="logo-whatsapp" size={12} color="#FFFFFF" />
+                          <Text style={styles.callOwnerText}>WhatsApp</Text>
+                        </Pressable>
+                      </View>
                     </View>
                   )}
                   {!!detail.address && <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Address: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.address}</Text></Text>}
                   {!!detail.gst && <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>GSTIN: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.gst}</Text></Text>}
                   {!!detail.upi_id && <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>UPI: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.upi_id}</Text></Text>}
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.border }}>
+                  
+                  {/* Store Scale Metrics Grid */}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.border, flexWrap: "wrap", gap: 8 }}>
+                    <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Tables: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.tables_count ?? "-"}</Text></Text>
+                    <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Menu: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.menu_count ?? "-"}</Text></Text>
+                    <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Staff: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.staff_count ?? "-"}</Text></Text>
                     <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Orders: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.orders_total}</Text></Text>
                     <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Revenue: <Text style={[styles.detailVal, { color: "#10B981", fontWeight: "800" }]}>₹{detail.revenue_total}</Text></Text>
                   </View>

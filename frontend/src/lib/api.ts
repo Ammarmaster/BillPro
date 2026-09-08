@@ -508,6 +508,11 @@ export const api = {
   adminUpdateRestaurantFeatures: (tid: string, custom_features: any, custom_staff_limit?: number) =>
     req(`/admin/restaurants/${tid}/features`, { method: "POST", body: JSON.stringify({ custom_features, custom_staff_limit }) }),
   adminCancelSubscription: (tid: string) => req(`/admin/restaurants/${tid}/subscription`, { method: "DELETE" }),
+  adminSystemHealth: () => req("/admin/system-health"),
+  adminBroadcastNotification: (payload: { title: string; message: string; category?: string; target_role?: string }) =>
+    req("/admin/broadcast-notification", { method: "POST", body: JSON.stringify(payload) }),
+  adminToggleRestaurantStatus: (tid: string, is_active?: boolean) =>
+    req(`/admin/restaurants/${tid}/toggle-status`, { method: "POST", body: JSON.stringify(is_active !== undefined ? { is_active } : {}) }),
   
   cancelSubscription: async () => {
     const res = await req("/subscriptions/cancel", { method: "POST" });
