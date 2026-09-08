@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar, BackHandler,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
@@ -326,6 +326,31 @@ export default function Billing() {
     }
   }, [orderId, tableNumber, orderIds]);
 
+  const handleBack = useCallback(() => {
+    if (payModal) {
+      setPayModal(false);
+      return;
+    }
+    if (backTo) {
+      router.replace(backTo as any);
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(app)/waiter");
+    }
+  }, [payModal, backTo, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        handleBack();
+        return true;
+      };
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
+    }, [handleBack])
+  );
+
   useEffect(() => {
     load();
   }, [orderId, tableNumber, orderIds, load]);
@@ -478,15 +503,7 @@ export default function Billing() {
         {/* Header Bar matching Image 2 & 3 */}
         <View style={styles.header}>
           <Pressable 
-            onPress={() => {
-              if (backTo) {
-                router.replace(backTo as any);
-              } else if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace("/(app)/waiter");
-              }
-            }} 
+            onPress={handleBack} 
             style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} 
             testID="billing-back-btn" 
             hitSlop={12}

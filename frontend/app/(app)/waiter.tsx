@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator, SafeAreaView, StatusBar, PanResponder, Dimensions, Animated as RNAnimated, Alert,
+  View, Text, StyleSheet, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator, SafeAreaView, StatusBar, PanResponder, Dimensions, Animated as RNAnimated, Alert, BackHandler,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -437,6 +437,42 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
 
   const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
   const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
+
+  const handleStepBack = useCallback(() => {
+    if (showScanner) {
+      setShowScanner(false);
+      return true;
+    }
+    if (showGuestPicker) {
+      setShowGuestPicker(false);
+      return true;
+    }
+    if (viewMode === "menu_order") {
+      if (tableOrders.length > 0) {
+        setViewMode("order_details");
+      } else {
+        setSelectedTableObj(null);
+        setViewMode("tables");
+      }
+      return true;
+    }
+    if (viewMode === "order_details") {
+      setSelectedTableObj(null);
+      setViewMode("tables");
+      return true;
+    }
+    return false;
+  }, [showScanner, showGuestPicker, viewMode, tableOrders.length]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        return handleStepBack();
+      };
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
+    }, [handleStepBack])
+  );
 
   if (viewMode === "order_details" && selectedTableObj) {
     const allWebPaid = tableOrders.length > 0 && tableOrders.every((o: any) => o.created_by === "guest" || o.order_source === "qr_web" || bills.some((b: any) => b.order_id === o.id && b.status === "paid"));
@@ -947,7 +983,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       
       {/* Top Header with Back to Details */}
       <View style={[styles.menuHeaderBar, { backgroundColor: theme.surface }]}>
-        <Pressable onPress={() => setViewMode("order_details")} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} hitSlop={12}>
+        <Pressable onPress={handleStepBack} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
         </Pressable>
         <View style={{ flex: 1, marginLeft: spacing.sm }}>

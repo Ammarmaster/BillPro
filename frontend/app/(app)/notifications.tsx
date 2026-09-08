@@ -100,7 +100,8 @@ export default function NotificationCentreScreen() {
         link.click();
         document.body.removeChild(link);
       } else {
-        const filename = `${(FileSystem as any).documentDirectory}notifications_export_${Date.now()}.csv`;
+        const baseDir = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || "";
+        const filename = `${baseDir}notifications_export_${Date.now()}.csv`;
         await FileSystem.writeAsStringAsync(filename, csvContent, {
           encoding: (FileSystem as any).EncodingType.UTF8
         });

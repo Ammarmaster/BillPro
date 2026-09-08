@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from "react";
 import {
-  View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Modal, Keyboard,
+  View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Modal, Keyboard, BackHandler,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -53,7 +53,33 @@ export default function TablesScreen() {
     finally { setLoading(false); }
   }, [user]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const handleBack = useCallback(() => {
+    if (qrTable) {
+      setQrTable(null);
+      return;
+    }
+    if (modal) {
+      setModal(false);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(app)/waiter");
+    }
+  }, [qrTable, modal, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      const onBackPress = () => {
+        handleBack();
+        return true;
+      };
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
+    }, [load, handleBack])
+  );
 
   const save = async () => {
     const s = parseInt(seats, 10);
@@ -72,7 +98,7 @@ export default function TablesScreen() {
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="tables-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.push("/(app)/more")} testID="tables-back-btn" hitSlop={12}>
+        <Pressable onPress={handleBack} testID="tables-back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Tables</Text>

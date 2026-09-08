@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { Platform, Share } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
@@ -153,7 +153,8 @@ export async function exportAnalyticsExcel(period: string, bills: any[], topDish
   csv += "TOP SELLING MENU ITEMS\n";
   csv += "Item Name,Quantity Sold,Total Revenue (INR)\n";
   (topDishes || []).forEach(d => {
-    csv += `"${d.name || 'Item'}",${d.sold || 1},${d.amt || 0}\n`;
+    const safeName = String(d.name || 'Item').replace(/"/g, '""');
+    csv += `"${safeName}",${d.sold || 1},${d.amt || 0}\n`;
   });
 
   csv += "\nTRANSACTION DETAILS\n";
@@ -161,7 +162,9 @@ export async function exportAnalyticsExcel(period: string, bills: any[], topDish
   (bills || []).forEach(b => {
     const bId = (b?.id || b?._id || "BILL").slice(-6).toUpperCase();
     const date = b?.created_at ? new Date(b.created_at).toLocaleString() : new Date().toLocaleString();
-    csv += `"${bId}","${date}","${b?.payment_method || 'UPI'}","${b?.status || 'paid'}",${b?.subtotal || 0},${b?.tax || 0},${b?.discount || 0},${b?.total || 0}\n`;
+    const safeMethod = String(b?.payment_method || 'UPI').replace(/"/g, '""');
+    const safeStatus = String(b?.status || 'paid').replace(/"/g, '""');
+    csv += `"${bId}","${date}","${safeMethod}","${safeStatus}",${b?.subtotal || 0},${b?.tax || 0},${b?.discount || 0},${b?.total || 0}\n`;
   });
 
   const filename = `sales_report_${period}_${Date.now()}.csv`;
@@ -169,10 +172,33 @@ export async function exportAnalyticsExcel(period: string, bills: any[], topDish
   if (Platform.OS === "web") {
     downloadWebFile(csv, filename, "text/csv;charset=utf-8;");
   } else {
-    const fileUri = `${(FileSystem as any).documentDirectory}${filename}`;
+    const baseDir = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || "";
+    const fileUri = `${baseDir}${filename}`;
     await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: (FileSystem as any).EncodingType.UTF8 });
+    
+    let shared = false;
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, { mimeType: "text/csv", dialogTitle: "Export Excel / CSV Sales Report" });
+      try {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "text/csv",
+          dialogTitle: "Export Excel / CSV Sales Report",
+          UTI: "public.comma-separated-values-text",
+        });
+        shared = true;
+      } catch (err) {
+        console.warn("Sharing.shareAsync failed for CSV, trying fallback:", err);
+      }
+    }
+    if (!shared) {
+      try {
+        await Share.share({
+          title: filename,
+          message: csv,
+          url: Platform.OS === "ios" ? fileUri : undefined,
+        });
+      } catch (e) {
+        console.warn("Share fallback failed:", e);
+      }
     }
   }
 }
@@ -206,10 +232,33 @@ export async function exportAnalyticsDocx(period: string, heroRev: number, total
   if (Platform.OS === "web") {
     downloadWebFile(doc, filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
   } else {
-    const fileUri = `${(FileSystem as any).documentDirectory}${filename}`;
+    const baseDir = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || "";
+    const fileUri = `${baseDir}${filename}`;
     await FileSystem.writeAsStringAsync(fileUri, doc, { encoding: (FileSystem as any).EncodingType.UTF8 });
+    
+    let shared = false;
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", dialogTitle: "Export DOCX Sales Document" });
+      try {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          dialogTitle: "Export DOCX Sales Document",
+          UTI: "org.openxmlformats.wordprocessingml.document",
+        });
+        shared = true;
+      } catch (err) {
+        console.warn("Sharing.shareAsync failed for DOCX, trying fallback:", err);
+      }
+    }
+    if (!shared) {
+      try {
+        await Share.share({
+          title: `Sales Report - ${period.toUpperCase()}`,
+          message: doc,
+          url: Platform.OS === "ios" ? fileUri : undefined,
+        });
+      } catch (e) {
+        console.warn("Share fallback failed:", e);
+      }
     }
   }
 }

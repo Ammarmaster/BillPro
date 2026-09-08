@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Modal,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Modal, Alert, BackHandler,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -197,8 +197,27 @@ export default function Analytics() {
   const maxDishAmt = realTopDishes.length > 0 ? realTopDishes[0].amt : 1;
 
   const handleBack = () => {
-    router.replace("/(app)/more");
+    if (exportModal) {
+      setExportModal(false);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(app)/more");
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        handleBack();
+        return true;
+      };
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
+    }, [exportModal])
+  );
 
   const handleExport = async (format: "pdf" | "excel" | "docx") => {
     setExporting(true);
@@ -212,8 +231,10 @@ export default function Analytics() {
       } else if (format === "docx") {
         await exportAnalyticsDocx(period, currentHeroRev, totalOrders, avgBill, exportBills, exportDishes);
       }
-    } catch {}
-    finally {
+    } catch (e: any) {
+      console.warn("handleExport error:", e);
+      Alert.alert("Export Notice", "Export could not complete. Please check app permissions.");
+    } finally {
       setExporting(false);
       setExportModal(false);
     }
