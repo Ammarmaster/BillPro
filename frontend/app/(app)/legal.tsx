@@ -25,7 +25,7 @@ export default function Legal() {
     brand_name: "EzBill / BillPro",
     registered_address: "ProDevOpz Solutions, India",
     support_email: "contactprodevopz@gmail.com",
-    grievance_email: "grievance@prodevopz.com",
+    grievance_email: "contactprodevopz@gmail.com",
     grievance_officer_name: "Grievance Redressal Officer",
     contact_number: "+91 81520 75375",
     terms_version: "v1.0",
@@ -292,7 +292,7 @@ export default function Legal() {
                 <Text style={styles.bold}>Officer Name</Text>: {legalConfig.grievance_officer_name || "Grievance Redressal Officer"}{"\n"}
                 <Text style={styles.bold}>Company</Text>: {legalConfig.company_name || "ProDevOpz Solutions"}{"\n"}
                 <Text style={styles.bold}>Address</Text>: {legalConfig.registered_address || "ProDevOpz Solutions, India"}{"\n"}
-                <Text style={styles.bold}>Grievance Email</Text>: {legalConfig.grievance_email || "grievance@prodevopz.com"}{"\n"}
+                <Text style={styles.bold}>Grievance Email</Text>: {legalConfig.grievance_email || "contactprodevopz@gmail.com"}{"\n"}
                 <Text style={styles.bold}>Customer Support</Text>: {legalConfig.support_email || "contactprodevopz@gmail.com"}{"\n"}
                 <Text style={styles.bold}>Support Phone</Text>: {legalConfig.contact_number || "+91 81520 75375"}{"\n\n"}
 

@@ -1070,7 +1070,7 @@ DEFAULT_LEGAL_CONFIG = {
     "brand_name": "EzBill / BillPro",
     "registered_address": "ProDevOpz Solutions, India",
     "support_email": "contactprodevopz@gmail.com",
-    "grievance_email": "grievance@prodevopz.com",
+    "grievance_email": "contactprodevopz@gmail.com",
     "grievance_officer_name": "Grievance Redressal Officer",
     "contact_number": "+91 81520 75375",
     "terms_version": "v1.0",

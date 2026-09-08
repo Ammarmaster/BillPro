@@ -38,7 +38,7 @@ export default function AdminPlans() {
     brand_name: "EzBill / BillPro",
     registered_address: "ProDevOpz Solutions, India",
     support_email: "contactprodevopz@gmail.com",
-    grievance_email: "grievance@prodevopz.com",
+    grievance_email: "contactprodevopz@gmail.com",
     grievance_officer_name: "Grievance Redressal Officer",
     contact_number: "+91 81520 75375",
     terms_version: "v1.0",
@@ -59,7 +59,7 @@ export default function AdminPlans() {
           brand_name: lCfg.brand_name || "EzBill / BillPro",
           registered_address: lCfg.registered_address || "ProDevOpz Solutions, India",
           support_email: lCfg.support_email || "contactprodevopz@gmail.com",
-          grievance_email: lCfg.grievance_email || "grievance@prodevopz.com",
+          grievance_email: lCfg.grievance_email || "contactprodevopz@gmail.com",
           grievance_officer_name: lCfg.grievance_officer_name || "Grievance Redressal Officer",
           contact_number: lCfg.contact_number || "+91 81520 75375",
           terms_version: lCfg.terms_version || "v1.0",
@@ -396,7 +396,7 @@ export default function AdminPlans() {
               <TextInput
                 value={legalForm.grievance_email}
                 onChangeText={t => setLegalForm(f => ({ ...f, grievance_email: t }))}
-                placeholder="grievance@prodevopz.com"
+                placeholder="contactprodevopz@gmail.com"
                 placeholderTextColor={theme.onSurfaceTertiary}
                 style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
                 keyboardType="email-address"

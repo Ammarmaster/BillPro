@@ -369,7 +369,7 @@ export default function Register() {
                 2. Purpose of Processing: Data is processed strictly to maintain restaurant operations, sync orders in real time, generate tax-compliant bills, and handle customer support.{"\n\n"}
                 3. Sub-Processors: We use Razorpay (secure PCI-DSS payment gateway), Brevo (transactional OTP delivery), Expo (push notifications), Google Gemini (AI menu OCR), and MongoDB Atlas (encrypted database). We never sell your data to advertisers.{"\n\n"}
                 4. Data Retention & Erasure: You may exercise your DPDP Right to Erasure / Account Deletion at any time. When deleted, personal identifiers are erased; historical invoices are anonymized and retained strictly under statutory Section 36 CGST Act requirements (72-month tax audit hold).{"\n\n"}
-                5. Grievance Redressal: For any DPDP or data inquiries, contact our designated Grievance Officer at grievance@prodevopz.com. We acknowledge complaints within 48 hours and resolve them within statutory timelines.
+                5. Grievance Redressal: For any DPDP or data inquiries, contact our designated Grievance Officer at contactprodevopz@gmail.com. We acknowledge complaints within 48 hours and resolve them within statutory timelines.
               </Text>
             </ScrollView>
           </View>
