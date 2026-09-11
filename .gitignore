@@ -92,3 +92,4 @@ frontend/.expo/
 frontend/.metro-cache/
 frontend/dist/
 frontend/web-build/
+backend/backups/

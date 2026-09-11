@@ -168,6 +168,7 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
     if not tenant_id:
         return
     clean_data = sanitize_doc(data or {})
+    now_dt = datetime.now(timezone.utc)
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -176,7 +177,8 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
         "message": message,
         "data": clean_data,
         "is_read": False,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now_dt.isoformat(),
+        "created_at_dt": now_dt,
     }
     await db.notifications.insert_one(doc)
     doc.pop("_id", None)
@@ -2709,7 +2711,7 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
             "phone": restaurant.get("phone", ""),
             "gst": restaurant.get("gst", ""),
             "fssai": restaurant.get("fssai", ""),
-            "logo_base64": restaurant.get("logo_base64", ""),
+            "logo_base64": "",
         },
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -3434,7 +3436,7 @@ async def admin_broadcast_notification(payload: AdminBroadcastIn, user: dict = D
 
 @api.get("/admin/restaurants")
 async def admin_list_restaurants(user: dict = Depends(require_roles("super_admin", "admin_employee"))):
-    rests = await db.restaurants.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    rests = await db.restaurants.find({}, {"_id": 0, "logo_base64": 0, "logo_base64_58": 0, "logo_base64_80": 0}).sort("created_at", -1).to_list(2000)
     out = []
     for r in rests:
         sub = await db.subscriptions.find_one({"tenant_id": r["id"]}, {"_id": 0}, sort=[("created_at", -1)])
@@ -4389,7 +4391,7 @@ async def customer_send_otp(payload: CustomerSendOtpIn):
     now = datetime.now(timezone.utc)
     await db.otps.update_one(
         {"phone": phone},
-        {"$set": {"otp": otp, "created_at": now.isoformat()}},
+        {"$set": {"otp": otp, "created_at": now.isoformat(), "created_at_dt": now}},
         upsert=True
     )
     print(f"\n[OTP ALERT] Generated OTP for customer phone {phone}: {otp}\n", flush=True)
@@ -4529,11 +4531,13 @@ async def idempotency_middleware(request: Request, call_next):
                 except Exception:
                     body_str = ""
 
+                now_dt = datetime.now(timezone.utc)
                 await db.processed_operations.insert_one({
                     "id": op_id,
                     "response_body": body_str,
                     "status_code": response.status_code,
-                    "created_at": datetime.now(timezone.utc).isoformat()
+                    "created_at": now_dt.isoformat(),
+                    "created_at_dt": now_dt,
                 })
 
                 return Response(
@@ -4590,8 +4594,15 @@ async def seed_super_admin():
         await db.users.create_index([("tenant_id", 1)])
         await db.restaurants.create_index([("id", 1)])
         await db.subscriptions.create_index([("tenant_id", 1), ("status", 1)])
+        await db.consent_records.create_index([("userId", 1), ("createdAt", -1)])
+        await db.consent_records.create_index([("restaurantId", 1), ("createdAt", -1)])
+        await db.payment_orders.create_index([("razorpay_order_id", 1)])
+        await db.payment_orders.create_index([("tenant_id", 1), ("created_at", -1)])
+        await db.otps.create_index([("created_at_dt", 1)], expireAfterSeconds=600)
         await db.processed_operations.create_index([("id", 1)], unique=True)
         await db.processed_operations.create_index([("created_at", 1)])
+        await db.processed_operations.create_index([("created_at_dt", 1)], expireAfterSeconds=2592000)
+        await db.notifications.create_index([("created_at_dt", 1)], expireAfterSeconds=7776000)
         logger.info("Database compound indexes verified and active.")
     except Exception as e:
         logger.warning("Index setup notice: %s", e)
