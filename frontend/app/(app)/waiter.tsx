@@ -450,6 +450,9 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const tableOrdersRef = useRef(tableOrders);
   tableOrdersRef.current = tableOrders;
 
+  const tableRef = useRef(table);
+  tableRef.current = table;
+
   const showScannerRef = useRef(showScanner);
   showScannerRef.current = showScanner;
 
@@ -465,31 +468,45 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       setShowGuestPicker(false);
       return true;
     }
+    // If inside table menu order creation screen
     if (viewModeRef.current === "menu_order") {
       if (tableOrdersRef.current && tableOrdersRef.current.length > 0) {
         setViewMode("order_details");
+        return true;
       } else {
         setSelectedTableObj(null);
+        setTable("");
+        setLines([]);
         setViewMode("tables");
+        if (tableParam) {
+          router.setParams({ table: "" });
+        }
+        return true;
+      }
+    }
+    // If inside table order details screen or any table is selected
+    if (viewModeRef.current === "order_details" || selectedTableObjRef.current !== null || (tableRef.current && tableRef.current !== "")) {
+      setSelectedTableObj(null);
+      setTable("");
+      setLines([]);
+      setViewMode("tables");
+      if (tableParam) {
+        router.setParams({ table: "" });
       }
       return true;
     }
-    if (viewModeRef.current === "order_details" || selectedTableObjRef.current !== null) {
-      setSelectedTableObj(null);
-      setViewMode("tables");
-      return true;
-    }
     return false;
-  }, []);
+  }, [tableParam, router]);
 
-  // Permanent listener for component lifecycle
+  // Re-register BackHandler whenever table/view state changes
+  // This ensures our table step-back handler is ALWAYS at the top of the Android hardware back stack
   useEffect(() => {
     const onBackPress = () => {
       return handleStepBack();
     };
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => subscription.remove();
-  }, [handleStepBack]);
+  }, [viewMode, selectedTableObj, table, showScanner, showGuestPicker, handleStepBack]);
 
   // Screen focus listener
   useFocusEffect(
@@ -499,7 +516,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       };
       const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => subscription.remove();
-    }, [handleStepBack])
+    }, [viewMode, selectedTableObj, table, showScanner, showGuestPicker, handleStepBack])
   );
 
   if (viewMode === "order_details" && selectedTableObj) {
@@ -552,7 +569,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           <View style={[styles.desktopContainer, isDesktop && { maxWidth: 900, alignSelf: "center", width: "100%" }]}>
           {/* Header Bar */}
           <View style={styles.detailsHeader}>
-            <Pressable onPress={() => { setSelectedTableObj(null); setViewMode("tables"); }} style={styles.backBtn} hitSlop={12}>
+            <Pressable onPress={handleStepBack} style={styles.backBtn} hitSlop={12}>
               <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
             </Pressable>
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
