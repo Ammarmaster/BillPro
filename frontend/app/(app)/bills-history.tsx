@@ -10,6 +10,7 @@ import { printBill, sharePdf } from "@/src/lib/print";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 import { isTodayBusinessDay, formatDateTime } from "@/src/lib/dateUtils";
 
@@ -18,6 +19,7 @@ export default function BillsHistory() {
   const router = useRouter();
   const params = useLocalSearchParams<{ filter?: string }>();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   const { subscribe } = useNotifications();
 
   const [activeFilter, setActiveFilter] = useState<"today" | "all">(() => params.filter === "today" ? "today" : "all");
@@ -108,6 +110,7 @@ export default function BillsHistory() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]}>
+        <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1000, alignSelf: "center" }]}>
         
         {/* Header Bar */}
         <View style={styles.header}>
@@ -220,8 +223,29 @@ export default function BillsHistory() {
 
         {/* Bill Detail Modal */}
         <Modal transparent visible={!!selBill} animationType="slide" onRequestClose={() => setSelBill(null)}>
-          <Pressable style={styles.modalBg} onPress={() => setSelBill(null)}>
-            <Pressable style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary, paddingBottom: insets.bottom + spacing.xl }]} onPress={() => {}}>
+          <Pressable 
+            style={[
+              styles.modalBg,
+              isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }
+            ]} 
+            onPress={() => setSelBill(null)}
+          >
+            <Pressable 
+              style={[
+                styles.modalCard, 
+                { 
+                  backgroundColor: theme.surfaceSecondary, 
+                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
+                  width: isDesktop ? 500 : "100%",
+                  borderRadius: isDesktop ? 20 : undefined,
+                  borderTopLeftRadius: 24,
+                  borderTopRightRadius: 24,
+                  borderWidth: isDesktop ? 1 : 0,
+                  borderColor: theme.border,
+                }
+              ]} 
+              onPress={() => {}}
+            >
               <View style={styles.modalHeader}>
                 <View>
                   <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Bill #{selBill?.bill_number || ""}</Text>
@@ -268,6 +292,7 @@ export default function BillsHistory() {
             </Pressable>
           </Pressable>
         </Modal>
+        </View>
       </View>
     </SafeAreaView>
   );

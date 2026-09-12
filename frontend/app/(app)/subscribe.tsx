@@ -10,6 +10,7 @@ import { api } from "@/src/lib/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type Plan = { 
   id: string; 
@@ -25,6 +26,7 @@ export default function Subscribe() {
   const router = useRouter();
   const { user } = useAuth();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   
   const [plans, setPlans] = useState<Plan[]>([]);
   const [sub, setSub] = useState<any>(null);
@@ -176,7 +178,17 @@ export default function Subscribe() {
           <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg }} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          contentContainerStyle={{ 
+            padding: spacing.lg, 
+            paddingBottom: spacing.xxxl, 
+            gap: spacing.lg,
+            maxWidth: isDesktop ? 1200 : undefined,
+            width: "100%",
+            alignSelf: isDesktop ? "center" : undefined,
+          }} 
+          showsVerticalScrollIndicator={false}
+        >
           
           <View style={styles.heroTextContainer}>
             <Text style={[styles.heroHeadline, { color: theme.onSurface }]}>Choose the right plan for your restaurant</Text>
@@ -284,10 +296,10 @@ export default function Subscribe() {
               <Text style={{ color: theme.onSurfaceSecondary, marginTop: 8 }}>Loading available plans...</Text>
             </View>
           ) : (
-            <View style={styles.cardsStack}>
+            <View style={[styles.cardsStack, isDesktop && { flexDirection: "row", alignItems: "stretch", gap: 20 }]}>
               {/* STARTER */}
               {starterPlan && (
-                <View style={[styles.planCard, { backgroundColor: theme.surfaceSecondary, borderColor: activePlanId === starterPlan.id ? "#10B981" : theme.border }]}>
+                <View style={[styles.planCard, isDesktop && { flex: 1, marginBottom: 0 }, { backgroundColor: theme.surfaceSecondary, borderColor: activePlanId === starterPlan.id ? "#10B981" : theme.border }]}>
                   {activePlanId === starterPlan.id && (
                     <View style={styles.activeCardBadge}>
                       <Text style={styles.activeCardBadgeText}>✓ CURRENT PLAN</Text>
@@ -321,7 +333,7 @@ export default function Subscribe() {
 
               {/* GROWTH */}
               {growthPlan && (
-                <View style={[styles.planCard, styles.planCardGrowth, { backgroundColor: theme.surfaceSecondary, borderColor: activePlanId === growthPlan.id ? "#10B981" : "#FF5E2B" }]}>
+                <View style={[styles.planCard, styles.planCardGrowth, isDesktop && { flex: 1, marginBottom: 0 }, { backgroundColor: theme.surfaceSecondary, borderColor: activePlanId === growthPlan.id ? "#10B981" : "#FF5E2B" }]}>
                   <View style={styles.popularRibbon}>
                     <Text style={styles.popularRibbonText}>⭐ MOST POPULAR</Text>
                   </View>
@@ -358,7 +370,7 @@ export default function Subscribe() {
 
               {/* PRO */}
               {proPlan && (
-                <View style={[styles.planCard, styles.planCardPro, { backgroundColor: "#11121A", borderColor: activePlanId === proPlan.id ? "#10B981" : "#635BFF" }]}>
+                <View style={[styles.planCard, styles.planCardPro, isDesktop && { flex: 1, marginBottom: 0 }, { backgroundColor: "#11121A", borderColor: activePlanId === proPlan.id ? "#10B981" : "#635BFF" }]}>
                   {activePlanId === proPlan.id && (
                     <View style={styles.activeCardBadge}>
                       <Text style={styles.activeCardBadgeText}>✓ CURRENT PLAN</Text>

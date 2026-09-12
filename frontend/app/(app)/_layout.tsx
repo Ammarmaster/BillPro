@@ -7,6 +7,8 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
+import DesktopSidebar from "@/src/components/DesktopSidebar";
 
 export default function AppLayout() {
   const insets = useSafeAreaInsets();
@@ -14,6 +16,7 @@ export default function AppLayout() {
   const { theme, isDark } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+  const { isDesktop } = useResponsive();
 
   const [subStatus, setSubStatus] = useState<"active" | "expired" | "unknown">("active");
   const [checkingSub, setCheckingSub] = useState<boolean>(true);
@@ -109,22 +112,24 @@ export default function AppLayout() {
 
   const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 14 : 10);
 
-  return (
+  const tabsContent = (
     <Tabs
       backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#635BFF",
         tabBarInactiveTintColor: theme.onSurfaceTertiary,
-        tabBarStyle: {
-          backgroundColor: theme.tabBarBg,
-          borderTopColor: theme.border,
-          borderTopWidth: 1,
-          height: 60 + bottomInset,
-          paddingBottom: bottomInset,
-          paddingTop: 8,
-          elevation: 0,
-        },
+        tabBarStyle: isDesktop
+          ? { display: "none" }
+          : {
+              backgroundColor: theme.tabBarBg,
+              borderTopColor: theme.border,
+              borderTopWidth: 1,
+              height: 60 + bottomInset,
+              paddingBottom: bottomInset,
+              paddingTop: 8,
+              elevation: 0,
+            },
         tabBarLabelStyle: { fontSize: 11, letterSpacing: 0.4, fontWeight: "600" },
       }}
     >
@@ -186,4 +191,17 @@ export default function AppLayout() {
       <Tabs.Screen name="menu-ai-import" options={{ href: null, title: "Scan Physical Menu" }} />
     </Tabs>
   );
+
+  if (isDesktop) {
+    return (
+      <View style={{ flex: 1, flexDirection: "row", backgroundColor: theme.surface }}>
+        <DesktopSidebar />
+        <View style={{ flex: 1, height: "100%", overflow: "hidden" }}>
+          {tabsContent}
+        </View>
+      </View>
+    );
+  }
+
+  return tabsContent;
 }

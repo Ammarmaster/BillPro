@@ -12,6 +12,7 @@ import { printBill, sharePdf, getPrinterSettings, DEFAULT_EZBILL_LOGO_BASE64, ge
 import { BillingEngine } from "@/src/lib/billingEngine";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import QRCode from "qrcode";
 
 function base64Encode(str: string): string {
@@ -61,6 +62,7 @@ export default function Billing() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   const { orderId, tableNumber, orderIds, backTo } = useLocalSearchParams<{ orderId?: string; tableNumber?: string; orderIds?: string; backTo?: string }>();
 
   // Synchronous cache lookup helper
@@ -534,8 +536,23 @@ export default function Billing() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
-          <View style={[styles.billCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+        <ScrollView 
+          contentContainerStyle={{ 
+            padding: spacing.lg, 
+            paddingBottom: 160,
+            alignItems: isDesktop ? "center" : undefined,
+          }} 
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[
+            styles.billCard, 
+            { 
+              backgroundColor: theme.surfaceSecondary, 
+              borderColor: theme.border,
+              width: "100%",
+              maxWidth: isDesktop ? 640 : undefined,
+            }
+          ]}>
             
             {/* Centered Logo block */}
             {!!logoBase64 && (
@@ -676,28 +693,64 @@ export default function Billing() {
         {err && <Text style={styles.err} testID="billing-error">{err}</Text>}
 
         {/* Bottom Action Bar matching Image 2 & 3 */}
-        <View style={[styles.bottomActionBar, { backgroundColor: theme.surfaceSecondary, borderTopColor: theme.border, paddingBottom: insets.bottom + spacing.md }]}>
-          <Pressable style={[styles.printBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#F1F0FF", borderColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.15)" }]} onPress={doPrint} testID="bill-print-btn">
-            <Ionicons name="print-outline" size={20} color="#635BFF" />
-            <Text style={styles.printBtnText}>Print</Text>
-          </Pressable>
-
-          {!isPaid ? (
-            <Pressable style={styles.markPaidBtn} onPress={() => setPayModal(true)} testID="bill-mark-paid-btn">
-              <Text style={styles.markPaidBtnText}>Mark Paid  ✓</Text>
+        <View style={[
+          styles.bottomActionBar, 
+          { 
+            backgroundColor: theme.surfaceSecondary, 
+            borderTopColor: theme.border, 
+            paddingBottom: insets.bottom + spacing.md,
+            justifyContent: isDesktop ? "center" : "flex-start",
+          }
+        ]}>
+          <View style={{
+            flexDirection: "row",
+            gap: spacing.md,
+            width: "100%",
+            maxWidth: isDesktop ? 640 : undefined,
+          }}>
+            <Pressable style={[styles.printBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#F1F0FF", borderColor: isDark ? "rgba(99,91,255,0.2)" : "rgba(99,91,255,0.15)" }]} onPress={doPrint} testID="bill-print-btn">
+              <Ionicons name="print-outline" size={20} color="#635BFF" />
+              <Text style={styles.printBtnText}>Print</Text>
             </Pressable>
-          ) : (
-            <View style={[styles.alreadyPaidBadge, { backgroundColor: theme.success }]}>
-              <Ionicons name="checkmark-circle" size={20} color={theme.onSuccess} />
-              <Text style={[styles.alreadyPaidText, { color: theme.onSuccess }]}>Payment Complete</Text>
-            </View>
-          )}
+
+            {!isPaid ? (
+              <Pressable style={styles.markPaidBtn} onPress={() => setPayModal(true)} testID="bill-mark-paid-btn">
+                <Text style={styles.markPaidBtnText}>Mark Paid  ✓</Text>
+              </Pressable>
+            ) : (
+              <View style={[styles.alreadyPaidBadge, { backgroundColor: theme.success }]}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.onSuccess} />
+                <Text style={[styles.alreadyPaidText, { color: theme.onSuccess }]}>Payment Complete</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Payment Method Selection Modal matching Image 3 */}
         <Modal transparent visible={payModal} animationType="slide" onRequestClose={() => setPayModal(false)}>
-          <Pressable style={styles.modalBg} onPress={() => setPayModal(false)}>
-            <Pressable style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary, paddingBottom: insets.bottom + spacing.xl }]} onPress={() => {}}>
+          <Pressable 
+            style={[
+              styles.modalBg,
+              isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }
+            ]} 
+            onPress={() => setPayModal(false)}
+          >
+            <Pressable 
+              style={[
+                styles.modalCard, 
+                { 
+                  backgroundColor: theme.surfaceSecondary, 
+                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
+                  width: isDesktop ? 480 : "100%",
+                  borderRadius: isDesktop ? 20 : undefined,
+                  borderTopLeftRadius: 24,
+                  borderTopRightRadius: 24,
+                  borderWidth: isDesktop ? 1 : 0,
+                  borderColor: theme.border,
+                }
+              ]} 
+              onPress={() => {}}
+            >
               <View style={[styles.modalHandle, { backgroundColor: theme.borderStrong }]} />
               <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Mark paid by</Text>
 

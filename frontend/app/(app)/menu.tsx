@@ -13,6 +13,7 @@ import { pickImageBase64 } from "@/src/lib/imagePicker";
 import { menuItemImageSource } from "@/src/lib/foodImage";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type Cat = { id: string; name: string; sort_order: number };
 type Item = { id: string; category_id: string; name: string; description: string; price: number; image_base64?: string; image_url?: string; is_active: boolean };
@@ -21,6 +22,7 @@ export default function MenuScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark } = useTheme();
+  const { isDesktop, isLargeDesktop } = useResponsive();
   const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
   const [selCat, setSelCat] = useState<string | "all">("all");
@@ -109,144 +111,169 @@ export default function MenuScreen() {
   const delItem = async (id: string) => { try { await api.deleteMenuItem(id); await load(); } catch (e: any) { setErr(e.message); } };
 
   const shown = selCat === "all" ? items : items.filter(i => i.category_id === selCat);
+  const numCols = isLargeDesktop ? 3 : isDesktop ? 2 : 1;
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="menu-screen">
-      <View style={styles.header}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-          <Pressable onPress={() => router.replace("/(app)/more")} style={styles.backBtn} hitSlop={12}>
-            <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
-          </Pressable>
-          <Text style={styles.title}>Menu</Text>
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing.xs, alignItems: "center" }}>
-
-          <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
-            <Ionicons name="folder-open" size={16} color={colors.brand} />
-            <Text style={styles.iconBtnText}>Category</Text>
-          </Pressable>
-          <Pressable style={styles.iconBtnPrimary} onPress={() => {
-            if (!cats.length) { setErr("Add a category first."); return; }
-            setEditingItem(null);
-            setIName("");
-            setIPrice("");
-            setIDesc("");
-            setIImg("");
-            setICat(cats[0].id);
-            setItemModal(true);
-          }} testID="menu-add-item-btn">
-            <Ionicons name="add" size={16} color={colors.onBrand} />
-            <Text style={styles.iconBtnPrimaryText}>Item</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsWrap}>
-        <Chip label="All" active={selCat === "all"} onPress={() => setSelCat("all")} testID="chip-all" />
-        {cats.map(c => (
-          <Chip key={c.id} label={c.name} active={selCat === c.id} onPress={() => setSelCat(c.id)} testID={`chip-${c.id}`} />
-        ))}
-      </ScrollView>
-
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
-      ) : shown.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons name="fast-food" size={48} color={colors.onSurfaceTertiary} />
-          <Text style={styles.emptyText}>No items yet</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={shown}
-          keyExtractor={i => i.id}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
-          renderItem={({ item, index }) => (
-            <Pressable
-              onPress={() => {
-                setEditingItem(item);
-                setIName(item.name);
-                setIPrice(String(item.price));
-                setIDesc(item.description || "");
-                setICat(item.category_id);
-                setIImg(item.image_base64 || "");
-                setItemModal(true);
-              }}
-            >
-              <Animated.View entering={FadeInUp.delay(index * 40).springify()} style={styles.itemCard} testID={`menu-item-${item.id}`}>
-                <Image source={menuItemImageSource(item)} style={styles.itemImg} contentFit="cover" transition={200} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  {!!item.description && <Text style={styles.itemDesc} numberOfLines={1}>{item.description}</Text>}
-                  <Text style={styles.itemPrice}>₹{item.price}</Text>
-                </View>
-                <Pressable onPress={() => delItem(item.id)} hitSlop={8} testID={`menu-item-delete-${item.id}`}>
-                  <Ionicons name="trash" size={20} color={colors.onError} />
-                </Pressable>
-              </Animated.View>
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1300, alignSelf: "center" }]}>
+        <View style={styles.header}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Pressable onPress={() => router.replace("/(app)/more")} style={styles.backBtn} hitSlop={12}>
+              <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
             </Pressable>
-          )}
-        />
-      )}
+            <Text style={styles.title}>Menu Management</Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.xs, alignItems: "center" }}>
 
-      {err && <Text style={styles.err} testID="menu-error">{err}</Text>}
-
-      <Modal transparent visible={catModal} animationType="slide" onRequestClose={() => setCatModal(false)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]}>
-            <Text style={styles.modalTitle}>New Category</Text>
-            <TextInput value={catName} onChangeText={setCatName} placeholder="e.g. Starters" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="cat-name-input" />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.ghostBtn} onPress={() => setCatModal(false)} testID="cat-cancel-btn">
-                <Text style={styles.ghostBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.primaryBtn} onPress={addCat} disabled={busy} testID="cat-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
-              </Pressable>
-            </View>
+            <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
+              <Ionicons name="folder-open" size={16} color={colors.brand} />
+              <Text style={styles.iconBtnText}>Category</Text>
+            </Pressable>
+            <Pressable style={styles.iconBtnPrimary} onPress={() => {
+              if (!cats.length) { setErr("Add a category first."); return; }
+              setEditingItem(null);
+              setIName("");
+              setIPrice("");
+              setIDesc("");
+              setIImg("");
+              setICat(cats[0].id);
+              setItemModal(true);
+            }} testID="menu-add-item-btn">
+              <Ionicons name="add" size={16} color={colors.onBrand} />
+              <Text style={styles.iconBtnPrimaryText}>Item</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
 
-      <Modal transparent visible={itemModal} animationType="slide" onRequestClose={() => { setEditingItem(null); setItemModal(false); }}>
-        <View style={styles.modalBg}>
-          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]}>
-            <Text style={styles.modalTitle}>{editingItem ? "Edit Menu Item" : "New Menu Item"}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsWrap}>
+          <Chip label="All" active={selCat === "all"} onPress={() => setSelCat("all")} testID="chip-all" />
+          {cats.map(c => (
+            <Chip key={c.id} label={c.name} active={selCat === c.id} onPress={() => setSelCat(c.id)} testID={`chip-${c.id}`} />
+          ))}
+        </ScrollView>
 
-            <Pressable style={styles.imgPickerRow} onPress={pickImg} testID="item-image-picker">
-              {iImg ? (
-                <Image source={{ uri: iImg.startsWith("data:") ? iImg : `data:image/jpeg;base64,${iImg}` }} style={styles.imgPreview} contentFit="cover" />
-              ) : (
-                <View style={styles.imgPlaceholder}>
-                  <Ionicons name="image" size={26} color={colors.onSurfaceSecondary} />
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.imgPickerTitle}>{iImg ? "Change photo" : "Add photo"}</Text>
-                <Text style={styles.imgPickerHint}>If skipped, an image will be auto-fetched by name.</Text>
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        ) : shown.length === 0 ? (
+          <View style={styles.center}>
+            <Ionicons name="fast-food" size={48} color={colors.onSurfaceTertiary} />
+            <Text style={styles.emptyText}>No items yet</Text>
+          </View>
+        ) : (
+          <FlatList
+            key={`menu-list-${numCols}`}
+            data={shown}
+            numColumns={numCols}
+            keyExtractor={i => i.id}
+            contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
+            columnWrapperStyle={numCols > 1 ? { gap: spacing.md } : undefined}
+            renderItem={({ item, index }) => (
+              <Pressable
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setEditingItem(item);
+                  setIName(item.name);
+                  setIPrice(String(item.price));
+                  setIDesc(item.description || "");
+                  setICat(item.category_id);
+                  setIImg(item.image_base64 || "");
+                  setItemModal(true);
+                }}
+              >
+                <Animated.View entering={FadeInUp.delay(index * 40).springify()} style={styles.itemCard} testID={`menu-item-${item.id}`}>
+                  <Image source={menuItemImageSource(item)} style={styles.itemImg} contentFit="cover" transition={200} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    {!!item.description && <Text style={styles.itemDesc} numberOfLines={1}>{item.description}</Text>}
+                    <Text style={styles.itemPrice}>₹{item.price}</Text>
+                  </View>
+                  <Pressable onPress={() => delItem(item.id)} hitSlop={8} testID={`menu-item-delete-${item.id}`}>
+                    <Ionicons name="trash" size={20} color={colors.onError} />
+                  </Pressable>
+                </Animated.View>
+              </Pressable>
+            )}
+          />
+        )}
+
+        {err && <Text style={styles.err} testID="menu-error">{err}</Text>}
+
+        <Modal transparent visible={catModal} animationType="slide" onRequestClose={() => setCatModal(false)}>
+          <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+            <View style={[
+              styles.modalCard, 
+              { 
+                paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
+                width: isDesktop ? 460 : "100%",
+                borderRadius: isDesktop ? 20 : radius.lg,
+              }
+            ]}>
+              <Text style={styles.modalTitle}>New Category</Text>
+              <TextInput value={catName} onChangeText={setCatName} placeholder="e.g. Starters" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="cat-name-input" />
+              <View style={styles.modalActions}>
+                <Pressable style={styles.ghostBtn} onPress={() => setCatModal(false)} testID="cat-cancel-btn">
+                  <Text style={styles.ghostBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.primaryBtn} onPress={addCat} disabled={busy} testID="cat-save-btn">
+                  {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
+                </Pressable>
               </View>
-              <Ionicons name="camera" size={22} color={colors.brand} />
-            </Pressable>
-
-            <TextInput value={iName} onChangeText={setIName} placeholder="Name" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="item-name-input" />
-            <TextInput value={iPrice} onChangeText={setIPrice} placeholder="Price ₹" keyboardType="decimal-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="item-price-input" />
-            <TextInput value={iDesc} onChangeText={setIDesc} placeholder="Description" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} multiline testID="item-desc-input" />
-            <Text style={styles.label}>Category</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }} style={{ marginBottom: spacing.md }}>
-              {cats.map(c => (
-                <Chip key={c.id} label={c.name} active={iCat === c.id} onPress={() => setICat(c.id)} testID={`item-cat-chip-${c.id}`} />
-              ))}
-            </ScrollView>
-            <View style={styles.modalActions}>
-              <Pressable style={styles.ghostBtn} onPress={() => { setEditingItem(null); setItemModal(false); }} testID="item-cancel-btn">
-                <Text style={styles.ghostBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.primaryBtn} onPress={saveItem} disabled={busy} testID="item-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
-              </Pressable>
             </View>
-          </ScrollView>
-        </View>
-      </Modal>
+          </View>
+        </Modal>
+
+        <Modal transparent visible={itemModal} animationType="slide" onRequestClose={() => { setEditingItem(null); setItemModal(false); }}>
+          <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+            <ScrollView 
+              contentContainerStyle={[
+                styles.modalCard, 
+                { 
+                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
+                  width: isDesktop ? 520 : "100%",
+                  borderRadius: isDesktop ? 20 : radius.lg,
+                  alignSelf: isDesktop ? "center" : undefined,
+                }
+              ]}
+              style={isDesktop ? { maxHeight: "90%", width: 520, flexGrow: 0 } : undefined}
+            >
+              <Text style={styles.modalTitle}>{editingItem ? "Edit Menu Item" : "New Menu Item"}</Text>
+
+              <Pressable style={styles.imgPickerRow} onPress={pickImg} testID="item-image-picker">
+                {iImg ? (
+                  <Image source={{ uri: iImg.startsWith("data:") ? iImg : `data:image/jpeg;base64,${iImg}` }} style={styles.imgPreview} contentFit="cover" />
+                ) : (
+                  <View style={styles.imgPlaceholder}>
+                    <Ionicons name="image" size={26} color={colors.onSurfaceSecondary} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.imgPickerTitle}>{iImg ? "Change photo" : "Add photo"}</Text>
+                  <Text style={styles.imgPickerHint}>If skipped, an image will be auto-fetched by name.</Text>
+                </View>
+                <Ionicons name="camera" size={22} color={colors.brand} />
+              </Pressable>
+
+              <TextInput value={iName} onChangeText={setIName} placeholder="Name" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="item-name-input" />
+              <TextInput value={iPrice} onChangeText={setIPrice} placeholder="Price ₹" keyboardType="decimal-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="item-price-input" />
+              <TextInput value={iDesc} onChangeText={setIDesc} placeholder="Description" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} multiline testID="item-desc-input" />
+              <Text style={styles.label}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }} style={{ marginBottom: spacing.md }}>
+                {cats.map(c => (
+                  <Chip key={c.id} label={c.name} active={iCat === c.id} onPress={() => setICat(c.id)} testID={`item-cat-chip-${c.id}`} />
+                ))}
+              </ScrollView>
+              <View style={styles.modalActions}>
+                <Pressable style={styles.ghostBtn} onPress={() => { setEditingItem(null); setItemModal(false); }} testID="item-cancel-btn">
+                  <Text style={styles.ghostBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.primaryBtn} onPress={saveItem} disabled={busy} testID="item-save-btn">
+                  {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </Modal>
+      </View>
     </View>
   );
 }

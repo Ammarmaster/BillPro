@@ -14,11 +14,13 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { spacing } from "@/src/theme";
 import { selectDefaultPrinter, getDefaultPrinter, clearDefaultPrinter } from "@/src/lib/print";
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 export default function SettingsDetails() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const { user, refreshUser, logout } = useAuth();
   const [privacyConsent, setPrivacyConsent] = useState(user?.privacy_consent ?? true);
@@ -187,7 +189,16 @@ export default function SettingsDetails() {
             </View>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }} showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            contentContainerStyle={{ 
+              padding: spacing.lg, 
+              paddingBottom: spacing.xxxl,
+              maxWidth: isDesktop ? 900 : undefined,
+              width: "100%",
+              alignSelf: isDesktop ? "center" : undefined,
+            }} 
+            showsVerticalScrollIndicator={false}
+          >
             {loading ? (
               <ActivityIndicator color="#635BFF" style={{ marginTop: spacing.xl }} />
             ) : (

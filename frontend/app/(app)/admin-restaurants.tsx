@@ -9,6 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 
 type Sub = { id: string; plan_name: string; price: number; interval: string; status: string; ends_at?: string };
@@ -23,6 +24,7 @@ export default function AdminRestaurants() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const [items, setItems] = useState<Rest[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -223,6 +225,7 @@ export default function AdminRestaurants() {
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-restaurants-screen">
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1200, alignSelf: "center" }]}>
       {/* Header Bar */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} testID="admin-rest-back-btn" hitSlop={12} style={styles.backBtn}>
@@ -391,8 +394,21 @@ export default function AdminRestaurants() {
 
       {/* Restaurant Detail & Super-Admin Feature Control Modal */}
       <Modal transparent visible={!!detail} animationType="slide" onRequestClose={() => setDetail(null)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+        <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+          <View style={[
+            styles.modalCard, 
+            { 
+              paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl, 
+              backgroundColor: theme.surfaceSecondary,
+              width: isDesktop ? 620 : "100%",
+              borderRadius: isDesktop ? 20 : undefined,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              maxHeight: isDesktop ? "90%" : undefined,
+              borderWidth: isDesktop ? 1 : 0,
+              borderColor: theme.border,
+            }
+          ]}>
             {detail && (
               <ScrollView showsVerticalScrollIndicator={false}>
                 {/* Modal Header */}
@@ -675,6 +691,7 @@ export default function AdminRestaurants() {
           </View>
         </View>
       </Modal>
+      </View>
     </View>
   );
 }

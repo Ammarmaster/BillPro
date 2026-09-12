@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
 
 // Helper to handle API requests manually to avoid changing AuthContext
@@ -14,6 +15,7 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv
 
 export default function ForgotPassword() {
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
@@ -141,24 +143,36 @@ export default function ForgotPassword() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: "#FF5E2B" }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: "#0D0D0D" }]}>
-        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: "#0D0D0D" }]} bounces={false} showsVerticalScrollIndicator={false}>
-          
-          {/* Solid Orange Header Section */}
-          <View style={[styles.headerSection, { paddingTop: insets.top + 24, backgroundColor: "#FF5E2B" }]}>
-            {step !== 3 && (
-              <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={15}>
-                <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-              </Pressable>
-            )}
-            <Text style={styles.appTitle}>Forgot Password</Text>
-            <Text style={styles.appSubtitle}>Reset your access credentials</Text>
-          </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#FF5E2B" }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#FF5E2B"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContainer,
+            {
+              backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D",
+              alignItems: isDesktop ? "center" : undefined,
+              justifyContent: isDesktop ? "center" : undefined,
+              paddingVertical: isDesktop ? 48 : 0,
+            },
+          ]}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[isDesktop && styles.desktopCardWrapper]}>
+            {/* Solid Orange Header Section */}
+            <View style={[styles.headerSection, { paddingTop: isDesktop ? 36 : insets.top + 24, backgroundColor: "#FF5E2B" }]}>
+              {step !== 3 && (
+                <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={15}>
+                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                </Pressable>
+              )}
+              <Text style={styles.appTitle}>Forgot Password</Text>
+              <Text style={styles.appSubtitle}>Reset your access credentials</Text>
+            </View>
 
-          {/* Dark Bottom Card Section */}
-          <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
+            {/* Dark Bottom Card Section */}
+            <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
             {step === 3 ? (
               <View style={styles.successContainer}>
                 <View style={styles.successIconOuter}>
@@ -315,10 +329,10 @@ export default function ForgotPassword() {
               </>
             )}
           </View>
-
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>
   );
 }
 
@@ -326,7 +340,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FF5E2B" },
   wrap: { flex: 1, backgroundColor: "#0D0D0D" },
   scrollContainer: { flexGrow: 1, backgroundColor: "#0D0D0D" },
-  
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 440,
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    backgroundColor: "#0D0D0D",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   headerSection: {
     backgroundColor: "#FF5E2B",
     alignItems: "center",

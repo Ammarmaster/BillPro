@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { radius, spacing } from "@/src/theme";
 
 export default function Onboarding() {
@@ -18,6 +19,7 @@ export default function Onboarding() {
   const router = useRouter();
   const { theme, isDark } = useTheme();
   const { refreshUser } = useAuth();
+  const { isDesktop } = useResponsive();
 
   const [form, setForm] = useState({
     name: "",
@@ -69,82 +71,93 @@ export default function Onboarding() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + spacing.md }]} showsVerticalScrollIndicator={false}>
-          
-          <View style={styles.header}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="storefront" size={28} color="#635BFF" />
-            </View>
-            <Text style={[styles.title, { color: theme.onSurface }]}>Restaurant Details</Text>
-            <Text style={[styles.subtitle, { color: theme.onSurfaceSecondary }]}>Enter your business details to complete setup</Text>
-          </View>
-
-          <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-            
-            {/* Logo / Picture Picker */}
-            <Pressable style={styles.logoPicker} onPress={pickLogo}>
-              {form.logo_base64 ? (
-                <Image source={{ uri: `data:image/jpeg;base64,${form.logo_base64}` }} style={styles.logoImg} contentFit="cover" />
-              ) : (
-                <View style={styles.logoPlaceholder}>
-                  <Ionicons name="camera-outline" size={26} color="#635BFF" />
-                  <Text style={styles.logoText}>Upload Logo / Photo</Text>
-                </View>
-              )}
-            </Pressable>
-
-            {/* Inputs */}
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Restaurant Name *</Text>
-              <TextInput
-                value={form.name} onChangeText={t => setForm({ ...form, name: t })}
-                placeholder="e.g. Master Cheff" placeholderTextColor={theme.onSurfaceTertiary}
-                style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
-              />
+        <ScrollView
+          contentContainerStyle={[
+            styles.container,
+            {
+              paddingTop: insets.top + spacing.md,
+              alignItems: isDesktop ? "center" : undefined,
+              justifyContent: isDesktop ? "center" : undefined,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[isDesktop && styles.desktopCardWrapper]}>
+            <View style={styles.header}>
+              <View style={styles.iconCircle}>
+                <Ionicons name="storefront" size={28} color="#635BFF" />
+              </View>
+              <Text style={[styles.title, { color: theme.onSurface }]}>Restaurant Details</Text>
+              <Text style={[styles.subtitle, { color: theme.onSurfaceSecondary }]}>Enter your business details to complete setup</Text>
             </View>
 
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Owner Name *</Text>
-              <TextInput
-                value={form.owner_name} onChangeText={t => setForm({ ...form, owner_name: t })}
-                placeholder="Full name of owner" placeholderTextColor={theme.onSurfaceTertiary}
-                style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
-              />
+            <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              
+              {/* Logo / Picture Picker */}
+              <Pressable style={styles.logoPicker} onPress={pickLogo}>
+                {form.logo_base64 ? (
+                  <Image source={{ uri: `data:image/jpeg;base64,${form.logo_base64}` }} style={styles.logoImg} contentFit="cover" />
+                ) : (
+                  <View style={styles.logoPlaceholder}>
+                    <Ionicons name="camera-outline" size={26} color="#635BFF" />
+                    <Text style={styles.logoText}>Upload Logo / Photo</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              {/* Inputs */}
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Restaurant Name *</Text>
+                <TextInput
+                  value={form.name} onChangeText={t => setForm({ ...form, name: t })}
+                  placeholder="e.g. Master Cheff" placeholderTextColor={theme.onSurfaceTertiary}
+                  style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Owner Name *</Text>
+                <TextInput
+                  value={form.owner_name} onChangeText={t => setForm({ ...form, owner_name: t })}
+                  placeholder="Full name of owner" placeholderTextColor={theme.onSurfaceTertiary}
+                  style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Phone Number *</Text>
+                <TextInput
+                  value={form.phone} onChangeText={t => setForm({ ...form, phone: t })}
+                  placeholder="e.g. 9876543210" placeholderTextColor={theme.onSurfaceTertiary}
+                  keyboardType="phone-pad" style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Full Address</Text>
+                <TextInput
+                  value={form.address} onChangeText={t => setForm({ ...form, address: t })}
+                  placeholder="Street address, city" placeholderTextColor={theme.onSurfaceTertiary}
+                  style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>UPI ID (for payments) *</Text>
+                <TextInput
+                  value={form.upi_id} onChangeText={t => setForm({ ...form, upi_id: t })}
+                  placeholder="e.g. 8152075375-2@ybl" placeholderTextColor={theme.onSurfaceTertiary}
+                  style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
+                />
+              </View>
+
+              {err && <Text style={styles.err}>{err}</Text>}
+
+              <Pressable style={styles.submitBtn} onPress={submit} disabled={busy}>
+                {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitBtnText}>Save & Continue →</Text>}
+              </Pressable>
+
             </View>
-
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Phone Number *</Text>
-              <TextInput
-                value={form.phone} onChangeText={t => setForm({ ...form, phone: t })}
-                placeholder="e.g. 9876543210" placeholderTextColor={theme.onSurfaceTertiary}
-                keyboardType="phone-pad" style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Full Address</Text>
-              <TextInput
-                value={form.address} onChangeText={t => setForm({ ...form, address: t })}
-                placeholder="Street address, city" placeholderTextColor={theme.onSurfaceTertiary}
-                style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>UPI ID (for payments) *</Text>
-              <TextInput
-                value={form.upi_id} onChangeText={t => setForm({ ...form, upi_id: t })}
-                placeholder="e.g. 8152075375-2@ybl" placeholderTextColor={theme.onSurfaceTertiary}
-                style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
-              />
-            </View>
-
-            {err && <Text style={styles.err}>{err}</Text>}
-
-            <Pressable style={styles.submitBtn} onPress={submit} disabled={busy}>
-              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitBtnText}>Save & Continue →</Text>}
-            </Pressable>
-
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -155,6 +168,11 @@ export default function Onboarding() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   container: { padding: spacing.xl, paddingBottom: spacing.xxxl },
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+  },
   header: { alignItems: "center", marginBottom: spacing.xl },
   iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#26294D", justifyContent: "center", alignItems: "center", marginBottom: spacing.md },
   title: { fontSize: 24, fontWeight: "900" },

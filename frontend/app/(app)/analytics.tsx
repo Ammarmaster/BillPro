@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { exportAnalyticsPDF, exportAnalyticsExcel, exportAnalyticsDocx } from "@/src/lib/exportAnalytics";
 import { spacing, radius } from "@/src/theme";
 import { safeParseDate } from "@/src/lib/dateUtils";
@@ -16,6 +17,7 @@ export default function Analytics() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const [period, setPeriod] = useState<"today" | "yesterday" | "7days" | "monthly" | "yearly" | "custom">("today");
   const [selectedCustomDate, setSelectedCustomDate] = useState<Date>(new Date());
@@ -277,6 +279,7 @@ export default function Analytics() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]}>
+        <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1200, alignSelf: "center" }]}>
         
         {/* Header Bar */}
         <View style={styles.header}>
@@ -508,8 +511,25 @@ export default function Analytics() {
 
         {/* Export Report Action Modal */}
         <Modal visible={exportModal} transparent animationType="slide">
-          <Pressable style={styles.modalBg} onPress={() => setExportModal(false)}>
-            <Pressable style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary }]} onPress={() => {}}>
+          <Pressable 
+            style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]} 
+            onPress={() => setExportModal(false)}
+          >
+            <Pressable 
+              style={[
+                styles.modalCard, 
+                { 
+                  backgroundColor: theme.surfaceSecondary,
+                  width: isDesktop ? 480 : "100%",
+                  borderRadius: isDesktop ? 20 : undefined,
+                  borderTopLeftRadius: 28,
+                  borderTopRightRadius: 28,
+                  borderWidth: isDesktop ? 1 : 0,
+                  borderColor: theme.border,
+                }
+              ]} 
+              onPress={() => {}}
+            >
               <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Export Sales Report</Text>
               <Text style={[styles.modalSub, { color: theme.onSurfaceSecondary }]}>Choose your preferred download format:</Text>
 
@@ -561,6 +581,7 @@ export default function Analytics() {
           </Pressable>
         </Modal>
 
+        </View>
       </View>
     </SafeAreaView>
   );

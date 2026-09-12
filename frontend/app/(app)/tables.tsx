@@ -9,6 +9,7 @@ import { Image } from "expo-image";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type Table = { id: string; label: string; seats: number };
 
@@ -16,6 +17,7 @@ export default function TablesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
+  const { isDesktop, isLargeDesktop } = useResponsive();
   const [tables, setTables] = useState<Table[]>(() => api.getCachedTables() || []);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -108,115 +110,147 @@ export default function TablesScreen() {
 
   const del = async (id: string) => { try { await api.deleteTable(id); await load(); } catch (e: any) { setErr(e.message); } };
 
+  const numCols = isLargeDesktop ? 6 : isDesktop ? 4 : 2;
+
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="tables-screen">
-      <View style={styles.header}>
-        <Pressable onPress={handleBack} testID="tables-back-btn" hitSlop={12}>
-          <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
-        </Pressable>
-        <Text style={styles.title}>Tables</Text>
-        <Pressable style={styles.addBtn} onPress={() => setModal(true)} testID="tables-add-btn">
-          <Ionicons name="add" size={18} color={colors.onBrand} />
-          <Text style={styles.addBtnText}>Add</Text>
-        </Pressable>
-      </View>
-
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
-      ) : tables.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons name="grid-outline" size={48} color={colors.onSurfaceTertiary} />
-          <Text style={{ color: colors.onSurfaceSecondary, marginTop: 8 }}>No tables yet.</Text>
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1200, alignSelf: "center" }]}>
+        <View style={styles.header}>
+          <Pressable onPress={handleBack} testID="tables-back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
+          </Pressable>
+          <Text style={styles.title}>Tables</Text>
+          <Pressable style={styles.addBtn} onPress={() => setModal(true)} testID="tables-add-btn">
+            <Ionicons name="add" size={18} color={colors.onBrand} />
+            <Text style={styles.addBtnText}>Add</Text>
+          </Pressable>
         </View>
-      ) : (
-        <FlatList
-          data={tables}
-          keyExtractor={t => t.id}
-          numColumns={2}
-          columnWrapperStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
-          contentContainerStyle={{ paddingTop: spacing.md, paddingBottom: spacing.xxxl, gap: spacing.md }}
-          renderItem={({ item }) => (
-            <View style={styles.card} testID={`table-${item.id}`}>
-              <Pressable onPress={() => setQrTable(item)} style={styles.qrIcon} hitSlop={8}>
-                <Ionicons name="qr-code-outline" size={18} color={colors.brand} />
-              </Pressable>
-              <Text style={styles.cardLabel}>Table {item.label}</Text>
-              <Text style={styles.cardSeats}>{item.seats} seats</Text>
-              <Pressable onPress={() => del(item.id)} style={styles.trash} testID={`table-delete-${item.id}`} hitSlop={8}>
-                <Ionicons name="trash" size={16} color={colors.onError} />
-              </Pressable>
-            </View>
-          )}
-        />
-      )}
 
-      {err && <Text style={styles.err} testID="tables-error">{err}</Text>}
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        ) : tables.length === 0 ? (
+          <View style={styles.center}>
+            <Ionicons name="grid-outline" size={48} color={colors.onSurfaceTertiary} />
+            <Text style={{ color: colors.onSurfaceSecondary, marginTop: 8 }}>No tables yet.</Text>
+          </View>
+        ) : (
+          <FlatList
+            key={`tables-grid-${numCols}`}
+            data={tables}
+            keyExtractor={t => t.id}
+            numColumns={numCols}
+            columnWrapperStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
+            contentContainerStyle={{ paddingTop: spacing.md, paddingBottom: spacing.xxxl, gap: spacing.md }}
+            renderItem={({ item }) => (
+              <View style={styles.card} testID={`table-${item.id}`}>
+                <Pressable onPress={() => setQrTable(item)} style={styles.qrIcon} hitSlop={8}>
+                  <Ionicons name="qr-code-outline" size={18} color={colors.brand} />
+                </Pressable>
+                <Text style={styles.cardLabel}>Table {item.label}</Text>
+                <Text style={styles.cardSeats}>{item.seats} seats</Text>
+                <Pressable onPress={() => del(item.id)} style={styles.trash} testID={`table-delete-${item.id}`} hitSlop={8}>
+                  <Ionicons name="trash" size={16} color={colors.onError} />
+                </Pressable>
+              </View>
+            )}
+          />
+        )}
 
-      <Modal transparent visible={modal} animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setModal(false); }}>
-        <Pressable style={styles.modalBg} onPress={() => { Keyboard.dismiss(); setModal(false); }}>
-          <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]} onPress={() => Keyboard.dismiss()}>
-            <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>New Table</Text>
-              <Pressable onPress={() => { Keyboard.dismiss(); setModal(false); }} hitSlop={12} testID="table-close-btn">
-                <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
-              </Pressable>
-            </View>
-            <TextInput value={label} onChangeText={setLabel} placeholder="Label (e.g. 5 or A1)" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="table-label-input" returnKeyType="next" />
-            <TextInput value={seats} onChangeText={setSeats} placeholder="Seats" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} keyboardType="number-pad" returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} testID="table-seats-input" />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.ghostBtn} onPress={() => { Keyboard.dismiss(); setModal(false); }} testID="table-cancel-btn">
-                <Text style={styles.ghostBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.primaryBtn} onPress={() => { Keyboard.dismiss(); save(); }} disabled={busy} testID="table-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
-              </Pressable>
-            </View>
+        {err && <Text style={styles.err} testID="tables-error">{err}</Text>}
+
+        <Modal transparent visible={modal} animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setModal(false); }}>
+          <Pressable 
+            style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]} 
+            onPress={() => { Keyboard.dismiss(); setModal(false); }}
+          >
+            <Pressable 
+              style={[
+                styles.modalCard, 
+                { 
+                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
+                  width: isDesktop ? 460 : "100%",
+                  borderRadius: isDesktop ? 20 : radius.lg,
+                }
+              ]} 
+              onPress={() => Keyboard.dismiss()}
+            >
+              <View style={styles.modalHead}>
+                <Text style={styles.modalTitle}>New Table</Text>
+                <Pressable onPress={() => { Keyboard.dismiss(); setModal(false); }} hitSlop={12} testID="table-close-btn">
+                  <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
+                </Pressable>
+              </View>
+              <TextInput value={label} onChangeText={setLabel} placeholder="Label (e.g. 5 or A1)" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="table-label-input" returnKeyType="next" />
+              <TextInput value={seats} onChangeText={setSeats} placeholder="Seats" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} keyboardType="number-pad" returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} testID="table-seats-input" />
+              <View style={styles.modalActions}>
+                <Pressable style={styles.ghostBtn} onPress={() => { Keyboard.dismiss(); setModal(false); }} testID="table-cancel-btn">
+                  <Text style={styles.ghostBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.primaryBtn} onPress={() => { Keyboard.dismiss(); save(); }} disabled={busy} testID="table-save-btn">
+                  {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
+                </Pressable>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
 
-      <Modal transparent visible={!!qrTable} animationType="fade" onRequestClose={() => setQrTable(null)}>
-        <Pressable style={styles.modalBg} onPress={() => setQrTable(null)}>
-          <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, alignItems: "center" }]} onPress={() => {}}>
-            {qrTable && (() => {
-              const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
-              const qrUrl = `${backendBase}/menu/${tenantId || user?.tenant_id || "undefined"}/${qrTable.label}`;
-              const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`;
-              const hasTenant = !!(tenantId || user?.tenant_id);
-              return (
-                <>
-                  <View style={[styles.modalHead, { width: "100%" }]}>
-                    <Text style={styles.modalTitle}>Table {qrTable.label} QR Code</Text>
-                    <Pressable onPress={() => setQrTable(null)} hitSlop={12}>
-                      <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
-                    </Pressable>
-                  </View>
-                  
-                  {hasTenant ? (
-                    <>
-                      <View style={styles.qrContainer}>
-                        <Image source={{ uri: qrImgUrl }} style={styles.qrImage} />
-                      </View>
-                      
-                      <Text style={styles.qrText}>
-                        Scan this QR code with any smartphone to open the contactless restaurant menu for Table {qrTable.label}.
+        <Modal transparent visible={!!qrTable} animationType="fade" onRequestClose={() => setQrTable(null)}>
+          <Pressable 
+            style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]} 
+            onPress={() => setQrTable(null)}
+          >
+            <Pressable 
+              style={[
+                styles.modalCard, 
+                { 
+                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl, 
+                  alignItems: "center",
+                  width: isDesktop ? 480 : "100%",
+                  borderRadius: isDesktop ? 20 : radius.lg,
+                }
+              ]} 
+              onPress={() => {}}
+            >
+              {qrTable && (() => {
+                const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+                const qrUrl = `${backendBase}/menu/${tenantId || user?.tenant_id || "undefined"}/${qrTable.label}`;
+                const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`;
+                const hasTenant = !!(tenantId || user?.tenant_id);
+                return (
+                  <>
+                    <View style={[styles.modalHead, { width: "100%" }]}>
+                      <Text style={styles.modalTitle}>Table {qrTable.label} QR Code</Text>
+                      <Pressable onPress={() => setQrTable(null)} hitSlop={12}>
+                        <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
+                      </Pressable>
+                    </View>
+                    
+                    {hasTenant ? (
+                      <>
+                        <View style={styles.qrContainer}>
+                          <Image source={{ uri: qrImgUrl }} style={styles.qrImage} />
+                        </View>
+                        
+                        <Text style={styles.qrText}>
+                          Scan this QR code with any smartphone to open the contactless restaurant menu for Table {qrTable.label}.
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={[styles.qrText, { color: colors.onError, marginVertical: 30 }]}>
+                        Warning: Tenant ID not found. Please complete restaurant setup in Settings first.
                       </Text>
-                    </>
-                  ) : (
-                    <Text style={[styles.qrText, { color: colors.onError, marginVertical: 30 }]}>
-                      Warning: Tenant ID not found. Please complete restaurant setup in Settings first.
-                    </Text>
-                  )}
-                  
-                  <Pressable style={[styles.primaryBtn, { width: "100%" }]} onPress={() => setQrTable(null)}>
-                    <Text style={styles.primaryText}>Done</Text>
-                  </Pressable>
-                </>
-              );
-            })()}
+                    )}
+                    
+                    <Pressable style={[styles.primaryBtn, { width: "100%" }]} onPress={() => setQrTable(null)}>
+                      <Text style={styles.primaryText}>Done</Text>
+                    </Pressable>
+                  </>
+                );
+              })()}
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
+      </View>
     </View>
   );
 }

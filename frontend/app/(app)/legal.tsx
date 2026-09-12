@@ -9,6 +9,7 @@ import { api } from "@/src/lib/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type TabKey = "terms" | "privacy" | "refunds" | "grievance" | "rights";
 
@@ -16,6 +17,7 @@ export default function Legal() {
   const router = useRouter();
   const { user, logout, refreshUser } = useAuth();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   
   const [activeTab, setActiveTab] = useState<TabKey>("terms");
   const [busy, setBusy] = useState(false);
@@ -112,7 +114,7 @@ export default function Legal() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
-      <View style={styles.wrap} testID="legal-screen">
+      <View style={[styles.wrap, isDesktop && { maxWidth: 1000, alignSelf: "center", width: "100%" }]} testID="legal-screen">
         
         {/* Header */}
         <View style={styles.header}>

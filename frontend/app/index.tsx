@@ -3,10 +3,12 @@ import { View, Text, StyleSheet, ActivityIndicator, Pressable, SafeAreaView, Sta
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing, radius } from "@/src/theme";
 
 export default function Index() {
   const { user, loading } = useAuth();
+  const { isDesktop } = useResponsive();
   const router = useRouter();
 
   useEffect(() => {
@@ -28,73 +30,84 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} testID="landing-screen">
-      <StatusBar barStyle="light-content" backgroundColor="#111111" />
-      <ScrollView contentContainerStyle={styles.scrollContent} bounces={false} showsVerticalScrollIndicator={false}>
-        
-        {/* Brand Hero Section */}
-        <View style={styles.heroSection}>
-          <View style={styles.logoBox}>
-            <Ionicons name="restaurant" size={44} color="#FFFFFF" />
-          </View>
-          <Text style={styles.brandTitle}>ProDevOpz ERP</Text>
-          <Text style={styles.tagline}>Restaurant Management Platform</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#111111" }]} testID="landing-screen">
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#111111"} />
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            backgroundColor: isDesktop ? "#0A0A0E" : "#111111",
+            alignItems: isDesktop ? "center" : undefined,
+            justifyContent: isDesktop ? "center" : "space-between",
+            paddingVertical: isDesktop ? 48 : spacing.xxl,
+          },
+        ]}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[isDesktop && styles.desktopCardWrapper]}>
+          {/* Brand Hero Section */}
+          <View style={styles.heroSection}>
+            <View style={styles.logoBox}>
+              <Ionicons name="restaurant" size={44} color="#FFFFFF" />
+            </View>
+            <Text style={styles.brandTitle}>ProDevOpz ERP</Text>
+            <Text style={styles.tagline}>Restaurant Management Platform</Text>
 
-          <View style={styles.pillBadge}>
-            <View style={styles.pillDot} />
-            <Text style={styles.pillText}>ENTERPRISE POS & KOT SYSTEM</Text>
+            <View style={styles.pillBadge}>
+              <View style={styles.pillDot} />
+              <Text style={styles.pillText}>ENTERPRISE POS & KOT SYSTEM</Text>
+            </View>
           </View>
+
+          {/* Portal Access Action Buttons */}
+          <View style={styles.actionsCard}>
+            <Text style={styles.cardHeaderTitle}>Portal Access</Text>
+            
+            <Pressable
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
+              testID="landing-login-btn"
+              onPress={() => router.push("/login")}
+            >
+              <View style={styles.btnRow}>
+                <Ionicons name="business-outline" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
+                <Text style={styles.primaryBtnText}>Business Owner Login</Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={styles.btnIconRight} />
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+              testID="landing-staff-btn"
+              onPress={() => router.push("/staff-login")}
+            >
+              <View style={styles.btnRow}>
+                <Ionicons name="keypad-outline" size={18} color="#FF5E2B" style={styles.btnIconLeft} />
+                <Text style={styles.secondaryBtnText}>Staff PIN Login</Text>
+              </View>
+            </Pressable>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [styles.ghostBtn, pressed && styles.btnPressed]}
+              testID="landing-register-btn"
+              onPress={() => router.push("/register")}
+            >
+              <View style={styles.btnRow}>
+                <Ionicons name="person-add-outline" size={16} color="#FF5E2B" style={styles.btnIconLeft} />
+                <Text style={styles.ghostText}>Create Business Account</Text>
+              </View>
+            </Pressable>
+          </View>
+
+          {/* Footer Note */}
+          <Text style={styles.footerNote}>Trusted by leading retail & restaurant businesses</Text>
         </View>
-
-        {/* Portal Access Action Buttons */}
-        <View style={styles.actionsCard}>
-          <Text style={styles.cardHeaderTitle}>Portal Access</Text>
-          
-          <Pressable
-            style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
-            testID="landing-login-btn"
-            onPress={() => router.push("/login")}
-          >
-            <View style={styles.btnRow}>
-              <Ionicons name="business-outline" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
-              <Text style={styles.primaryBtnText}>Business Owner Login</Text>
-              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={styles.btnIconRight} />
-            </View>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
-            testID="landing-staff-btn"
-            onPress={() => router.push("/staff-login")}
-          >
-            <View style={styles.btnRow}>
-              <Ionicons name="keypad-outline" size={18} color="#FF5E2B" style={styles.btnIconLeft} />
-              <Text style={styles.secondaryBtnText}>Staff PIN Login</Text>
-            </View>
-          </Pressable>
-
-
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <Pressable
-            style={({ pressed }) => [styles.ghostBtn, pressed && styles.btnPressed]}
-            testID="landing-register-btn"
-            onPress={() => router.push("/register")}
-          >
-            <View style={styles.btnRow}>
-              <Ionicons name="person-add-outline" size={16} color="#FF5E2B" style={styles.btnIconLeft} />
-              <Text style={styles.ghostText}>Create Business Account</Text>
-            </View>
-          </Pressable>
-        </View>
-
-        {/* Footer Note */}
-        <Text style={styles.footerNote}>Trusted by leading retail & restaurant businesses</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -103,6 +116,21 @@ export default function Index() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#111111" },
   center: { flex: 1, backgroundColor: "#111111", justifyContent: "center", alignItems: "center" },
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 460,
+    alignSelf: "center",
+    backgroundColor: "#16161C",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   scrollContent: {
     flexGrow: 1,
     justifyContent: "space-between",

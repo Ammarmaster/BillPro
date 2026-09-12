@@ -9,12 +9,14 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/lib/api";
 import { radius, spacing } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import FeatureLockModal from "@/src/components/FeatureLockModal";
 
 export default function More() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { isDark, toggleTheme, theme } = useTheme();
+  const { isDesktop } = useResponsive();
   const router = useRouter();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -23,7 +25,13 @@ export default function More() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[styles.wrap, { backgroundColor: theme.surface }]} testID="more-screen">
         <ScrollView
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
+          contentContainerStyle={{ 
+            padding: spacing.lg, 
+            paddingBottom: spacing.xxxl,
+            maxWidth: isDesktop ? 800 : undefined,
+            width: "100%",
+            alignSelf: isDesktop ? "center" : undefined,
+          }}
           showsVerticalScrollIndicator={false}
         >
           

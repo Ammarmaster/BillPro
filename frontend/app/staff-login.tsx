@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
 
 export default function StaffLogin() {
@@ -17,6 +18,7 @@ export default function StaffLogin() {
   const [busy, setBusy] = useState(false);
   const { staffLogin } = useAuth();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -38,25 +40,37 @@ export default function StaffLogin() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: "#FF5E2B" }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: "#0D0D0D" }]}>
-        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: "#0D0D0D" }]} bounces={false} showsVerticalScrollIndicator={false}>
-          
-          {/* Solid Orange Header Section */}
-          <View style={[styles.headerSection, { paddingTop: insets.top + 24, backgroundColor: "#FF5E2B" }]}>
-            {/* Cutlery Plate Logo box */}
-            <View style={styles.logoBox}>
-              <Ionicons name="restaurant" size={32} color="#FF5E2B" />
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#FF5E2B" }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#FF5E2B"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContainer,
+            {
+              backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D",
+              alignItems: isDesktop ? "center" : undefined,
+              justifyContent: isDesktop ? "center" : undefined,
+              paddingVertical: isDesktop ? 48 : 0,
+            },
+          ]}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[isDesktop && styles.desktopCardWrapper]}>
+            {/* Solid Orange Header Section */}
+            <View style={[styles.headerSection, { paddingTop: isDesktop ? 36 : insets.top + 24, backgroundColor: "#FF5E2B" }]}>
+              {/* Cutlery Plate Logo box */}
+              <View style={styles.logoBox}>
+                <Ionicons name="restaurant" size={32} color="#FF5E2B" />
+              </View>
+              <Text style={styles.appTitle}>ProDevOpz ERP</Text>
+              <Text style={styles.appSubtitle}>Staff Portal</Text>
             </View>
-            <Text style={styles.appTitle}>ProDevOpz ERP</Text>
-            <Text style={styles.appSubtitle}>Staff Portal</Text>
-          </View>
 
-          {/* Dark Bottom Card Section */}
-          <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
-            <Text style={styles.welcomeText}>Employee Sign In</Text>
-            <Text style={styles.subtext}>Enter your registered business phone and PIN</Text>
+            {/* Dark Bottom Card Section */}
+            <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
+              <Text style={styles.welcomeText}>Employee Sign In</Text>
+              <Text style={styles.subtext}>Enter your registered business phone and PIN</Text>
 
             {/* Phone Field */}
             <View style={styles.field}>
@@ -140,10 +154,10 @@ export default function StaffLogin() {
               </Text>
             </Pressable>
           </View>
-
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>
   );
 }
 
@@ -151,7 +165,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FF5E2B" },
   wrap: { flex: 1, backgroundColor: "#0D0D0D" },
   scrollContainer: { flexGrow: 1, backgroundColor: "#0D0D0D" },
-  
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 440,
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    backgroundColor: "#0D0D0D",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   headerSection: {
     backgroundColor: "#FF5E2B",
     alignItems: "center",

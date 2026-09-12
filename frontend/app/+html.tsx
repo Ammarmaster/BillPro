@@ -24,6 +24,33 @@ export default function Root({ children }: PropsWithChildren) {
               body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
+
+              /* Windows Desktop Smooth Scrollbars */
+              ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+              }
+              ::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              ::-webkit-scrollbar-thumb {
+                background: rgba(148, 163, 184, 0.35);
+                border-radius: 4px;
+              }
+              ::-webkit-scrollbar-thumb:hover {
+                background: rgba(148, 163, 184, 0.65);
+              }
+              * {
+                scrollbar-width: thin;
+                scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+              }
+
+              /* Interactive cursor pointer for Desktop Web */
+              [role="button"], button, a, [data-pressable="true"] {
+                cursor: pointer;
+              }
             `,
           }}
         />

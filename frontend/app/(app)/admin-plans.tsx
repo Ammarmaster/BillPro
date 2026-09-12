@@ -9,6 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 
 type Plan = { id: string; name: string; price: number; interval: string; valid_days?: number; razorpay_plan_id?: string; features: string[]; is_active: boolean };
@@ -17,6 +18,7 @@ export default function AdminPlans() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +132,7 @@ export default function AdminPlans() {
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-plans-screen">
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1200, alignSelf: "center" }]}>
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} testID="admin-plans-back-btn" hitSlop={12} style={styles.backBtn}>
@@ -232,8 +235,20 @@ export default function AdminPlans() {
 
       {/* New Plan Modal */}
       <Modal transparent visible={modal} animationType="slide" onRequestClose={() => setModal(false)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+        <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+          <View style={[
+            styles.modalCard, 
+            { 
+              paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl, 
+              backgroundColor: theme.surfaceSecondary,
+              width: isDesktop ? 540 : "100%",
+              borderRadius: isDesktop ? 20 : undefined,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              borderWidth: isDesktop ? 1 : 0,
+              borderColor: theme.border,
+            }
+          ]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
               <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Create Pricing Tier</Text>
               <Pressable onPress={() => setModal(false)} hitSlop={12}>
@@ -345,8 +360,20 @@ export default function AdminPlans() {
 
       {/* SUPER ADMIN LEGAL CONFIGURATION MODAL */}
       <Modal visible={legalModal} animationType="slide" transparent onRequestClose={() => setLegalModal(false)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surfaceSecondary }]}>
+        <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+          <View style={[
+            styles.modalCard, 
+            { 
+              backgroundColor: theme.surfaceSecondary,
+              width: isDesktop ? 560 : "100%",
+              borderRadius: isDesktop ? 20 : undefined,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              maxHeight: isDesktop ? "90%" : undefined,
+              borderWidth: isDesktop ? 1 : 0,
+              borderColor: theme.border,
+            }
+          ]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
               <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Legal & Compliance Setup</Text>
               <Pressable onPress={() => setLegalModal(false)} hitSlop={12}>
@@ -452,6 +479,7 @@ export default function AdminPlans() {
           </View>
         </View>
       </Modal>
+      </View>
     </View>
   );
 }

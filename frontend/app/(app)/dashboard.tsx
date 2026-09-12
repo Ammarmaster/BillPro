@@ -11,6 +11,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 import FeatureLockModal from "@/src/components/FeatureLockModal";
 
@@ -37,6 +38,7 @@ function AdminConsole() {
   const router = useRouter();
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
+  const { isDesktop } = useResponsive();
   const [summary, setSummary] = useState<any>(() => api.getCachedAdminSummary() || null);
   const [restaurants, setRestaurants] = useState<any[]>(() => api.getCachedAdminRestaurants() || []);
   const [plans, setPlans] = useState<any[]>([]);
@@ -253,6 +255,7 @@ function AdminConsole() {
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-console">
+      <View style={[styles.desktopContainer, isDesktop && styles.desktopContainerActive]}>
       {/* Visual Header */}
       <View style={styles.adminHeader}>
         <View style={{ flex: 1 }}>
@@ -715,9 +718,9 @@ function AdminConsole() {
       </ScrollView>
 
       {/* SUPER ADMIN DIRECT SUBSCRIPTION GRANT MODAL */}
-      <Modal transparent visible={grantModal} animationType="slide" onRequestClose={() => setGrantModal(false)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+      <Modal transparent visible={grantModal} animationType={isDesktop ? "fade" : "slide"} onRequestClose={() => setGrantModal(false)}>
+        <View style={[styles.modalBg, isDesktop && styles.desktopModalBg]}>
+          <View style={[styles.modalCard, isDesktop && styles.desktopModalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <View style={styles.grantModalIconBox}>
@@ -879,9 +882,9 @@ function AdminConsole() {
       </Modal>
 
       {/* SUPER ADMIN GLOBAL BROADCAST MODAL */}
-      <Modal transparent visible={broadcastModal} animationType="slide" onRequestClose={() => setBroadcastModal(false)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+      <Modal transparent visible={broadcastModal} animationType={isDesktop ? "fade" : "slide"} onRequestClose={() => setBroadcastModal(false)}>
+        <View style={[styles.modalBg, isDesktop && styles.desktopModalBg]}>
+          <View style={[styles.modalCard, isDesktop && styles.desktopModalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <View style={[styles.grantModalIconBox, { backgroundColor: "#EC4899" }]}>
@@ -970,9 +973,9 @@ function AdminConsole() {
       </Modal>
 
       {/* SYSTEM HEALTH & DIAGNOSTICS MODAL */}
-      <Modal transparent visible={healthModal} animationType="slide" onRequestClose={() => setHealthModal(false)}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+      <Modal transparent visible={healthModal} animationType={isDesktop ? "fade" : "slide"} onRequestClose={() => setHealthModal(false)}>
+        <View style={[styles.modalBg, isDesktop && styles.desktopModalBg]}>
+          <View style={[styles.modalCard, isDesktop && styles.desktopModalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <View style={[styles.grantModalIconBox, { backgroundColor: "#10B981" }]}>
@@ -1037,6 +1040,7 @@ function AdminConsole() {
           </View>
         </View>
       </Modal>
+      </View>
     </View>
   );
 }
@@ -1046,6 +1050,7 @@ function OwnerDashboard() {
   const { user } = useAuth();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
   const [summary, setSummary] = useState<any>(() => api.getCachedSummary() || null);
   const [feedbacks, setFeedbacks] = useState<any[]>(() => api.getCachedFeedback() || []);
@@ -1278,6 +1283,7 @@ function OwnerDashboard() {
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="dashboard-screen">
+      <View style={[styles.desktopContainer, isDesktop && styles.desktopContainerActive]}>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
         showsVerticalScrollIndicator={false}
@@ -1638,6 +1644,7 @@ function OwnerDashboard() {
         }}
         onCancel={() => setShowProLockModal(false)}
       />
+      </View>
     </View>
   );
 }
@@ -1880,6 +1887,26 @@ const styles = StyleSheet.create({
   cardGrantBtn: { borderRadius: radius.sm, overflow: "hidden" },
   cardGrantGrad: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 6 },
   cardGrantText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+
+  desktopContainer: {
+    flex: 1,
+    width: "100%",
+  },
+  desktopContainerActive: {
+    maxWidth: 1400,
+    alignSelf: "center",
+    width: "100%",
+  },
+  desktopModalBg: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  desktopModalCard: {
+    width: "100%",
+    maxWidth: 580,
+    borderRadius: radius.xl,
+  },
 
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   modalCard: { padding: spacing.xl, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: "90%" },

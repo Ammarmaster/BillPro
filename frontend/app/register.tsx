@@ -7,10 +7,12 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { api } from "@/src/lib/api";
 import { spacing } from "@/src/theme";
 
 export default function Register() {
+  const { isDesktop } = useResponsive();
   const [restaurantName, setRestaurantName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -85,15 +87,25 @@ export default function Register() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#0D0D0D" />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.wrap}>
-        <ScrollView contentContainerStyle={[styles.scrollContainer, { paddingTop: insets.top + 20 }]} showsVerticalScrollIndicator={false}>
-          
-          {/* Back Chevron */}
-          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12} testID="register-back-btn">
-            <Ionicons name="chevron-back" size={24} color="#FF5E2B" />
-          </Pressable>
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#0D0D0D"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContainer,
+            {
+              backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D",
+              alignItems: isDesktop ? "center" : undefined,
+              paddingTop: isDesktop ? 40 : insets.top + 20,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[isDesktop && styles.desktopCardWrapper]}>
+            {/* Back Chevron */}
+            <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12} testID="register-back-btn">
+              <Ionicons name="chevron-back" size={24} color="#FF5E2B" />
+            </Pressable>
 
           {/* Header Title section */}
           <View style={styles.header}>
@@ -324,8 +336,9 @@ export default function Register() {
             </Pressable>
 
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* Terms Modal */}
       <Modal visible={showTermsModal} animationType="slide" transparent>
@@ -384,7 +397,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0D0D0D" },
   wrap: { flex: 1, backgroundColor: "#0D0D0D" },
   scrollContainer: { flexGrow: 1, paddingHorizontal: 24, backgroundColor: "#0D0D0D", paddingBottom: spacing.xxxl },
-
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    backgroundColor: "#121216",
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   backBtn: {
     width: 44,
     height: 44,

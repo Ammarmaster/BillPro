@@ -12,6 +12,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/lib/api";
 import { spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type ExtractedItem = {
   name: string;
@@ -37,6 +38,7 @@ export default function MenuAiImportScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   // Step state: 'upload' | 'analyzing' | 'review'
   const [step, setStep] = useState<"upload" | "analyzing" | "review">("upload");
@@ -320,7 +322,7 @@ export default function MenuAiImportScreen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, isDesktop && styles.desktopContainer]}>
         <Pressable onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border }]}>
           <Ionicons name="chevron-back" size={20} color={theme.onSurface} />
         </Pressable>
@@ -332,7 +334,7 @@ export default function MenuAiImportScreen() {
 
       {/* ----------------- STEP 1: PHOTO CAPTURE ----------------- */}
       {step === "upload" && (
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={[styles.scroll, isDesktop && styles.desktopContainer]}>
           <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
             <View style={styles.iconCircle}>
               <Ionicons name="camera-outline" size={32} color="#635BFF" />
@@ -399,7 +401,7 @@ export default function MenuAiImportScreen() {
       {/* ----------------- STEP 3: REVIEW & EDIT MENU ----------------- */}
       {step === "review" && (
         <View style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={styles.scroll}>
+          <ScrollView contentContainerStyle={[styles.scroll, isDesktop && styles.desktopContainer]}>
             <View style={styles.reviewBanner}>
               <Ionicons name="checkmark-circle" size={20} color="#10B981" />
               <Text style={styles.reviewBannerText}>
@@ -574,45 +576,47 @@ export default function MenuAiImportScreen() {
 
           {/* Bottom Import Confirmation Bar */}
           <View style={[styles.bottomBar, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 16) }]}>
-            {showUndo ? (
-              <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={[isDesktop && styles.desktopContainer]}>
+              {showUndo ? (
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <Pressable
+                    style={[styles.importBtn, { backgroundColor: "#EF4444", flex: 1 }]}
+                    onPress={handleUndoImport}
+                    disabled={importing}
+                  >
+                    {importing ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="refresh" size={20} color="#FFFFFF" />
+                        <Text style={styles.importBtnText}>Undo Import</Text>
+                      </>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={[styles.importBtn, { backgroundColor: "#10B981", flex: 1 }]}
+                    onPress={() => router.back()}
+                  >
+                    <Text style={styles.importBtnText}>View Menu</Text>
+                  </Pressable>
+                </View>
+              ) : (
                 <Pressable
-                  style={[styles.importBtn, { backgroundColor: "#EF4444", flex: 1 }]}
-                  onPress={handleUndoImport}
+                  style={[styles.importBtn, importing && { opacity: 0.6 }]}
+                  onPress={handleBulkImport}
                   disabled={importing}
                 >
                   {importing ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <>
-                      <Ionicons name="refresh" size={20} color="#FFFFFF" />
-                      <Text style={styles.importBtnText}>Undo Import</Text>
+                      <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
+                      <Text style={styles.importBtnText}>Import Menu to Restaurant</Text>
                     </>
                   )}
                 </Pressable>
-                <Pressable
-                  style={[styles.importBtn, { backgroundColor: "#10B981", flex: 1 }]}
-                  onPress={() => router.back()}
-                >
-                  <Text style={styles.importBtnText}>View Menu</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable
-                style={[styles.importBtn, importing && { opacity: 0.6 }]}
-                onPress={handleBulkImport}
-                disabled={importing}
-              >
-                {importing ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                    <Text style={styles.importBtnText}>Import Menu to Restaurant</Text>
-                  </>
-                )}
-              </Pressable>
-            )}
+              )}
+            </View>
           </View>
         </View>
       )}
@@ -622,6 +626,11 @@ export default function MenuAiImportScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  desktopContainer: {
+    maxWidth: 1000,
+    width: "100%",
+    alignSelf: "center",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

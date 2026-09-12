@@ -11,6 +11,7 @@ import { api } from "@/src/lib/api";
 import { menuItemImageSource } from "@/src/lib/foodImage";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type Cat = { id: string; name: string };
 type Item = { id: string; category_id: string; name: string; price: number; description: string };
@@ -20,6 +21,7 @@ export default function TakeawayScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop, isLargeDesktop } = useResponsive();
 
   const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
@@ -132,6 +134,181 @@ export default function TakeawayScreen() {
       setBusy(false);
     }
   };
+
+  if (isDesktop) {
+    const dishCols = isLargeDesktop ? 2 : 1;
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
+        <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]}>
+          <View style={{ flex: 1, flexDirection: "row" }}>
+            {/* Left Column: Menu Items */}
+            <View style={{ flex: 1, borderRightWidth: 1, borderRightColor: theme.border }}>
+              <View style={styles.header}>
+                <Text style={[styles.title, { color: theme.onSurface }]}>Takeaway</Text>
+                <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]}>Walk-in / pickup orders</Text>
+              </View>
+
+              <View style={[styles.searchRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Ionicons name="search" size={18} color={theme.onSurfaceTertiary} />
+                <TextInput
+                  value={search} onChangeText={setSearch} placeholder="Search items..."
+                  placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]}
+                />
+              </View>
+
+              <View style={styles.chipContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+                  <Pressable style={[styles.chip, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }, selCat === "all" && styles.chipActive]} onPress={() => setSelCat("all")}>
+                    <Text style={[styles.chipText, { color: theme.onSurfaceSecondary }, selCat === "all" && styles.chipTextActive]}>All</Text>
+                  </Pressable>
+                  {cats.map(c => (
+                    <Pressable key={c.id} style={[styles.chip, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }, selCat === c.id && styles.chipActive]} onPress={() => setSelCat(c.id)}>
+                      <Text style={[styles.chipText, { color: theme.onSurfaceSecondary }, selCat === c.id && styles.chipTextActive]}>{c.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {loading ? (
+                <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
+              ) : (
+                <FlatList
+                  key={`takeaway-grid-${dishCols}`}
+                  data={filtered}
+                  keyExtractor={i => i.id}
+                  numColumns={dishCols}
+                  contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 40, gap: spacing.md }}
+                  columnWrapperStyle={dishCols > 1 ? { gap: spacing.md } : undefined}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({ item }) => {
+                    const inCartLine = cart.find(l => l.menu_item_id === item.id);
+                    const qty = inCartLine ? inCartLine.quantity : 0;
+
+                    return (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.itemCard,
+                          dishCols > 1 && { flex: 1 },
+                          { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                          pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+                        ]}
+                        onPress={() => add(item)}
+                      >
+                        <View style={styles.itemLeftRow}>
+                          <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <View style={styles.redSquare} />
+                              <Text style={[styles.itemName, { color: theme.onSurface }]}>{item.name}</Text>
+                            </View>
+                            <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary }]}>₹{item.price} · GST 0%</Text>
+                          </View>
+                        </View>
+
+                        {qty > 0 ? (
+                          <View style={styles.counterPill}>
+                            <Pressable onPress={() => dec(item.id)} style={styles.counterBtn} hitSlop={8}>
+                              <Ionicons name="remove" size={16} color="#635BFF" />
+                            </Pressable>
+                            <Text style={styles.counterText}>{qty}</Text>
+                            <Pressable onPress={() => inc(item.id)} style={styles.counterBtn} hitSlop={8}>
+                              <Ionicons name="add" size={16} color="#635BFF" />
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <View style={styles.addCircleBtn}>
+                            <Ionicons name="add" size={22} color="#FFFFFF" />
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  }}
+                />
+              )}
+            </View>
+
+            {/* Right Column: Takeaway Cart Ticket */}
+            <View style={{ width: 380, backgroundColor: theme.surfaceSecondary, display: "flex", flexDirection: "column" }}>
+              <View style={{ padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                <Text style={{ fontSize: 18, fontWeight: "900", color: theme.onSurface }}>Takeaway Order</Text>
+                <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2 }}>Current items in cart</Text>
+              </View>
+
+              <View style={{ flex: 1 }}>
+                {cart.length === 0 ? (
+                  <View style={styles.center}>
+                    <Ionicons name="bag-handle-outline" size={36} color={theme.onSurfaceTertiary} />
+                    <Text style={{ color: theme.onSurfaceTertiary, marginTop: 8, fontSize: 14 }}>Cart is empty</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={cart}
+                    keyExtractor={l => l.menu_item_id}
+                    contentContainerStyle={{ padding: spacing.md, gap: spacing.sm }}
+                    renderItem={({ item }) => (
+                      <View style={[styles.itemCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, padding: 12 }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.itemName, { color: theme.onSurface, fontSize: 14 }]}>{item.name}</Text>
+                          <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary, fontSize: 12 }]}>₹{item.price} × {item.quantity} = ₹{item.price * item.quantity}</Text>
+                        </View>
+                        <View style={styles.counterPill}>
+                          <Pressable onPress={() => dec(item.menu_item_id)} style={styles.counterBtn} hitSlop={8}>
+                            <Ionicons name="remove" size={14} color="#635BFF" />
+                          </Pressable>
+                          <Text style={[styles.counterText, { fontSize: 13 }]}>{item.quantity}</Text>
+                          <Pressable onPress={() => inc(item.menu_item_id)} style={styles.counterBtn} hitSlop={8}>
+                            <Ionicons name="add" size={14} color="#635BFF" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                  />
+                )}
+              </View>
+
+              {/* Action Panel */}
+              <View style={{ padding: spacing.lg, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: theme.onSurfaceSecondary }}>Total ({totalQty} items)</Text>
+                  <Text style={{ fontSize: 22, fontWeight: "900", color: "#635BFF" }}>₹{subtotal}</Text>
+                </View>
+
+                {err && <Text style={{ color: colors.onError, backgroundColor: colors.error, padding: 8, borderRadius: 8, marginBottom: 8, fontSize: 12, textAlign: "center" }}>{err}</Text>}
+
+                <Pressable
+                  style={[
+                    {
+                      backgroundColor: cart.length > 0 ? "#635BFF" : theme.surfaceTertiary,
+                      paddingVertical: 14,
+                      borderRadius: 12,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "row",
+                      gap: 8,
+                    }
+                  ]}
+                  disabled={cart.length === 0 || busy}
+                  onPress={handleGenerateBill}
+                >
+                  {busy ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={{ color: cart.length > 0 ? "#FFFFFF" : theme.onSurfaceTertiary, fontWeight: "800", fontSize: 15 }}>
+                        {cart.length > 0 ? "Generate Bill & Settle" : "Add items to generate bill"}
+                      </Text>
+                      <Ionicons name="arrow-forward" size={18} color={cart.length > 0 ? "#FFFFFF" : theme.onSurfaceTertiary} />
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>

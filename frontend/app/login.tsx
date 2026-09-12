@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
 
 export default function Login() {
@@ -18,6 +19,7 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const { login } = useAuth();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { resetSuccess } = useLocalSearchParams<{ resetSuccess?: string }>();
@@ -49,124 +51,129 @@ export default function Login() {
   const forgotStyle = { color: "#FF5E2B", fontSize: 13, fontWeight: "600" as const };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: "#FF5E2B" }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: "#0D0D0D" }]}>
-        <ScrollView contentContainerStyle={[styles.scrollContainer, { backgroundColor: "#0D0D0D" }]} bounces={false} showsVerticalScrollIndicator={false}>
-          
-          {/* Solid Orange Header Section */}
-          <View style={[styles.headerSection, { paddingTop: insets.top + 32, backgroundColor: "#FF5E2B" }]}>
-            {/* Cutlery Plate Logo box */}
-            <View style={[styles.logoBox, { backgroundColor: "rgba(255, 255, 255, 0.2)" }]}>
-              <Ionicons name="restaurant" size={34} color="#FFFFFF" />
-            </View>
-            <Text style={styles.appTitle}>ProDevOpz ERP</Text>
-            <Text style={styles.appSubtitle}>Restaurant Management Platform</Text>
-          </View>
-
-          {/* Dark Bottom Card Section */}
-          <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
-            <Text style={styles.welcomeText}>Welcome back</Text>
-            <Text style={styles.subtext}>Sign in to manage your restaurant</Text>
-
-            {/* Success Banner */}
-            {showSuccessBanner && (
-              <View style={styles.successBanner}>
-                <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" style={{ marginRight: 8 }} />
-                <Text style={styles.successBannerText}>
-                  Password reset successfully. Please log in with your new password.
-                </Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#FF5E2B" }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#FF5E2B"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContainer,
+            {
+              backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D",
+              alignItems: isDesktop ? "center" : undefined,
+              justifyContent: isDesktop ? "center" : undefined,
+              paddingVertical: isDesktop ? 48 : 0,
+            },
+          ]}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[isDesktop && styles.desktopCardWrapper]}>
+            {/* Solid Orange Header Section */}
+            <View style={[styles.headerSection, { paddingTop: isDesktop ? 36 : insets.top + 32, backgroundColor: "#FF5E2B" }]}>
+              {/* Cutlery Plate Logo box */}
+              <View style={[styles.logoBox, { backgroundColor: "rgba(255, 255, 255, 0.2)" }]}>
+                <Ionicons name="restaurant" size={34} color="#FFFFFF" />
               </View>
-            )}
-
-            {/* Email Field */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
-                <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  style={[styles.input, { color: "#FFFFFF" }]}
-                  placeholder="owner@yourplace.com"
-                  placeholderTextColor="#64748B"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  testID="login-email-input"
-                />
-              </View>
+              <Text style={styles.appTitle}>ProDevOpz ERP</Text>
+              <Text style={styles.appSubtitle}>Restaurant Management Platform</Text>
             </View>
 
-            {/* Password Field */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Password</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
-                <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  style={[styles.input, { paddingRight: 44, color: "#FFFFFF" }]}
-                  placeholder="••••••••"
-                  placeholderTextColor="#64748B"
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  testID="login-password-input"
-                />
-                <Pressable
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeBtn}
-                  hitSlop={10}
-                >
-                  <Ionicons
-                    name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#94A3B8"
-                  />
-                </Pressable>
-              </View>
-            </View>
+            {/* Dark Bottom Card Section */}
+            <View style={[styles.cardSection, { backgroundColor: "#0D0D0D" }]}>
+              <Text style={styles.welcomeText}>Welcome back</Text>
+              <Text style={styles.subtext}>Sign in to manage your restaurant</Text>
 
-            <Pressable onPress={() => router.push("/forgot-password")} style={styles.forgotBtn} testID="login-forgot-password-btn">
-              <Text style={forgotStyle}>Forgot password?</Text>
-            </Pressable>
-
-            {/* Error Message */}
-            {err && (
-              <View style={[styles.errBox, { backgroundColor: "rgba(239, 68, 68, 0.1)", borderColor: "rgba(239, 68, 68, 0.2)", borderWidth: 1 }]}>
-                <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
-                <Text style={styles.errText} testID="login-error">{err}</Text>
-              </View>
-            )}
-
-            {/* Submit Button */}
-            <Pressable
-              style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed, busy && { opacity: 0.7 }]}
-              onPress={submit}
-              disabled={busy}
-              testID="login-submit-btn"
-            >
-              {busy ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Sign In</Text>
+              {/* Success Banner */}
+              {showSuccessBanner && (
+                <View style={styles.successBanner}>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" style={{ marginRight: 8 }} />
+                  <Text style={styles.successBannerText}>
+                    Password reset successfully. Please log in with your new password.
+                  </Text>
+                </View>
               )}
-            </Pressable>
 
-            {/* Navigation Footers */}
-            <Pressable onPress={() => router.push("/register")} testID="login-goto-register" style={styles.footerBtn}>
-              <Text style={styles.footerText}>
-                New restaurant? <Text style={styles.footerAccent}>Create account</Text>
-              </Text>
-            </Pressable>
+              {/* Email Field */}
+              <View style={styles.field}>
+                <Text style={styles.label}>Email</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
+                  <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    style={[styles.input, { color: "#FFFFFF" }]}
+                    placeholder="owner@yourplace.com"
+                    placeholderTextColor="#64748B"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="login-email-input"
+                  />
+                </View>
+              </View>
 
-            <Pressable onPress={() => router.push("/staff-login")} style={styles.staffBtn}>
-              <Text style={styles.staffText}>
-                Are you an employee? <Text style={styles.staffAccent}>Staff PIN Login</Text>
-              </Text>
-            </Pressable>
+              {/* Password Field */}
+              <View style={styles.field}>
+                <Text style={styles.label}>Password</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    style={[styles.input, { color: "#FFFFFF" }]}
+                    placeholder="••••••••"
+                    placeholderTextColor="#64748B"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    testID="login-password-input"
+                  />
+                  <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#94A3B8" />
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Forgot Password Link */}
+              <Pressable onPress={() => router.push("/forgot-password")} style={styles.forgotBtn}>
+                <Text style={forgotStyle}>Forgot Password?</Text>
+              </Pressable>
+
+              {/* Error Box */}
+              {err && (
+                <View style={styles.errBox}>
+                  <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                  <Text style={styles.errText}>{err}</Text>
+                </View>
+              )}
+
+              {/* Sign In Button */}
+              <Pressable
+                onPress={submit}
+                disabled={busy}
+                style={({ pressed }) => [styles.submitBtn, pressed && styles.btnPressed]}
+                testID="login-submit-btn"
+              >
+                {busy ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.submitBtnText}>Sign In</Text>
+                )}
+              </Pressable>
+
+              {/* Footer Register Link */}
+              <Pressable onPress={() => router.push("/register")} style={styles.footerBtn}>
+                <Text style={styles.footerText}>
+                  New restaurant? <Text style={styles.footerAccent}>Create account</Text>
+                </Text>
+              </Pressable>
+
+              <Pressable onPress={() => router.push("/staff-login")} style={styles.staffBtn}>
+                <Text style={styles.staffText}>
+                  Are you an employee? <Text style={styles.staffAccent}>Staff PIN Login</Text>
+                </Text>
+              </Pressable>
+            </View>
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -177,7 +184,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FF5E2B" },
   wrap: { flex: 1, backgroundColor: "#0D0D0D" },
   scrollContainer: { flexGrow: 1, backgroundColor: "#0D0D0D" },
-  
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 440,
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    backgroundColor: "#0D0D0D",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   headerSection: {
     backgroundColor: "#FF5E2B",
     alignItems: "center",

@@ -19,6 +19,7 @@ import { colors, spacing, radius } from "@/src/theme";
 import { getPrinterSettings, printKitchenKOT } from "@/src/lib/print";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 import { isTodayBusinessDay } from "@/src/lib/dateUtils";
+import { useResponsive } from "@/src/hooks/useResponsive";
 type Cat = { id: string; name: string };
 type Item = { id: string; category_id: string; name: string; price: number; description: string; image_base64?: string; image_url?: string };
 type Table = { id: string; label: string; seats: number };
@@ -32,6 +33,7 @@ export default function WaiterScreen() {
   const { logout } = useAuth();
   const { theme, isDark } = useTheme();
   const { table: tableParam } = useLocalSearchParams<{ table?: string }>();
+  const { isDesktop, isLargeDesktop } = useResponsive();
 
   const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
@@ -547,7 +549,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
         <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]}>
-          
+          <View style={[styles.desktopContainer, isDesktop && { maxWidth: 900, alignSelf: "center", width: "100%" }]}>
           {/* Header Bar */}
           <View style={styles.detailsHeader}>
             <Pressable onPress={() => { setSelectedTableObj(null); setViewMode("tables"); }} style={styles.backBtn} hitSlop={12}>
@@ -722,8 +724,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
 
           {/* Guest Selector Modal */}
           {showGuestPicker && (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end", zIndex: 999 }]}>
-              <View style={[styles.guestPickerSheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 20 }]}>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.6)", justifyContent: isDesktop ? "center" : "flex-end", alignItems: isDesktop ? "center" : "stretch", zIndex: 999 }]}>
+              <View style={[styles.guestPickerSheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 20 }, isDesktop && { maxWidth: 520, width: "90%", borderRadius: radius.xl }]}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <Text style={[styles.guestPickerTitle, { color: theme.onSurface }]}>Select Customer for Table {selectedTableObj.label}</Text>
                   <Pressable onPress={() => setShowGuestPicker(false)} hitSlop={12}>
@@ -767,7 +769,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
               </View>
             </View>
           )}
-
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -777,10 +779,12 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   // VIEW 2: TABLES SELECTION GRID (MAIN WAITER ENTRY SCREEN)
   // -------------------------------------------------------------
   if (viewMode === "tables") {
+    const tableCols = isLargeDesktop ? 6 : isDesktop ? 4 : 3;
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
         <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="waiter-screen">
+          <View style={[styles.desktopContainer, isDesktop && styles.desktopContainerActive]}>
           
           {/* Header with Scan & Printer Action Buttons */}
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
@@ -891,9 +895,10 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             </View>
           ) : (
             <FlatList
+              key={`tbl-grid-${tableCols}`}
               data={tables}
               keyExtractor={t => t.id}
-              numColumns={3}
+              numColumns={tableCols}
               columnWrapperStyle={{ justifyContent: "flex-start", gap: 10, paddingHorizontal: spacing.lg }}
               contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: 10 }}
               showsVerticalScrollIndicator={false}
@@ -990,7 +995,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
             onClose={() => setShowScanner(false)}
             onScanSuccess={handleScanImport}
           />
-
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -1002,6 +1007,234 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const displayGuests = [...uniqueGuests];
   if (currentGuestName && !displayGuests.includes(currentGuestName)) {
     displayGuests.push(currentGuestName);
+  }
+
+  if (isDesktop) {
+    const dishCols = isLargeDesktop ? 3 : 2;
+    return (
+      <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="waiter-screen">
+        {/* Top Header with Back to Details */}
+        <View style={[styles.menuHeaderBar, { backgroundColor: theme.surface }]}>
+          <Pressable onPress={handleStepBack} style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]} hitSlop={12}>
+            <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
+          </Pressable>
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <Text style={[styles.detailsTitle, { color: theme.onSurface }]}>Table {selectedTableObj?.label || table}</Text>
+            <Text style={[styles.detailsSub, { color: theme.onSurfaceSecondary }]}>
+              Main • {selectedTableObj?.seats || 4} seats • {tableOrders.length} open {tableOrders.length === 1 ? "order" : "orders"}
+            </Text>
+          </View>
+        </View>
+
+        {/* 2-Column POS Body */}
+        <View style={{ flex: 1, flexDirection: "row" }}>
+          {/* Left Column: Menu Items Catalog */}
+          <View style={{ flex: 1, borderRightWidth: 1, borderRightColor: theme.border }}>
+            <View style={[styles.searchRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Ionicons name="search" size={16} color={theme.onSurfaceTertiary} />
+              <TextInput
+                value={search} onChangeText={setSearch} placeholder="Search dishes"
+                placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]}
+                testID="waiter-search-input"
+              />
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsWrap} contentContainerStyle={styles.chipsRow}>
+              <Chip label="All" active={selCat === "all"} onPress={() => setSelCat("all")} testID="wchip-all" />
+              {cats.map(c => (
+                <Chip key={c.id} label={c.name} active={selCat === c.id} onPress={() => setSelCat(c.id)} testID={`wchip-${c.id}`} />
+              ))}
+            </ScrollView>
+
+            {loading ? (
+              <View style={styles.empty}><ActivityIndicator color={colors.brand} /></View>
+            ) : filtered.length === 0 ? (
+              <View style={styles.empty}>
+                <Text style={{ color: colors.onSurfaceTertiary }}>No items found.</Text>
+              </View>
+            ) : (
+              <FlatList
+                key={`menu-pos-grid-${dishCols}`}
+                data={filtered}
+                keyExtractor={i => i.id}
+                numColumns={dishCols}
+                columnWrapperStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
+                contentContainerStyle={{ paddingBottom: 40, paddingTop: spacing.md, gap: spacing.md }}
+                renderItem={({ item, index }) => (
+                  <Animated.View entering={FadeInUp.delay(index * 30).springify()} style={{ flex: 1 }}>
+                    <Pressable style={styles.menuCard} onPress={() => add(item)} testID={`waiter-add-${item.id}`}>
+                      <Image source={menuItemImageSource(item)} style={styles.menuImg} contentFit="cover" transition={200} />
+                      <View style={styles.menuOverlay}>
+                        <Text style={styles.menuName} numberOfLines={2}>{item.name}</Text>
+                        <Text style={styles.menuPrice}>₹{item.price}</Text>
+                      </View>
+                      <View style={styles.plus}><Ionicons name="add" size={16} color={colors.onBrand} /></View>
+                    </Pressable>
+                  </Animated.View>
+                )}
+              />
+            )}
+          </View>
+
+          {/* Right Column: Active Order Ticket */}
+          <View style={{ width: 380, backgroundColor: theme.surfaceSecondary, display: "flex", flexDirection: "column" }}>
+            {/* Guest Selector */}
+            <View style={{ padding: spacing.md, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: theme.onSurfaceSecondary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Select Guest to Add Items</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+                {displayGuests.map((gName, idx) => {
+                  const isActive = gName === currentGuestName;
+                  const matchedOrder = tableOrders.find((o: any) => (o.customer_name || "Guest 1") === gName);
+                  const orderAmt = matchedOrder ? matchedOrder.subtotal || 0 : 0;
+                  return (
+                    <Pressable
+                      key={gName + idx}
+                      style={[
+                        {
+                          flexDirection: "row",
+                          alignItems: "center",
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          gap: 6
+                        },
+                        isActive
+                          ? { backgroundColor: "#635BFF", borderColor: "#635BFF" }
+                          : { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }
+                      ]}
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        setCurrentGuestName(gName);
+                        if (matchedOrder) {
+                          setActiveOrder(matchedOrder);
+                          setCurrentSessionId(matchedOrder.session_id);
+                          setLines((matchedOrder.items || []).map((it: any) => ({
+                            menu_item_id: it.menu_item_id || it.id || "",
+                            name: it.name,
+                            price: it.price,
+                            quantity: it.quantity,
+                            notes: it.notes || "",
+                          })));
+                        } else {
+                          setActiveOrder(null);
+                          setLines([]);
+                        }
+                      }}
+                    >
+                      <Ionicons name="person" size={14} color={isActive ? "#FFF" : theme.onSurfaceSecondary} />
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: isActive ? "#FFF" : theme.onSurface }}>
+                        {gName} {orderAmt > 0 ? `(₹${orderAmt})` : ""}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                
+                <Pressable
+                  style={[
+                    {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: "#635BFF",
+                      backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                      gap: 6
+                    }
+                  ]}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setActiveOrder(null);
+                    const nextNum = uniqueGuests.length + 1;
+                    const nextLabel = `Guest ${nextNum}`;
+                    setCurrentGuestName(nextLabel);
+                    setCurrentSessionId("tsess_" + Math.random().toString(36).substring(2, 9));
+                    setLines([]);
+                  }}
+                >
+                  <Ionicons name="add-circle" size={16} color="#635BFF" />
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: "#635BFF" }}>
+                    + Add Guest
+                  </Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+
+            {/* Ticket Lines Header */}
+            <View style={{ paddingHorizontal: spacing.md, paddingVertical: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: theme.border }}>
+              <Text style={[styles.paneTitle, { color: theme.onSurface, fontSize: 16 }]}>Current Order Items</Text>
+              <Text style={[styles.subVal, { color: theme.onSurface, fontSize: 20 }]} testID="waiter-subtotal">₹{subtotal.toFixed(0)}</Text>
+            </View>
+
+            {/* Ticket Lines List */}
+            <View style={{ flex: 1 }}>
+              {lines.length === 0 ? (
+                <View style={styles.emptyOrder}>
+                  <Ionicons name="cart-outline" size={26} color={theme.onSurfaceTertiary} />
+                  <Text style={{ color: theme.onSurfaceTertiary, marginTop: 6 }}>No items added</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={lines}
+                  keyExtractor={l => l.menu_item_id}
+                  contentContainerStyle={{ padding: spacing.md }}
+                  renderItem={({ item }) => (
+                    <Animated.View entering={FadeInDown.springify()} style={[styles.line, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]} testID={`order-line-${item.menu_item_id}`}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.lineName, { color: theme.onSurface }]}>{item.name}</Text>
+                        <Text style={[styles.linePrice, { color: theme.onSurfaceSecondary }]}>₹{item.price} × {item.quantity} = ₹{(item.price * item.quantity).toFixed(0)}</Text>
+                      </View>
+                      <Pressable onPress={() => dec(item.menu_item_id)} style={[styles.qBtn, { backgroundColor: theme.surfaceSecondary }]} testID={`order-dec-${item.menu_item_id}`}>
+                        <Ionicons name="remove" size={16} color={theme.onSurface} />
+                      </Pressable>
+                      <Text style={[styles.qty, { color: theme.onSurface }]}>{item.quantity}</Text>
+                      <Pressable onPress={() => inc(item.menu_item_id)} style={[styles.qBtn, { backgroundColor: theme.surfaceSecondary }]} testID={`order-inc-${item.menu_item_id}`}>
+                        <Ionicons name="add" size={16} color={theme.onSurface} />
+                      </Pressable>
+                      <Pressable onPress={() => remove(item.menu_item_id)} style={{ marginLeft: 6 }} testID={`order-del-${item.menu_item_id}`} hitSlop={8}>
+                        <Ionicons name="trash" size={18} color={colors.onError} />
+                      </Pressable>
+                    </Animated.View>
+                  )}
+                />
+              )}
+            </View>
+
+            {/* Submit Action Footer */}
+            <View style={{ padding: spacing.md, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}>
+              {err && <Text style={{ color: colors.onError, backgroundColor: colors.error, padding: 8, borderRadius: 8, marginBottom: 8, fontSize: 12, textAlign: "center" }}>{err}</Text>}
+              <Pressable
+                style={[
+                  {
+                    backgroundColor: totalQty > 0 ? "#635BFF" : theme.surfaceTertiary,
+                    paddingVertical: 14,
+                    borderRadius: 12,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "row",
+                    gap: 8,
+                  }
+                ]}
+                disabled={totalQty === 0 || busy}
+                onPress={submitOrder}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={16} color={totalQty > 0 ? "#FFFFFF" : theme.onSurfaceTertiary} />
+                    <Text style={{ color: totalQty > 0 ? "#FFFFFF" : theme.onSurfaceTertiary, fontWeight: "800", fontSize: 15 }}>
+                      {totalQty > 0 ? `Send Order (${totalQty} items • ₹${subtotal.toFixed(0)})` : "Add items to place order"}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -1488,5 +1721,14 @@ const styles = StyleSheet.create({
   guestPickerOptionText: {
     fontSize: 15,
     fontWeight: "600",
+  },
+  desktopContainer: {
+    flex: 1,
+    width: "100%",
+  },
+  desktopContainerActive: {
+    maxWidth: 1400,
+    alignSelf: "center",
+    width: "100%",
   },
 });

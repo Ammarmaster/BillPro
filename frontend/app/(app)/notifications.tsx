@@ -10,6 +10,7 @@ import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
 import { useNotifications, Notification } from "@/src/context/NotificationContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -27,6 +28,7 @@ export default function NotificationCentreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const {
     notifications,
@@ -130,7 +132,8 @@ export default function NotificationCentreScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
-      
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 900, alignSelf: "center" }]}>
+        
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -261,6 +264,7 @@ export default function NotificationCentreScreen() {
           );
         }}
       />
+      </View>
     </SafeAreaView>
   );
 }

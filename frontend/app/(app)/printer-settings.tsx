@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 import {
   savePrinterSettings, getPrinterSettings, printThermalDirect, forgetPrinter,
@@ -19,6 +20,7 @@ export default function PrinterSettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const [activeTab, setActiveTab] = useState<"cashier" | "kitchen">("cashier");
   const [loading, setLoading] = useState(false);
@@ -285,7 +287,8 @@ export default function PrinterSettingsScreen() {
   return (
     <View style={[styles.safe, { backgroundColor: theme.surface, paddingTop: Math.max(insets.top, 14) }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
-      
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 900, alignSelf: "center" }]}>
+        
       {/* Header Matching More & Dashboard */}
       <View style={styles.header}>
         <Pressable 
@@ -603,6 +606,7 @@ export default function PrinterSettingsScreen() {
         </View>
 
       </ScrollView>
+      </View>
     </View>
   );
 }

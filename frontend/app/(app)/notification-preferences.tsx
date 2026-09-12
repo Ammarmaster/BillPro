@@ -8,12 +8,14 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
 
 export default function NotificationPreferencesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const { preferences, updatePreferences } = useNotifications();
 
@@ -37,7 +39,8 @@ export default function NotificationPreferencesScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
-      
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 800, alignSelf: "center" }]}>
+        
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border }]}>
@@ -198,6 +201,7 @@ export default function NotificationPreferencesScreen() {
           </View>
         </View>
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }

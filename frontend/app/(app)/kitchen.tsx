@@ -24,6 +24,7 @@ import { printKitchenKOT } from "@/src/lib/print";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type Order = {
   id: string;
@@ -241,6 +242,7 @@ export default function Kitchen() {
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
   const { theme, isDark } = useTheme();
+  const { isDesktop, isLargeDesktop } = useResponsive();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -533,10 +535,13 @@ export default function Kitchen() {
     } catch { return "0s"; }
   };
 
+  const kdsCols = isLargeDesktop ? 3 : isDesktop ? 2 : 1;
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="kitchen-screen">
+        <View style={[styles.desktopContainer, isDesktop && styles.desktopContainerActive]}>
         
         {/* Header with Sound Toggle and LIVE status */}
         <View style={styles.header}>
@@ -597,21 +602,26 @@ export default function Kitchen() {
           </View>
         ) : (
           <FlatList
+            key={`kds-grid-${kdsCols}`}
             data={orders}
             keyExtractor={(o, idx) => `${o.id}-${idx}`}
+            numColumns={kdsCols}
+            columnWrapperStyle={kdsCols > 1 ? { gap: spacing.lg } : undefined}
             contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg }}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl tintColor="#635BFF" refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
             renderItem={({ item }) => {
               const elapsedTime = getElapsedTimeStr(item.created_at);
               return (
-                <KdsTicketCard
-                  item={item}
-                  theme={theme}
-                  isDark={isDark}
-                  elapsedTime={elapsedTime}
-                  onAdvance={advanceOptimistic}
-                />
+                <View style={[kdsCols > 1 && { flex: 1 }]}>
+                  <KdsTicketCard
+                    item={item}
+                    theme={theme}
+                    isDark={isDark}
+                    elapsedTime={elapsedTime}
+                    onAdvance={advanceOptimistic}
+                  />
+                </View>
               );
             }}
           />
@@ -619,12 +629,22 @@ export default function Kitchen() {
 
         {err && <Text style={styles.err} testID="kitchen-error">{err}</Text>}
 
+        </View>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  desktopContainer: {
+    flex: 1,
+    width: "100%",
+  },
+  desktopContainerActive: {
+    maxWidth: 1400,
+    alignSelf: "center",
+    width: "100%",
+  },
   safe: { flex: 1, backgroundColor: colors.surface },
   wrap: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },

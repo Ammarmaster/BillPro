@@ -7,12 +7,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 type Waiter = { id: string; full_name: string; pin: string; role: string };
 
 export default function StaffScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isDesktop } = useResponsive();
   const [waiters, setWaiters] = useState<Waiter[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -75,91 +77,109 @@ export default function StaffScreen() {
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="staff-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.push("/(app)/more")} testID="staff-back-btn" hitSlop={12}>
-          <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
-        </Pressable>
-        <Text style={styles.title}>Waiters</Text>
-        <Pressable style={styles.addBtn} onPress={() => setModal(true)} testID="staff-add-btn">
-          <Ionicons name="add" size={18} color={colors.onBrand} />
-          <Text style={styles.addBtnText}>Add</Text>
-        </Pressable>
-      </View>
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1000, alignSelf: "center" }]}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.push("/(app)/more")} testID="staff-back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
+          </Pressable>
+          <Text style={styles.title}>Waiters</Text>
+          <Pressable style={styles.addBtn} onPress={() => setModal(true)} testID="staff-add-btn">
+            <Ionicons name="add" size={18} color={colors.onBrand} />
+            <Text style={styles.addBtnText}>Add</Text>
+          </Pressable>
+        </View>
 
-      <Text style={styles.hint}>Employees sign in with business phone + their PIN.</Text>
+        <Text style={styles.hint}>Employees sign in with business phone + their PIN.</Text>
 
-      {newlyCreated && (
-        <View style={styles.newCard} testID="staff-new-banner">
-          <Ionicons name="checkmark-circle" size={20} color={colors.onSuccess} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.newTitle}>Share this PIN with {newlyCreated.full_name}</Text>
-            <Text style={styles.newPin}>PIN: {newlyCreated.pin}</Text>
+        {newlyCreated && (
+          <View style={styles.newCard} testID="staff-new-banner">
+            <Ionicons name="checkmark-circle" size={20} color={colors.onSuccess} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.newTitle}>Share this PIN with {newlyCreated.full_name}</Text>
+              <Text style={styles.newPin}>PIN: {newlyCreated.pin}</Text>
+            </View>
+            <Pressable onPress={() => setNewlyCreated(null)} hitSlop={8} testID="staff-new-dismiss">
+              <Ionicons name="close" size={18} color={colors.onSurfaceSecondary} />
+            </Pressable>
           </View>
-          <Pressable onPress={() => setNewlyCreated(null)} hitSlop={8} testID="staff-new-dismiss">
-            <Ionicons name="close" size={18} color={colors.onSurfaceSecondary} />
-          </Pressable>
-        </View>
-      )}
+        )}
 
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
-      ) : waiters.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons name="people-outline" size={48} color={colors.onSurfaceTertiary} />
-          <Text style={{ color: colors.onSurfaceSecondary, marginTop: 8 }}>No waiters yet.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={waiters}
-          keyExtractor={w => w.id}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md }}
-          renderItem={({ item }) => (
-            <View style={styles.card} testID={`waiter-${item.id}`}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.wName}>{item.full_name}</Text>
-                <Text style={styles.wPin}>PIN · {item.pin}</Text>
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
+        ) : waiters.length === 0 ? (
+          <View style={styles.center}>
+            <Ionicons name="people-outline" size={48} color={colors.onSurfaceTertiary} />
+            <Text style={{ color: colors.onSurfaceSecondary, marginTop: 8 }}>No waiters yet.</Text>
+          </View>
+        ) : (
+          <FlatList
+            key={`waiters-${isDesktop ? 'desktop' : 'mobile'}`}
+            data={waiters}
+            numColumns={isDesktop ? 2 : 1}
+            columnWrapperStyle={isDesktop ? { gap: spacing.md } : undefined}
+            keyExtractor={w => w.id}
+            contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md }}
+            renderItem={({ item }) => (
+              <View style={[styles.card, isDesktop && { flex: 1 }]} testID={`waiter-${item.id}`}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.wName}>{item.full_name}</Text>
+                  <Text style={styles.wPin}>PIN · {item.pin}</Text>
+                </View>
+                <Pressable onPress={() => del(item.id)} hitSlop={8} testID={`waiter-delete-${item.id}`}>
+                  <Ionicons name="trash" size={20} color={colors.onError} />
+                </Pressable>
               </View>
-              <Pressable onPress={() => del(item.id)} hitSlop={8} testID={`waiter-delete-${item.id}`}>
-                <Ionicons name="trash" size={20} color={colors.onError} />
-              </Pressable>
-            </View>
-          )}
-        />
-      )}
+            )}
+          />
+        )}
 
-      {err && <Text style={styles.err} testID="staff-error">{err}</Text>}
+        {err && <Text style={styles.err} testID="staff-error">{err}</Text>}
 
-      <Modal transparent visible={modal} animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setModal(false); }}>
-        <Pressable style={styles.modalBg} onPress={() => { Keyboard.dismiss(); setModal(false); }}>
-          <Pressable style={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl }]} onPress={() => Keyboard.dismiss()}>
-            <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>New Waiter</Text>
-              <Pressable onPress={() => { Keyboard.dismiss(); setModal(false); }} hitSlop={12} testID="waiter-close-btn">
-                <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
-              </Pressable>
-            </View>
-            <TextInput value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="waiter-name-input" returnKeyType="next" />
-            <TextInput
-              value={pin} onChangeText={setPin}
-              placeholder="4–6 digit PIN"
-              placeholderTextColor={colors.onSurfaceTertiary}
-              style={styles.input}
-              keyboardType="number-pad" maxLength={6} secureTextEntry
-              returnKeyType="done"
-              onSubmitEditing={() => Keyboard.dismiss()}
-              testID="waiter-pin-input"
-            />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.ghostBtn} onPress={() => { Keyboard.dismiss(); setModal(false); }} testID="waiter-cancel-btn">
-                <Text style={styles.ghostBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.primaryBtn} onPress={() => { Keyboard.dismiss(); save(); }} disabled={busy} testID="waiter-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
-              </Pressable>
-            </View>
+        <Modal transparent visible={modal} animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setModal(false); }}>
+          <Pressable 
+            style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]} 
+            onPress={() => { Keyboard.dismiss(); setModal(false); }}
+          >
+            <Pressable 
+              style={[
+                styles.modalCard, 
+                { 
+                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
+                  width: isDesktop ? 460 : "100%",
+                  borderRadius: isDesktop ? 20 : radius.lg,
+                }
+              ]} 
+              onPress={() => Keyboard.dismiss()}
+            >
+              <View style={styles.modalHead}>
+                <Text style={styles.modalTitle}>New Waiter</Text>
+                <Pressable onPress={() => { Keyboard.dismiss(); setModal(false); }} hitSlop={12} testID="waiter-close-btn">
+                  <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
+                </Pressable>
+              </View>
+              <TextInput value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="waiter-name-input" returnKeyType="next" />
+              <TextInput
+                value={pin} onChangeText={setPin}
+                placeholder="4–6 digit PIN"
+                placeholderTextColor={colors.onSurfaceTertiary}
+                style={styles.input}
+                keyboardType="number-pad" maxLength={6} secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                testID="waiter-pin-input"
+              />
+              <View style={styles.modalActions}>
+                <Pressable style={styles.ghostBtn} onPress={() => { Keyboard.dismiss(); setModal(false); }} testID="waiter-cancel-btn">
+                  <Text style={styles.ghostBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.primaryBtn} onPress={() => { Keyboard.dismiss(); save(); }} disabled={busy} testID="waiter-save-btn">
+                  {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
+                </Pressable>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
+      </View>
     </View>
   );
 }

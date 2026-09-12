@@ -9,6 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 
 type U = { id: string; email: string; full_name: string; role: string; tenant_id?: string | null; pin?: string };
@@ -26,6 +27,7 @@ export default function AdminUsers() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme, isDark } = useTheme();
+  const { isDesktop } = useResponsive();
 
   const [users, setUsers] = useState<U[]>([]);
   const [filter, setFilter] = useState<string | "all">("all");
@@ -143,6 +145,7 @@ export default function AdminUsers() {
 
   return (
     <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: theme.surface }]} testID="admin-users-screen">
+      <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1200, alignSelf: "center" }]}>
       
       {/* Header bar */}
       <View style={styles.header}>
@@ -248,18 +251,23 @@ export default function AdminUsers() {
               >
                 <View style={[styles.userAvatar, { backgroundColor: `${roleColor}18` }]}>
                   <Text style={[styles.avatarInitial, { color: roleColor }]}>
-                    {item.full_name?.charAt(0)?.toUpperCase() || "U"}
+                    {(item.full_name || item.email || "U")[0].toUpperCase()}
                   </Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.userName, { color: theme.onSurface }]}>{item.full_name}</Text>
-                  <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>{item.email}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.userName, { color: theme.onSurface }]} numberOfLines={1}>
+                    {item.full_name || "Nameless User"}
+                  </Text>
+                  <Text style={[styles.userMeta, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+                    {item.email}
+                  </Text>
                 </View>
-                <View style={[styles.roleBadge, { backgroundColor: `${roleColor}15` }]}>
+                <View style={[styles.roleBadge, { backgroundColor: `${roleColor}18` }]}>
                   <Text style={[styles.roleTag, { color: roleColor }]}>
-                    {item.role?.replace("_", " ")}
+                    {item.role.replace("_", " ").toUpperCase()}
                   </Text>
                 </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.onSurfaceTertiary} />
               </Pressable>
             );
           }}
@@ -270,8 +278,23 @@ export default function AdminUsers() {
 
       {/* Edit User Modal */}
       <Modal transparent visible={!!target} animationType="slide" onRequestClose={() => setTarget(null)}>
-        <View style={styles.modalBg}>
-          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+        <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+          <ScrollView 
+            contentContainerStyle={[
+              styles.modalCard, 
+              { 
+                paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl, 
+                backgroundColor: theme.surfaceSecondary,
+                width: isDesktop ? 540 : "100%",
+                borderRadius: isDesktop ? 20 : undefined,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                borderWidth: isDesktop ? 1 : 0,
+                borderColor: theme.border,
+              }
+            ]}
+            style={isDesktop ? { maxHeight: "90%", width: 540, flexGrow: 0 } : undefined}
+          >
             {target && (
               <>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
@@ -404,8 +427,23 @@ export default function AdminUsers() {
 
       {/* Create User Modal */}
       <Modal transparent visible={createModal} animationType="slide" onRequestClose={() => setCreateModal(false)}>
-        <View style={styles.modalBg}>
-          <ScrollView contentContainerStyle={[styles.modalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+        <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+          <ScrollView 
+            contentContainerStyle={[
+              styles.modalCard, 
+              { 
+                paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl, 
+                backgroundColor: theme.surfaceSecondary,
+                width: isDesktop ? 540 : "100%",
+                borderRadius: isDesktop ? 20 : undefined,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                borderWidth: isDesktop ? 1 : 0,
+                borderColor: theme.border,
+              }
+            ]}
+            style={isDesktop ? { maxHeight: "90%", width: 540, flexGrow: 0 } : undefined}
+          >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
               <View>
                 <Text style={[styles.modalTitle, { color: theme.onSurface }]}>New Admin User / Staff</Text>
@@ -507,6 +545,7 @@ export default function AdminUsers() {
         </View>
       </Modal>
 
+      </View>
     </View>
   );
 }
