@@ -3157,16 +3157,9 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         seen_order_ids.update(oids)
         paid_bills.append(b)
     
-    rev_agg = await db.bills.aggregate([
-        {"$match": {"tenant_id": tid, "status": "paid"}},
-        {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}}
-    ]).to_list(1)
-    revenue_total = round(float(rev_agg[0]["total"]), 2) if rev_agg else 0.0
-    paid_bills_count = int(rev_agg[0]["count"]) if rev_agg else 0
-
     today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))]
     revenue_today = round(sum(float(b.get("total", 0.0)) for b in today_bills), 2)
-    avg_bill = round(revenue_today / len(today_bills), 2) if today_bills else (round(revenue_total / paid_bills_count, 2) if paid_bills_count > 0 else 0.0)
+    revenue_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills), 2)
 
     revenue_web_today = round(sum(float(b.get("total", 0.0)) for b in today_bills if b.get("created_by") == "guest"), 2)
     revenue_web_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills if b.get("created_by") == "guest"), 2)
@@ -3215,7 +3208,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         "revenue_today": revenue_today,
         "revenue_web_today": revenue_web_today,
         "revenue_web_total": revenue_web_total,
-        "avg_bill": avg_bill,
+        "avg_bill": 0.0,
         "menu_count": menu_count,
         "last_7_days": last_7_days,
         "top_selling": top_selling,
@@ -3233,8 +3226,6 @@ class PlanIn(BaseModel):
     interval: str = "month"  # "month" or "year"
     features: List[str] = []
     is_active: bool = True
-    valid_days: Optional[int] = None
-    razorpay_plan_id: Optional[str] = None
 
 
 class SubscribeIn(BaseModel):
@@ -3277,22 +3268,6 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
         total_orders = await db.orders.count_documents({})
         total_menu_items = await db.menu_items.count_documents({"is_deleted": {"$ne": True}})
         total_tables = await db.tables.count_documents({"is_deleted": {"$ne": True}})
-
-        # Lifetime platform GMV (gross merchandise value)
-        agg_gmv = await db.bills.aggregate([
-            {"$match": {"status": "paid"}},
-            {"$group": {"_id": None, "total": {"$sum": "$total"}}}
-        ]).to_list(1)
-        lifetime_gmv = round(agg_gmv[0]["total"], 2) if agg_gmv else 0.0
-
-        # Today's platform stats across all restaurants
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        today_orders_count = await db.orders.count_documents({"created_at": {"$gte": today_start}})
-        agg_today = await db.bills.aggregate([
-            {"$match": {"status": "paid", "created_at": {"$gte": today_start}}},
-            {"$group": {"_id": None, "total": {"$sum": "$total"}}}
-        ]).to_list(1)
-        today_sales_total = round(agg_today[0]["total"], 2) if agg_today else 0.0
 
         active_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0}).to_list(2000)
         # Compute MRR safely: monthly plans + yearly plans / 12
@@ -3339,12 +3314,12 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
             "mrr": round(mrr, 2),
             "arr": round(mrr * 12, 2),
             "total_bills": total_bills,
-            "lifetime_gmv": lifetime_gmv,
+            "lifetime_gmv": 0.0,
             "total_orders": total_orders,
             "total_menu_items": total_menu_items,
             "total_tables": total_tables,
-            "today_orders_count": today_orders_count,
-            "today_sales_total": today_sales_total,
+            "today_orders_count": 0,
+            "today_sales_total": 0.0,
             "recent_activity": recent_activity[:8],
         }
     except Exception as e:

@@ -52,7 +52,6 @@ function AdminConsole() {
   // Toggle detail states
   const [detailedMRR, setDetailedMRR] = useState(false);
   const [detailedARR, setDetailedARR] = useState(false);
-  const [detailedGMV, setDetailedGMV] = useState(false);
 
   // Animated values state
   const [animatedMRR, setAnimatedMRR] = useState(() => summary?.mrr || 0);
@@ -353,21 +352,6 @@ function AdminConsole() {
                   <Ionicons name="ribbon" size={13} color="#34D399" />
                   <Text style={styles.activeSubText}>{summary?.active_subscriptions ?? animatedSubs ?? 0} Active Subs</Text>
                 </Pressable>
-              </View>
-
-              {/* Lifetime Platform GMV Footer */}
-              <View style={styles.heroGmvFooter}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.heroGmvLabel}>PLATFORM LIFETIME GMV (TOTAL BILLS SUM)</Text>
-                  <Text style={styles.heroGmvValue}>
-                    {formatAmount(summary?.lifetime_gmv || 0, detailedGMV)}
-                  </Text>
-                </View>
-                <View style={styles.todaySalesPill}>
-                  <Text style={styles.todaySalesText}>
-                    Today: {formatAmount(summary?.today_sales_total || 0)} ({summary?.today_orders_count || 0} orders)
-                  </Text>
-                </View>
               </View>
             </LinearGradient>
 
@@ -1343,13 +1327,7 @@ function OwnerDashboard() {
                       <Text style={{ color: "#FFFFFF", fontSize: 22, fontWeight: "900" }} testID="metric-orders-open">
                         {summary?.orders_today ?? summary?.orders_total ?? summary?.orders_open ?? 0}
                       </Text>
-                      <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Orders</Text>
-                    </View>
-                    <View>
-                      <Text style={{ color: "#FFFFFF", fontSize: 22, fontWeight: "900" }}>
-                        ₹{(summary?.avg_bill ?? 0).toLocaleString("en-IN")}
-                      </Text>
-                      <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Avg Bill</Text>
+                      <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 }}>Orders Today</Text>
                     </View>
                   </View>
                 </LinearGradient>
@@ -1842,12 +1820,6 @@ const styles = StyleSheet.create({
   quickGrantHeaderBtn: { borderRadius: radius.pill, overflow: "hidden", elevation: 2 },
   quickGrantGrad: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
   quickGrantText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-
-  heroGmvFooter: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.15)", flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
-  heroGmvLabel: { color: "rgba(255,255,255,0.75)", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
-  heroGmvValue: { color: "#FFFFFF", fontSize: 22, fontWeight: "900", marginTop: 2 },
-  todaySalesPill: { backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill },
-  todaySalesText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
 
   activityRow: { flexDirection: "row", alignItems: "center", padding: 10, borderRadius: radius.md, borderWidth: 1, gap: 10 },
   activityDot: { width: 8, height: 8, borderRadius: 4 },
