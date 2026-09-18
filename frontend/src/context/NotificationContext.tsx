@@ -552,6 +552,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (currentPrefs.sound_enabled) {
       playSound(notif);
     }
+    if (Platform.OS === "web") {
+      try {
+        if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
+          new window.Notification(notif.title || "EzBill Alert", {
+            body: notif.message,
+            icon: "/icon-192.png",
+            badge: "/icon-192.png",
+            tag: notif.id,
+          });
+        }
+      } catch (err) {}
+    }
     if (currentPrefs.vibration_enabled) {
       if (Platform.OS === "web") {
         try {

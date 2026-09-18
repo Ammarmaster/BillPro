@@ -12,6 +12,7 @@ import { colors } from "@/src/theme";
 
 import { NotificationProvider } from "@/src/context/NotificationContext";
 import DynamicIslandBanner from "@/src/components/DynamicIslandBanner";
+import PWAInstallPrompt from "@/src/components/PWAInstallPrompt";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
@@ -36,6 +37,7 @@ export default function RootLayout() {
             <NotificationProvider>
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
               <DynamicIslandBanner />
+              <PWAInstallPrompt />
             </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>

@@ -12,11 +12,29 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
-        {/*
-          Disable body scrolling on web to make ScrollView components work correctly.
-          If you want to enable scrolling, remove `ScrollViewStyleReset` and
-          set `overflow: auto` on the body style below.
-        */}
+        <meta name="google-site-verification" content="google1360c11d4597b537" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0F172A" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="EzBill" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" href="/icon-192.png" />
+        {/* Register PWA Service Worker on Web */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(
+                    function(reg) { console.log('[PWA] ServiceWorker registered with scope:', reg.scope); },
+                    function(err) { console.warn('[PWA] ServiceWorker registration failed:', err); }
+                  );
+                });
+              }
+            `,
+          }}
+        />
         <ScrollViewStyleReset />
         <style
           dangerouslySetInnerHTML={{
