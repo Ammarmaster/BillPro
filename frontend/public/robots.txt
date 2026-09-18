@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Allow: /pos-billing-software.html
+Allow: /demo-billing
+Allow: /login
+Allow: /register
+Allow: /legal
+Allow: /manifest.json
+Allow: /sitemap.xml
+
+# Disallow internal authenticated API / admin calls from direct indexing
+Disallow: /api/
+Disallow: /ws/
+
+Sitemap: https://ezbill.vercel.app/sitemap.xml

@@ -643,6 +643,18 @@ export default function AdminRestaurants() {
                     />
                   </View>
 
+                  <View style={styles.featureRow}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={[styles.featureName, { color: theme.onSurface }]}>⚡ 100% Local-First Engine (1 User)</Text>
+                      <Text style={[styles.featureSub, { color: theme.onSurfaceSecondary }]}>0ms on-device speed with single background cloud backup (Starter ₹299/₹2999)</Text>
+                    </View>
+                    <Switch
+                      value={customFeatures.is_local_mode ?? (detail.subscription?.price === 299 || detail.subscription?.price === 2999 || detail.subscription?.plan_name?.toLowerCase().includes("starter") || false)}
+                      onValueChange={v => setCustomFeatures(p => ({ ...p, is_local_mode: v }))}
+                      trackColor={{ false: "#3E3E4A", true: "#16A34A" }}
+                    />
+                  </View>
+
                   {/* Staff Limit Controls */}
                   <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border }}>
                     <Text style={[styles.featureName, { color: theme.onSurface }]}>👥 Maximum Waiter Staff Limit</Text>

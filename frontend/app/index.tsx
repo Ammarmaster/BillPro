@@ -51,12 +51,12 @@ export default function Index() {
             <View style={styles.logoBox}>
               <Ionicons name="restaurant" size={44} color="#FFFFFF" />
             </View>
-            <Text style={styles.brandTitle}>ProDevOpz ERP</Text>
-            <Text style={styles.tagline}>Restaurant Management Platform</Text>
+            <Text style={styles.brandTitle}>EzBill POS</Text>
+            <Text style={styles.tagline}>Smart Restaurant POS, Table Management & GST ERP</Text>
 
             <View style={styles.pillBadge}>
               <View style={styles.pillDot} />
-              <Text style={styles.pillText}>ENTERPRISE POS & KOT SYSTEM</Text>
+              <Text style={styles.pillText}>0ms OFFLINE SPEED · GST INVOICES · KOT PRINTING</Text>
             </View>
           </View>
 
@@ -71,7 +71,7 @@ export default function Index() {
             >
               <View style={styles.btnRow}>
                 <Ionicons name="business-outline" size={18} color="#FFFFFF" style={styles.btnIconLeft} />
-                <Text style={styles.primaryBtnText}>Business Owner Login</Text>
+                <Text style={styles.primaryBtnText}>Restaurant Owner Login</Text>
                 <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={styles.btnIconRight} />
               </View>
             </Pressable>
@@ -83,7 +83,17 @@ export default function Index() {
             >
               <View style={styles.btnRow}>
                 <Ionicons name="keypad-outline" size={18} color="#FF5E2B" style={styles.btnIconLeft} />
-                <Text style={styles.secondaryBtnText}>Staff PIN Login</Text>
+                <Text style={styles.secondaryBtnText}>Staff PIN Login (Waiter / Kitchen)</Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.demoBtn, pressed && styles.btnPressed]}
+              onPress={() => router.push("/pos-erp")}
+            >
+              <View style={styles.btnRow}>
+                <Ionicons name="sparkles-outline" size={16} color="#818CF8" style={styles.btnIconLeft} />
+                <Text style={[styles.demoBtnText, { color: "#818CF8" }]}>Explore Features & Table POS</Text>
               </View>
             </Pressable>
 
@@ -100,13 +110,13 @@ export default function Index() {
             >
               <View style={styles.btnRow}>
                 <Ionicons name="person-add-outline" size={16} color="#FF5E2B" style={styles.btnIconLeft} />
-                <Text style={styles.ghostText}>Create Business Account</Text>
+                <Text style={styles.ghostText}>Create Business Account (₹299/mo)</Text>
               </View>
             </Pressable>
           </View>
 
           {/* Footer Note */}
-          <Text style={styles.footerNote}>Trusted by leading retail & restaurant businesses</Text>
+          <Text style={styles.footerNote}>Trusted by leading restaurants, cafes, cloud kitchens & bars</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

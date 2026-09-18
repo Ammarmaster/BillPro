@@ -3226,6 +3226,10 @@ class PlanIn(BaseModel):
     interval: str = "month"  # "month" or "year"
     features: List[str] = []
     is_active: bool = True
+    valid_days: Optional[int] = None
+    razorpay_plan_id: Optional[str] = None
+    is_local_mode: Optional[bool] = False
+    max_users: Optional[int] = 1
 
 
 class SubscribeIn(BaseModel):
@@ -3592,6 +3596,9 @@ async def admin_create_plan(payload: PlanIn, user: dict = Depends(require_roles(
     if payload.interval not in ("month", "year"):
         raise HTTPException(status_code=400, detail="interval must be 'month' or 'year'")
     doc = {"id": str(uuid.uuid4()), **payload.dict(), "created_at": datetime.now(timezone.utc).isoformat()}
+    if payload.is_local_mode or payload.price in (299, 299.0, 2999, 2999.0) or "starter" in payload.name.lower() or "basic" in payload.name.lower():
+        doc["is_local_mode"] = True
+        doc["max_users"] = 1
     await db.plans.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -3625,6 +3632,8 @@ async def admin_assign_subscription(tid: str, payload: SubscribeIn, user: dict =
         {"$set": {"status": "cancelled"}}
     )
 
+    is_local_mode = bool(plan.get("is_local_mode") or plan.get("price") in (299, 299.0, 2999, 2999.0) or "starter" in plan.get("name", "").lower() or "basic" in plan.get("name", "").lower())
+
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -3632,6 +3641,7 @@ async def admin_assign_subscription(tid: str, payload: SubscribeIn, user: dict =
         "plan_name": plan["name"],
         "price": plan["price"],
         "interval": plan["interval"],
+        "is_local_mode": is_local_mode,
         "status": payload.status,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "ends_at": ends_at.isoformat() if payload.status == "active" else None
@@ -3782,12 +3792,25 @@ async def get_tenant_plan_limits(tid: str) -> dict:
         if isinstance(v, bool):
             features[k] = v
 
+    # Check if plan is 1-user local mode (Starter ₹299/₹2999 or explicitly enabled)
+    is_local_mode = False
+    if plan_base == "starter" or (sub and (sub.get("price") in (299, 299.0, 2999, 2999.0) or sub.get("is_local_mode"))):
+        is_local_mode = True
+    elif sub and sub.get("plan_id"):
+        plan_doc = await db.plans.find_one({"id": sub["plan_id"]}, {"_id": 0})
+        if plan_doc and plan_doc.get("is_local_mode"):
+            is_local_mode = True
+
+    if "is_local_mode" in custom_features:
+        is_local_mode = bool(custom_features["is_local_mode"])
+
     return {
         "plan": plan_base,
         "plan_name": plan_name,
         "plan_id": plan_id,
         "status": status,
         "is_active": is_active,
+        "is_local_mode": is_local_mode,
         "staff_limit": staff_limit,
         "features": features,
         "custom_features": custom_features,
@@ -3923,9 +3946,11 @@ async def my_subscription(user: dict = Depends(get_current_user)):
     # Add limits & features context
     if tid:
         limits = await get_tenant_plan_limits(tid)
+        sub["is_local_mode"] = limits.get("is_local_mode", False)
         sub["limits"] = {
             "staff_limit": limits["staff_limit"],
-            "features": limits["features"]
+            "features": limits["features"],
+            "is_local_mode": limits.get("is_local_mode", False)
         }
         
         # Include payment history
@@ -3935,8 +3960,10 @@ async def my_subscription(user: dict = Depends(get_current_user)):
         ).sort("paid_at", -1).to_list(100)
         sub["payment_history"] = history
     else:
+        sub["is_local_mode"] = True
         sub["limits"] = {
             "staff_limit": 1,
+            "is_local_mode": True,
             "features": {
                 "billing": True,
                 "menu_crud": True,

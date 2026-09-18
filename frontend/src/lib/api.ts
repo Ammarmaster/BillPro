@@ -405,7 +405,74 @@ export const api = {
     return req(`/staff/waiters/${id}`, { method: "DELETE" });
   },
   
+  isLocalProcessingMode: () => {
+    const sub = memoryCache["/subscriptions/mine"];
+    if (!sub) return false;
+    if (sub.is_local_mode || sub.limits?.is_local_mode) return true;
+    const price = Number(sub.price || 0);
+    if (price === 299 || price === 2999) return true;
+    const pName = String(sub.plan_name || sub.plan_id || "").toLowerCase();
+    if (pName.includes("starter") || pName.includes("basic") || pName.includes("299")) return true;
+    return false;
+  },
+
   createOrder: async (payload: any) => {
+    const isLocal = api.isLocalProcessingMode();
+    if (isLocal) {
+      const localId = "ord_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      const nowIso = new Date().toISOString();
+      const localOrder = {
+        id: localId,
+        ...payload,
+        status: payload.status || "placed",
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      // 1. Instant local cache update
+      const list = memoryCache["/orders"] || [];
+      memoryCache["/orders"] = [localOrder, ...list];
+      setDiskCache("disk_cache_/orders", JSON.stringify(memoryCache["/orders"])).catch(() => {});
+      notifyCacheUpdate("/orders", memoryCache["/orders"]);
+
+      // 2. Instant table occupied status
+      if (payload.table_number) {
+        const tList = memoryCache["/tables"] || [];
+        const updatedTables = tList.map((t: any) => 
+          String(t.label).toLowerCase().trim() === String(payload.table_number).toLowerCase().trim()
+            ? { ...t, status: "occupied" }
+            : t
+        );
+        memoryCache["/tables"] = updatedTables;
+        setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+        notifyCacheUpdate("/tables", updatedTables);
+      }
+
+      // 3. Instant dashboard summary bump
+      const summary = memoryCache["/dashboard/summary"];
+      if (summary) {
+        summary.orders_total = (summary.orders_total || 0) + 1;
+        summary.orders_today = (summary.orders_today || 0) + 1;
+        summary.orders_open = (summary.orders_open || 0) + 1;
+        summary.pending_count = (summary.pending_count || 0) + 1;
+        notifyCacheUpdate("/dashboard/summary", summary);
+      }
+
+      // 4. Single background cloud update (no blocking / 0ms latency)
+      req("/orders", { method: "POST", body: JSON.stringify(payload) })
+        .then((cloudRes) => {
+          if (cloudRes && cloudRes.id) {
+            tempIdMap[localId] = cloudRes.id;
+            api.updateCachedOrder(localId, cloudRes);
+          }
+        })
+        .catch((err) => {
+          console.warn("[LocalMode] Background order cloud backup error:", err?.message);
+        });
+
+      return localOrder;
+    }
+
     const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
     const list = memoryCache["/orders"] || [];
     memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id)];
@@ -415,6 +482,22 @@ export const api = {
   },
   updateOrder: async (id: string, payload: any) => {
     const resolvedId = tempIdMap[id] || id;
+    const isLocal = api.isLocalProcessingMode();
+    if (isLocal) {
+      const list = memoryCache["/orders"] || [];
+      const updated = list.map((o: any) => (o.id === resolvedId || o.id === id) ? { ...o, ...payload, updated_at: new Date().toISOString() } : o);
+      memoryCache["/orders"] = updated;
+      setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/orders", updated);
+
+      req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) })
+        .catch((err) => {
+          console.warn("[LocalMode] Background order update error:", err?.message);
+        });
+
+      return { id: resolvedId, ...payload };
+    }
+
     const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
     const list = memoryCache["/orders"] || [];
     memoryCache["/orders"] = list.map((o: any) => o.id === resolvedId ? res : o);
@@ -425,12 +508,82 @@ export const api = {
   listOrders: (status?: string) => req(`/orders${status ? `?status_filter=${status}` : ""}`),
   updateOrderStatus: async (id: string, status: string) => {
     const resolvedId = tempIdMap[id] || id;
+    const isLocal = api.isLocalProcessingMode();
+    if (isLocal) {
+      api.updateOrderStatusInCache(resolvedId, status);
+      req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) })
+        .catch((err) => {
+          console.warn("[LocalMode] Background order status sync error:", err?.message);
+        });
+      return { id: resolvedId, status };
+    }
+
     const res = await req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
     clearCachePrefix("/dashboard/summary");
     return res;
   },
   
   createBill: async (payload: any) => {
+    const isLocal = api.isLocalProcessingMode();
+    if (isLocal) {
+      const localId = "bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      const nowIso = new Date().toISOString();
+      const items = payload.items || [];
+      const discount = Number(payload.discount || 0);
+      const taxPercent = Number(payload.tax_percent || 0);
+      const gstEnabled = !!payload.gst_enabled;
+      const serviceChargePercent = Number(payload.service_charge_percent || 0);
+
+      const calc = BillingEngine.calculate({
+        items,
+        discount,
+        taxPercent,
+        gstEnabled,
+        serviceChargePercent
+      });
+
+      const localBill = {
+        id: localId,
+        order_id: payload.order_id,
+        order_ids: payload.order_ids || (payload.order_id ? [payload.order_id] : []),
+        table_number: payload.table_number,
+        items,
+        subtotal: calc.subtotal,
+        discount: calc.discount,
+        taxable_amount: calc.taxableAmount,
+        tax: calc.tax,
+        cgst: calc.cgst,
+        sgst: calc.sgst,
+        service_charge: calc.serviceCharge,
+        round_off: calc.roundOff,
+        total: calc.total,
+        gst_enabled: gstEnabled,
+        tax_percent: taxPercent,
+        status: "unpaid",
+        created_at: nowIso,
+        payment_method: payload.payment_method || "UPI",
+      };
+
+      const bList = memoryCache["/bills"] || [];
+      memoryCache["/bills"] = [localBill, ...bList];
+      setDiskCache("disk_cache_/bills", JSON.stringify(memoryCache["/bills"])).catch(() => {});
+      notifyCacheUpdate("/bills", memoryCache["/bills"]);
+
+      // Single background cloud request
+      req("/bills", { method: "POST", body: JSON.stringify(payload) })
+        .then((cloudRes) => {
+          if (cloudRes && cloudRes.id) {
+            tempIdMap[localId] = cloudRes.id;
+            api.updateCachedBill(localId, cloudRes);
+          }
+        })
+        .catch((err) => {
+          console.warn("[LocalMode] Background bill sync error:", err?.message);
+        });
+
+      return localBill;
+    }
+
     const res = await req("/bills", { method: "POST", body: JSON.stringify(payload) });
     const list = memoryCache["/bills"] || [];
     memoryCache["/bills"] = [res, ...list.filter((b: any) => b.id !== res.id)];
@@ -439,6 +592,53 @@ export const api = {
   },
   markBillPaid: async (id: string, paymentMethod = "UPI") => {
     let resolvedId = tempIdMap[id] || id;
+    const isLocal = api.isLocalProcessingMode();
+
+    if (isLocal) {
+      const bList = memoryCache["/bills"] || [];
+      let targetBill: any = null;
+      const updatedBills = bList.map((b: any) => {
+        if (b.id === resolvedId || b.id === id) {
+          targetBill = { ...b, status: "paid", payment_method: paymentMethod, paid_at: new Date().toISOString() };
+          return targetBill;
+        }
+        return b;
+      });
+      memoryCache["/bills"] = updatedBills;
+      setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
+      notifyCacheUpdate("/bills", updatedBills);
+
+      const oList = memoryCache["/orders"] || [];
+      const orderIdsToSettle = targetBill?.order_ids || (targetBill?.order_id ? [targetBill.order_id] : []);
+      const updatedOrders = oList.map((o: any) => {
+        if (orderIdsToSettle.includes(o.id) || (targetBill?.table_number && String(o.table_number).toLowerCase() === String(targetBill.table_number).toLowerCase())) {
+          return { ...o, status: "paid" };
+        }
+        return o;
+      });
+      memoryCache["/orders"] = updatedOrders;
+      setDiskCache("disk_cache_/orders", JSON.stringify(updatedOrders)).catch(() => {});
+      notifyCacheUpdate("/orders", updatedOrders);
+
+      if (targetBill?.table_number) {
+        api.settleTableInCache(targetBill.table_number);
+      }
+
+      const summary = memoryCache["/dashboard/summary"];
+      if (summary && targetBill) {
+        summary.revenue_today = (summary.revenue_today || 0) + Number(targetBill.total || 0);
+        summary.orders_open = Math.max(0, (summary.orders_open || 0) - (orderIdsToSettle.length || 1));
+        notifyCacheUpdate("/dashboard/summary", summary);
+      }
+
+      // Single background cloud request
+      req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) })
+        .catch((err) => {
+          console.warn("[LocalMode] Background payment sync error:", err?.message);
+        });
+
+      return targetBill || { id, status: "paid", payment_method: paymentMethod };
+    }
 
     const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
     const bList = memoryCache["/bills"] || [];
@@ -460,6 +660,34 @@ export const api = {
     return res;
   },
   settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number) => {
+    const isLocal = api.isLocalProcessingMode();
+
+    if (isLocal) {
+      api.settleTableInCache(tableNumber);
+
+      const summary = memoryCache["/dashboard/summary"];
+      if (summary && total) {
+        summary.revenue_today = (summary.revenue_today || 0) + Number(total);
+        summary.orders_open = Math.max(0, (summary.orders_open || 0) - (orderIds?.length || 1));
+        notifyCacheUpdate("/dashboard/summary", summary);
+      }
+
+      // Single background cloud request
+      req("/bills/settle-table", {
+        method: "POST",
+        body: JSON.stringify({
+          table_number: tableNumber,
+          payment_method: paymentMethod,
+          order_ids: orderIds,
+          total
+        })
+      }).catch((err) => {
+        console.warn("[LocalMode] Background table settle sync error:", err?.message);
+      });
+
+      return { ok: true, table_number: tableNumber, status: "settled" };
+    }
+
     const res = await req("/bills/settle-table", {
       method: "POST",
       body: JSON.stringify({

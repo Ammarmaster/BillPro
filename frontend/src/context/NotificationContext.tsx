@@ -260,6 +260,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const connectWebSocket = () => {
     if (!user || !user.tenant_id) return;
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+      console.log("[WS] 1-User Local Plan active — live multi-user streaming socket skipped for max local performance.");
+      return;
+    }
     if (ws.current || isConnectingRef.current) return;
     isConnectingRef.current = true;
 

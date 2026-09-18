@@ -12,7 +12,18 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 
-type Plan = { id: string; name: string; price: number; interval: string; valid_days?: number; razorpay_plan_id?: string; features: string[]; is_active: boolean };
+type Plan = {
+  id: string;
+  name: string;
+  price: number;
+  interval: string;
+  valid_days?: number;
+  razorpay_plan_id?: string;
+  features: string[];
+  is_active: boolean;
+  is_local_mode?: boolean;
+  max_users?: number;
+};
 
 export default function AdminPlans() {
   const insets = useSafeAreaInsets();
@@ -31,6 +42,7 @@ export default function AdminPlans() {
   const [features, setFeatures] = useState("");
   const [validDays, setValidDays] = useState("30");
   const [razorpayPlanId, setRazorpayPlanId] = useState("");
+  const [isLocalMode, setIsLocalMode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Legal Settings Modal
@@ -46,6 +58,14 @@ export default function AdminPlans() {
     terms_version: "v1.0",
     privacy_version: "v1.0",
   });
+
+  const handlePriceChange = (val: string) => {
+    setPrice(val);
+    const num = parseFloat(val);
+    if (num === 299 || num === 2999) {
+      setIsLocalMode(true);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -101,8 +121,10 @@ export default function AdminPlans() {
         is_active: true,
         valid_days: d,
         razorpay_plan_id: razorpayPlanId.trim() || undefined,
+        is_local_mode: isLocalMode || p === 299 || p === 2999 || name.toLowerCase().includes("starter") || name.toLowerCase().includes("basic"),
+        max_users: isLocalMode ? 1 : undefined
       });
-      setName(""); setPrice(""); setFeatures(""); setValidDays("30"); setRazorpayPlanId(""); setModal(false);
+      setName(""); setPrice(""); setFeatures(""); setValidDays("30"); setRazorpayPlanId(""); setIsLocalMode(false); setModal(false);
       await load();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -190,11 +212,17 @@ export default function AdminPlans() {
               testID={`admin-plan-${item.id}`}
             >
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <Text style={[styles.cardName, { color: theme.onSurface }]}>{item.name}</Text>
                   <View style={styles.intervalBadge}>
                     <Text style={styles.intervalBadgeText}>{item.interval.toUpperCase()}</Text>
                   </View>
+                  {(item.is_local_mode || item.price === 299 || item.price === 2999 || item.name.toLowerCase().includes("starter") || item.name.toLowerCase().includes("basic")) && (
+                    <View style={styles.localBadge}>
+                      <Ionicons name="flash" size={11} color="#16A34A" />
+                      <Text style={styles.localBadgeText}>100% Local Speed (1 User)</Text>
+                    </View>
+                  )}
                 </View>
                 
                 <Text style={styles.cardPrice}>
@@ -273,8 +301,8 @@ export default function AdminPlans() {
                 <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Price (₹)</Text>
                 <TextInput
                   value={price}
-                  onChangeText={setPrice}
-                  placeholder="999"
+                  onChangeText={handlePriceChange}
+                  placeholder="299"
                   keyboardType="decimal-pad"
                   placeholderTextColor={theme.onSurfaceTertiary}
                   style={[styles.input, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, color: theme.onSurface }]}
@@ -294,6 +322,30 @@ export default function AdminPlans() {
                 />
               </View>
             </View>
+
+            {/* Local Mode Toggle */}
+            <Pressable
+              style={[
+                styles.toggleRow,
+                { backgroundColor: theme.surfaceTertiary, borderColor: isLocalMode ? "#16A34A" : theme.border }
+              ]}
+              onPress={() => setIsLocalMode(!isLocalMode)}
+            >
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="flash" size={14} color="#16A34A" />
+                  <Text style={[styles.toggleTitle, { color: theme.onSurface }]}>Local-First 0ms Engine (1 User)</Text>
+                </View>
+                <Text style={[styles.toggleSub, { color: theme.onSurfaceSecondary }]}>
+                  Processes orders and bills 100% locally on device with single background cloud backup. Perfect for ₹299/₹2999 plans.
+                </Text>
+              </View>
+              <Ionicons
+                name={isLocalMode ? "checkbox" : "square-outline"}
+                size={24}
+                color={isLocalMode ? "#16A34A" : theme.onSurfaceTertiary}
+              />
+            </Pressable>
 
             <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Billing Cycle</Text>
             <View style={styles.intervalRow}>
@@ -498,6 +550,8 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 17, fontWeight: "800" },
   intervalBadge: { backgroundColor: "rgba(99, 91, 255, 0.12)", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
   intervalBadgeText: { color: "#635BFF", fontSize: 9, fontWeight: "900" },
+  localBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#DCFCE7", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  localBadgeText: { color: "#166534", fontSize: 9, fontWeight: "800" },
   cardPrice: { color: "#635BFF", fontSize: 18, fontWeight: "900", marginTop: 4 },
   featuresBox: { marginTop: 8, gap: 4 },
   cardFeat: { fontSize: 12, fontWeight: "500" },
@@ -510,6 +564,9 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: "900" },
   label: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginTop: spacing.sm, marginBottom: 4 },
   input: { borderRadius: radius.md, padding: spacing.md, borderWidth: 1, fontSize: 13, fontWeight: "500", marginBottom: spacing.xs },
+  toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.md, borderRadius: radius.md, borderWidth: 1, marginVertical: spacing.xs },
+  toggleTitle: { fontSize: 13, fontWeight: "800" },
+  toggleSub: { fontSize: 11, marginTop: 2, lineHeight: 15 },
   intervalRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xs },
   intervalChip: { flex: 1, paddingVertical: 10, borderRadius: radius.md, borderWidth: 1, alignItems: "center" },
   intervalChipActive: { backgroundColor: "#635BFF", borderColor: "#635BFF" },
