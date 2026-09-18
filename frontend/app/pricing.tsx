@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
-  Dimensions,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,11 +23,12 @@ export default function PricingScreen() {
     {
       id: "starter",
       name: "Starter 100% Local",
-      badge: "BEST FOR SINGLE OUTLET",
+      badge: "⭐ MOST POPULAR FOR STANDALONE OUTLETS",
       popular: true,
       priceMonthly: 299,
       priceYearly: 2999,
-      tagline: "Ultra-fast 0ms local speed for standalone restaurants & cafes",
+      tagline: "Ultra-fast 0ms local speed for standalone restaurants, cafes & bakeries",
+      cursiveNote: "✨ 0ms local engine · Single outlet favorite",
       features: [
         "100% Local 0ms Billing Engine",
         "Complete Table Management & Visual Matrix",
@@ -48,6 +49,7 @@ export default function PricingScreen() {
       priceMonthly: 999,
       priceYearly: 9999,
       tagline: "Designed for busy dine-in spots with captain apps and kitchen displays",
+      cursiveNote: "📱 Up to 5 Waiter Captains & KDS",
       features: [
         "Everything in Starter Plan",
         "Multi-Waiter Captain System (Up to 5 Users)",
@@ -68,6 +70,7 @@ export default function PricingScreen() {
       priceMonthly: 1999,
       priceYearly: 19999,
       tagline: "For large multi-floor restaurants, bars, breweries, & chains",
+      cursiveNote: "🚀 Multi-floor KOT & QR Table Ordering",
       features: [
         "Everything in Growth Plan",
         "Unlimited Staff, Captains & Kitchen Displays",
@@ -97,11 +100,11 @@ export default function PricingScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0A0E" />
+      <StatusBar barStyle="light-content" backgroundColor="#08090C" />
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          isDesktop && { maxWidth: 1160, alignSelf: "center", width: "100%" },
+          isDesktop && { maxWidth: 1180, alignSelf: "center", width: "100%" },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -112,32 +115,41 @@ export default function PricingScreen() {
             onPress={() => router.back()}
             activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.logoRow}>
             <View style={styles.logoBadge}>
               <Ionicons name="restaurant" size={18} color="#FFFFFF" />
             </View>
-            <Text style={styles.logoText}>EzBill Pricing</Text>
+            <Text style={styles.logoText}>EzBill <Text style={styles.logoSubText}>Pricing</Text></Text>
           </View>
           <TouchableOpacity
             style={styles.loginBtn}
             onPress={() => router.push("/login")}
             activeOpacity={0.8}
           >
-            <Text style={styles.loginBtnText}>Login</Text>
+            <Text style={styles.loginBtnText}>Portal Login</Text>
           </TouchableOpacity>
         </View>
 
         {/* Hero Section */}
         <View style={styles.hero}>
           <View style={styles.pillBadge}>
-            <Ionicons name="pricetags" size={12} color="#818CF8" />
-            <Text style={styles.pillText}>TRANSPARENT & AFFORDABLE</Text>
+            <View style={styles.pillDot} />
+            <Text style={styles.pillText}>HONEST & TRANSPARENT RESTAURANT PRICING</Text>
           </View>
-          <Text style={styles.heroTitle}>Simple Plans for Growing Restaurants</Text>
+          
+          <Text style={styles.heroTitle}>
+            Simple, Transparent Plans for Every Restaurant
+          </Text>
+
           <Text style={styles.heroSub}>
-            No hidden setup fees. No sales commissions. Upgrade or cancel anytime.
+            Zero setup fees. Zero commission on food orders. Upgrade, switch, or cancel anytime.
+          </Text>
+
+          {/* Cursive Accent Tag */}
+          <Text style={styles.cursiveTag}>
+            ✨ Keep 100% of your restaurant profits · Zero hidden charges
           </Text>
 
           {/* Billing Cycle Toggle */}
@@ -158,7 +170,7 @@ export default function PricingScreen() {
               activeOpacity={0.8}
             >
               <Text style={[styles.toggleText, isYearly && styles.toggleTextActive]}>
-                Yearly Billing
+                Annual Billing
               </Text>
               <View style={styles.discountBadge}>
                 <Text style={styles.discountText}>SAVE 20%</Text>
@@ -189,6 +201,9 @@ export default function PricingScreen() {
                 <Text style={styles.tierName}>{tier.name}</Text>
                 <Text style={styles.tierTagline}>{tier.tagline}</Text>
 
+                {/* Cursive mini callout */}
+                <Text style={styles.cardCursive}>{tier.cursiveNote}</Text>
+
                 <View style={styles.priceRow}>
                   <Text style={styles.priceCurrency}>₹</Text>
                   <Text style={styles.priceNumber}>{price.toLocaleString("en-IN")}</Text>
@@ -202,11 +217,11 @@ export default function PricingScreen() {
 
                 <View style={styles.divider} />
 
-                <Text style={styles.featuresHeading}>What's included:</Text>
+                <Text style={styles.featuresHeading}>Everything included:</Text>
                 <View style={styles.featuresList}>
                   {tier.features.map((feat, i) => (
                     <View key={i} style={styles.featureItem}>
-                      <Ionicons name="checkmark-circle" size={16} color="#10B981" style={{ marginTop: 2 }} />
+                      <Ionicons name="checkmark-circle" size={17} color="#10B981" style={{ marginTop: 1 }} />
                       <Text style={styles.featureText}>{feat}</Text>
                     </View>
                   ))}
@@ -228,13 +243,14 @@ export default function PricingScreen() {
 
         {/* Feature Comparison Matrix for Desktop / Tablet */}
         <View style={styles.matrixSection}>
-          <Text style={styles.matrixTitle}>Plan Comparison Matrix</Text>
+          <Text style={styles.matrixTitle}>Detailed Feature Matrix</Text>
+          <Text style={styles.matrixSub}>Compare capabilities across all EzBill tiers</Text>
           <View style={styles.tableWrapper}>
             <View style={[styles.tableRow, styles.tableHeader]}>
               <Text style={[styles.tableCell, styles.tableCellFeat, { fontWeight: "800", color: "#FFFFFF" }]}>Feature</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#635BFF" }]}>Starter (₹299)</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#818CF8" }]}>Growth (₹999)</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Pro (₹1999)</Text>
+              <Text style={[styles.tableCell, { fontWeight: "800", color: "#FF7D52" }]}>Starter (₹299)</Text>
+              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Growth (₹999)</Text>
+              <Text style={[styles.tableCell, { fontWeight: "800", color: "#FBBF24" }]}>Pro (₹1,999)</Text>
             </View>
             {comparisonRows.map((row, idx) => (
               <View key={idx} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
@@ -250,9 +266,9 @@ export default function PricingScreen() {
         {/* Live Demo Banner */}
         <View style={styles.demoBanner}>
           <View style={{ flex: 1, marginRight: 16 }}>
-            <Text style={styles.demoBannerTitle}>Want to test billing first?</Text>
+            <Text style={styles.demoBannerTitle}>Want to test the billing engine first?</Text>
             <Text style={styles.demoBannerSub}>
-              Try our interactive billing demo without signing up or creating an account.
+              Experience our 0ms table ordering, float-safe GST calculations, and thermal receipt previews right in your browser.
             </Text>
           </View>
           <TouchableOpacity
@@ -260,8 +276,25 @@ export default function PricingScreen() {
             onPress={() => router.push("/demo-billing")}
             activeOpacity={0.85}
           >
-            <Text style={styles.demoBannerBtnText}>Try Demo Billing</Text>
+            <Ionicons name="play-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.demoBannerBtnText}>Launch Demo</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Trust Badges */}
+        <View style={styles.trustFooter}>
+          <View style={styles.trustItem}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#10B981" />
+            <Text style={styles.trustText}>100% Float-Safe GST Math</Text>
+          </View>
+          <View style={styles.trustItem}>
+            <Ionicons name="flash-outline" size={20} color="#FF7D52" />
+            <Text style={styles.trustText}>0ms Offline Local Speed</Text>
+          </View>
+          <View style={styles.trustItem}>
+            <Ionicons name="cloud-done-outline" size={20} color="#34D399" />
+            <Text style={styles.trustText}>Encrypted Cloud Backup</Text>
+          </View>
         </View>
 
         {/* SEO Keywords Footer */}
@@ -278,7 +311,7 @@ export default function PricingScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0A0A0E" },
+  safe: { flex: 1, backgroundColor: "#08090C" },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
 
   topBar: {
@@ -290,28 +323,40 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    backgroundColor: "#16161C",
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     justifyContent: "center",
     alignItems: "center",
   },
   logoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   logoBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#635BFF",
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#FF5E2B",
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
   },
-  logoText: { fontSize: 18, fontWeight: "800", color: "#FFFFFF" },
+  logoText: { fontSize: 18, fontWeight: "900", color: "#FFFFFF" },
+  logoSubText: {
+    color: "#34D399",
+    fontFamily: Platform.OS === "web" ? "'Playfair Display', Georgia, serif" : undefined,
+    fontStyle: "italic",
+    fontWeight: "700",
+  },
   loginBtn: {
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
     borderWidth: 1,
-    borderColor: "#2E2E38",
-    paddingVertical: 6,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    paddingVertical: 7,
     paddingHorizontal: 16,
-    borderRadius: 20,
+    borderRadius: 12,
   },
   loginBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
 
@@ -319,51 +364,64 @@ const styles = StyleSheet.create({
   pillBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(99, 91, 255, 0.12)",
+    gap: 8,
+    backgroundColor: "rgba(255, 94, 43, 0.12)",
     borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.3)",
-    paddingVertical: 5,
-    paddingHorizontal: 14,
+    borderColor: "rgba(255, 94, 43, 0.35)",
+    paddingVertical: 6,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  pillText: { color: "#818CF8", fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  pillDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" },
+  pillText: { color: "#FF8A3D", fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
   heroTitle: {
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: "900",
     color: "#FFFFFF",
     textAlign: "center",
-    letterSpacing: -0.5,
-    lineHeight: 38,
+    letterSpacing: -0.8,
+    lineHeight: 40,
     marginBottom: spacing.xs,
+    maxWidth: 720,
   },
   heroSub: {
     fontSize: 14,
     color: "#94A3B8",
     textAlign: "center",
     maxWidth: 620,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs,
+    lineHeight: 22,
+  },
+  cursiveTag: {
+    fontFamily: Platform.OS === "web" ? "'Caveat', cursive, sans-serif" : undefined,
+    fontSize: 22,
+    color: "#FDBA74",
+    fontWeight: "600",
+    textAlign: "center",
+    marginVertical: spacing.sm,
+    letterSpacing: 0.2,
   },
 
   toggleContainer: {
     flexDirection: "row",
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
     padding: 4,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#2E2E38",
+    borderColor: "rgba(255, 255, 255, 0.08)",
     gap: 4,
+    marginTop: spacing.md,
   },
   toggleBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
     borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-  toggleBtnActive: { backgroundColor: "#635BFF" },
+  toggleBtnActive: { backgroundColor: "#FF5E2B", shadowColor: "#FF5E2B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
   toggleText: { color: "#94A3B8", fontSize: 13, fontWeight: "700" },
   toggleTextActive: { color: "#FFFFFF" },
   discountBadge: {
@@ -382,47 +440,58 @@ const styles = StyleSheet.create({
     marginVertical: spacing.xl,
   },
   card: {
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(18, 22, 28, 0.85)",
     borderWidth: 1,
-    borderColor: "#2E2E38",
+    borderColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 24,
     padding: spacing.xl,
     width: "100%",
     position: "relative",
   },
   cardPopular: {
-    borderColor: "#635BFF",
-    backgroundColor: "#181824",
-    shadowColor: "#635BFF",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
+    borderColor: "#FF5E2B",
+    backgroundColor: "rgba(26, 32, 42, 0.95)",
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 28,
   },
   popularBadge: {
     position: "absolute",
     top: -12,
     left: "50%",
-    transform: [{ translateX: -70 }],
-    backgroundColor: "#635BFF",
+    transform: [{ translateX: -115 }],
+    backgroundColor: "#FF5E2B",
     paddingVertical: 4,
     paddingHorizontal: 14,
     borderRadius: 12,
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
   },
-  popularBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900" },
+  popularBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900", letterSpacing: 0.3 },
 
-  tierName: { fontSize: 20, fontWeight: "800", color: "#FFFFFF", marginTop: 4 },
-  tierTagline: { fontSize: 12, color: "#94A3B8", marginTop: 4, minHeight: 32 },
+  tierName: { fontSize: 21, fontWeight: "800", color: "#FFFFFF", marginTop: 4 },
+  tierTagline: { fontSize: 13, color: "#94A3B8", marginTop: 4, minHeight: 36, lineHeight: 18 },
+  cardCursive: {
+    fontFamily: Platform.OS === "web" ? "'Caveat', cursive, sans-serif" : undefined,
+    fontSize: 18,
+    color: "#A7F3D0",
+    fontWeight: "600",
+    marginTop: 2,
+  },
   priceRow: { flexDirection: "row", alignItems: "baseline", marginTop: 12 },
-  priceCurrency: { fontSize: 20, fontWeight: "800", color: "#635BFF" },
-  priceNumber: { fontSize: 36, fontWeight: "900", color: "#FFFFFF", marginLeft: 2 },
-  pricePeriod: { fontSize: 13, color: "#94A3B8", fontWeight: "600", marginLeft: 6 },
-  effectiveMonthly: { fontSize: 11, color: "#10B981", fontWeight: "700", marginTop: 2 },
+  priceCurrency: { fontSize: 22, fontWeight: "800", color: "#FF5E2B" },
+  priceNumber: { fontSize: 38, fontWeight: "900", color: "#FFFFFF", marginLeft: 2, letterSpacing: -0.5 },
+  pricePeriod: { fontSize: 14, color: "#94A3B8", fontWeight: "600", marginLeft: 6 },
+  effectiveMonthly: { fontSize: 12, color: "#10B981", fontWeight: "700", marginTop: 2 },
 
-  divider: { height: 1, backgroundColor: "#2E2E38", marginVertical: spacing.lg },
-  featuresHeading: { fontSize: 12, fontWeight: "800", color: "#818CF8", textTransform: "uppercase", marginBottom: spacing.sm },
-  featuresList: { gap: 10, marginBottom: spacing.xl },
+  divider: { height: 1, backgroundColor: "rgba(255, 255, 255, 0.08)", marginVertical: spacing.lg },
+  featuresHeading: { fontSize: 12, fontWeight: "800", color: "#FF8A3D", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm },
+  featuresList: { gap: 11, marginBottom: spacing.xl },
   featureItem: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  featureText: { fontSize: 13, color: "#CBD5E1", flex: 1, lineHeight: 18 },
+  featureText: { fontSize: 13, color: "#CBD5E1", flex: 1, lineHeight: 19 },
 
   ctaButton: {
     paddingVertical: 14,
@@ -430,39 +499,46 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  ctaPrimary: { backgroundColor: "#635BFF" },
-  ctaSecondary: { backgroundColor: "#262630", borderWidth: 1, borderColor: "#3E3E4C" },
+  ctaPrimary: {
+    backgroundColor: "#FF5E2B",
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+  },
+  ctaSecondary: { backgroundColor: "rgba(255, 255, 255, 0.04)", borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.12)" },
   ctaText: { fontSize: 14, fontWeight: "800" },
   ctaPrimaryText: { color: "#FFFFFF" },
   ctaSecondaryText: { color: "#FFFFFF" },
 
   matrixSection: { marginVertical: spacing.xxl },
-  matrixTitle: { fontSize: 22, fontWeight: "800", color: "#FFFFFF", textAlign: "center", marginBottom: spacing.lg },
+  matrixTitle: { fontSize: 24, fontWeight: "800", color: "#FFFFFF", textAlign: "center", marginBottom: 4 },
+  matrixSub: { fontSize: 13, color: "#94A3B8", textAlign: "center", marginBottom: spacing.lg },
   tableWrapper: {
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(18, 22, 28, 0.85)",
     borderWidth: 1,
-    borderColor: "#2E2E38",
-    borderRadius: 16,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 20,
     overflow: "hidden",
   },
   tableRow: {
     flexDirection: "row",
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#2E2E38",
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
     alignItems: "center",
   },
-  tableHeader: { backgroundColor: "#1C1C24" },
-  tableRowAlt: { backgroundColor: "rgba(255, 255, 255, 0.02)" },
+  tableHeader: { backgroundColor: "rgba(255, 255, 255, 0.03)" },
+  tableRowAlt: { backgroundColor: "rgba(255, 255, 255, 0.015)" },
   tableCell: { flex: 1, fontSize: 12, color: "#94A3B8", textAlign: "center" },
   tableCellFeat: { flex: 1.8, textAlign: "left", color: "#E2E8F0", fontWeight: "600" },
 
   demoBanner: {
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(18, 22, 28, 0.85)",
     borderWidth: 1,
-    borderColor: "rgba(99, 91, 255, 0.4)",
-    borderRadius: 20,
+    borderColor: "rgba(255, 94, 43, 0.4)",
+    borderRadius: 22,
     padding: spacing.xl,
     flexDirection: "row",
     alignItems: "center",
@@ -471,20 +547,35 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.md,
   },
-  demoBannerTitle: { fontSize: 17, fontWeight: "800", color: "#FFFFFF" },
-  demoBannerSub: { fontSize: 12, color: "#94A3B8", marginTop: 4 },
+  demoBannerTitle: { fontSize: 18, fontWeight: "800", color: "#FFFFFF" },
+  demoBannerSub: { fontSize: 13, color: "#94A3B8", marginTop: 4, lineHeight: 19 },
   demoBannerBtn: {
-    backgroundColor: "#635BFF",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#10B981",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
   },
-  demoBannerBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  demoBannerBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+
+  trustFooter: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 24,
+    flexWrap: "wrap",
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+  },
+  trustItem: { flexDirection: "row", alignItems: "center", gap: 8 },
+  trustText: { color: "#CBD5E1", fontSize: 13, fontWeight: "600" },
 
   footer: {
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
     borderTopWidth: 1,
-    borderTopColor: "#1E1E26",
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
     paddingTop: spacing.xl,
     alignItems: "center",
   },

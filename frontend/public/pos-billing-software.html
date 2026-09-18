@@ -32,7 +32,12 @@
   <link rel="icon" type="image/png" href="/icon-192.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#0F172A" />
+  <meta name="theme-color" content="#07080B" />
+
+  <!-- Google Fonts: Plus Jakarta Sans, Caveat Cursive, Playfair Display & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <!-- Structured Data: JSON-LD for Google Rich Results -->
   <script type="application/ld+json">
@@ -101,476 +106,1302 @@
 
   <style>
     :root {
-      --brand: #635BFF;
-      --brand-hover: #4F46E5;
-      --brand-light: #EEF2FF;
-      --dark-bg: #0A0A0E;
-      --card-bg: #16161C;
-      --border-color: #2E2E38;
-      --text-main: #FFFFFF;
-      --text-muted: #94A3B8;
-      --success: #10B981;
-      --warning: #F59E0B;
+      --bg-dark: #08090C;
+      --bg-card: rgba(18, 22, 28, 0.8);
+      --bg-card-hover: rgba(26, 32, 42, 0.95);
+      --border-light: rgba(255, 255, 255, 0.08);
+      
+      /* Vibrant Orange & Emerald Green Theme */
+      --brand-orange: #FF5E2B;
+      --brand-orange-light: #FF7D52;
+      --brand-orange-glow: rgba(255, 94, 43, 0.35);
+      --brand-gradient: linear-gradient(135deg, #FF5E2B 0%, #FF8A3D 50%, #FFA84A 100%);
+      
+      --brand-green: #10B981;
+      --brand-green-light: #34D399;
+      --brand-green-glow: rgba(16, 185, 129, 0.35);
+      --green-gradient: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      
+      --accent-amber: #F59E0B;
+      --text-main: #F8FAFC;
+      --text-sub: #94A3B8;
+      --text-muted: #64748B;
+      
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-display: 'Playfair Display', Georgia, serif;
+      --font-cursive: 'Caveat', cursive, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
     }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
+
     body {
-      background-color: var(--dark-bg);
+      background-color: var(--bg-dark);
       color: var(--text-main);
+      font-family: var(--font-main);
       line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
+
+    /* Ambient Background Glows */
+    .ambient-glow-1 {
+      position: absolute;
+      top: -150px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(255, 94, 43, 0.18) 0%, rgba(255, 138, 61, 0.08) 45%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .ambient-glow-2 {
+      position: absolute;
+      top: 1300px;
+      left: -200px;
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
+      filter: blur(100px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .ambient-glow-3 {
+      position: absolute;
+      top: 2700px;
+      right: -200px;
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(255, 94, 43, 0.12) 0%, transparent 70%);
+      filter: blur(100px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Cursive Callouts */
+    .cursive-tag {
+      font-family: var(--font-cursive);
+      font-size: 23px;
+      color: #FDBA74;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transform: rotate(-1.5deg);
+      text-shadow: 0 0 14px rgba(255, 94, 43, 0.3);
+    }
+
+    .cursive-badge {
+      font-family: var(--font-cursive);
+      font-size: 20px;
+      color: #A7F3D0;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px dashed rgba(16, 185, 129, 0.45);
+      padding: 3px 14px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Header Navigation */
     header {
       position: sticky;
       top: 0;
-      background: rgba(10, 10, 14, 0.9);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border-color);
-      z-index: 100;
-      padding: 16px 24px;
+      background: rgba(8, 9, 12, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-light);
+      z-index: 1000;
+      padding: 14px 24px;
+      transition: all 0.3s ease;
     }
+
     .nav-container {
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
+
     .logo {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       text-decoration: none;
       color: #FFF;
-      font-size: 22px;
-      font-weight: 800;
+      font-size: 23px;
+      font-weight: 900;
       letter-spacing: -0.5px;
     }
+
     .logo-badge {
-      background: linear-gradient(135deg, #635BFF, #4F46E5);
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
+      background: var(--brand-gradient);
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
+      font-size: 20px;
+      box-shadow: 0 4px 16px var(--brand-orange-glow);
     }
+
+    .logo span em {
+      font-family: var(--font-display);
+      font-style: italic;
+      color: #34D399;
+      font-weight: 600;
+      font-size: 19px;
+      margin-left: 2px;
+    }
+
     .nav-links {
       display: flex;
-      gap: 20px;
+      gap: 24px;
       align-items: center;
     }
+
     .nav-links a {
-      color: var(--text-muted);
+      color: var(--text-sub);
       text-decoration: none;
       font-size: 14px;
       font-weight: 600;
       transition: color 0.2s;
     }
+
     .nav-links a:hover {
       color: #FFF;
     }
+
     .btn {
-      padding: 10px 20px;
-      border-radius: 10px;
+      padding: 11px 22px;
+      border-radius: 12px;
       text-decoration: none;
       font-size: 14px;
-      font-weight: 700;
+      font-weight: 800;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      transition: all 0.2s;
+      gap: 8px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       cursor: pointer;
     }
+
     .btn-primary {
-      background: linear-gradient(135deg, #635BFF, #4F46E5);
+      background: var(--brand-gradient);
       color: #FFF;
       border: none;
-      box-shadow: 0 4px 14px rgba(99, 91, 255, 0.35);
+      box-shadow: 0 6px 20px var(--brand-orange-glow);
     }
+
     .btn-primary:hover {
-      opacity: 0.95;
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(255, 94, 43, 0.55);
     }
+
     .btn-secondary {
-      background: var(--card-bg);
+      background: rgba(255, 255, 255, 0.04);
       color: #FFF;
-      border: 1px solid var(--border-color);
+      border: 1px solid var(--border-light);
+      backdrop-filter: blur(10px);
     }
+
     .btn-secondary:hover {
-      border-color: #635BFF;
+      border-color: rgba(255, 94, 43, 0.5);
+      background: rgba(255, 94, 43, 0.08);
+      transform: translateY(-2px);
     }
+
+    /* Hero Section */
     .hero {
-      max-width: 1200px;
+      position: relative;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 80px 24px 60px;
+      padding: 80px 24px 70px;
       text-align: center;
+      z-index: 1;
     }
-    .tagline-badge {
+
+    .pill-hero {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      background: rgba(99, 91, 255, 0.12);
-      border: 1px solid rgba(99, 91, 255, 0.3);
-      padding: 6px 16px;
+      gap: 10px;
+      background: rgba(255, 94, 43, 0.12);
+      border: 1px solid rgba(255, 94, 43, 0.35);
+      padding: 7px 18px;
       border-radius: 999px;
-      color: #818CF8;
+      color: #FF8A3D;
       font-size: 12px;
       font-weight: 800;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
       text-transform: uppercase;
       margin-bottom: 24px;
+      box-shadow: 0 0 20px rgba(255, 94, 43, 0.15);
     }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 10px #10B981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.6; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.2); }
+      100% { opacity: 0.6; transform: scale(0.9); }
+    }
+
     h1 {
-      font-size: clamp(32px, 5vw, 56px);
+      font-size: clamp(34px, 5.5vw, 62px);
       font-weight: 900;
-      line-height: 1.15;
+      line-height: 1.12;
       letter-spacing: -1.5px;
       margin-bottom: 20px;
-      background: linear-gradient(180deg, #FFFFFF 0%, #CBD5E1 100%);
+      max-width: 980px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    h1 .serif-accent {
+      font-family: var(--font-display);
+      font-style: italic;
+      font-weight: 700;
+      background: linear-gradient(135deg, #FF9E66 0%, #FF5E2B 50%, #34D399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      padding-right: 4px;
+    }
+
+    h1 .gradient-text {
+      background: linear-gradient(180deg, #FFFFFF 20%, #CBD5E1 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    .hero p {
-      font-size: clamp(16px, 2vw, 20px);
-      color: var(--text-muted);
-      max-width: 780px;
+
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 19px);
+      color: var(--text-sub);
+      max-width: 820px;
       margin: 0 auto 36px;
+      line-height: 1.65;
     }
+
     .hero-actions {
       display: flex;
       gap: 16px;
       justify-content: center;
       flex-wrap: wrap;
-      margin-bottom: 48px;
+      margin-bottom: 28px;
     }
-    .hero-perks {
+
+    .hero-note {
+      margin-bottom: 40px;
+    }
+
+    .trust-row {
       display: flex;
       justify-content: center;
+      align-items: center;
       gap: 28px;
       flex-wrap: wrap;
-      color: var(--text-muted);
+      color: var(--text-sub);
       font-size: 13px;
       font-weight: 600;
+      padding: 16px 24px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-light);
+      border-radius: 999px;
+      max-width: 860px;
+      margin: 0 auto;
     }
-    .hero-perks span {
+
+    .trust-row span {
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .section-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 60px 24px;
+
+    /* Live Interactive Billing Showcase Mockup */
+    .showcase-wrapper {
+      position: relative;
+      margin-top: 50px;
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(255, 94, 43, 0.25) 0%, rgba(16, 185, 129, 0.1) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 32px;
+      box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.8), 0 0 50px rgba(255, 94, 43, 0.15);
+      backdrop-filter: blur(16px);
     }
-    .section-title {
-      text-align: center;
-      margin-bottom: 48px;
-    }
-    .section-title h2 {
-      font-size: 32px;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      margin-bottom: 12px;
-    }
-    .section-title p {
-      color: var(--text-muted);
-      font-size: 16px;
-    }
-    .grid-3 {
+
+    .showcase-inner {
+      background: #0D1017;
+      border-radius: 22px;
+      padding: 28px;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 24px;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 28px;
+      text-align: left;
     }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 20px;
-      padding: 32px;
-      transition: all 0.25s;
+
+    @media (max-width: 900px) {
+      .showcase-inner {
+        grid-template-columns: 1fr;
+      }
     }
-    .card:hover {
-      border-color: rgba(99, 91, 255, 0.4);
-      transform: translateY(-3px);
-    }
-    .card-icon {
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-      background: rgba(99, 91, 255, 0.12);
+
+    .mockup-header {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 24px;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      padding-bottom: 16px;
       margin-bottom: 20px;
     }
-    .card h3 {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 12px;
-    }
-    .card p {
-      color: var(--text-muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-    .pricing-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
-      margin-top: 40px;
-    }
-    .pricing-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 24px;
-      padding: 36px 28px;
-      position: relative;
-    }
-    .pricing-card.featured {
-      border-color: #635BFF;
-      box-shadow: 0 0 30px rgba(99, 91, 255, 0.15);
-    }
-    .pricing-badge {
-      position: absolute;
-      top: -12px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #635BFF;
-      color: #FFF;
-      font-size: 11px;
+
+    .mockup-title {
+      font-size: 16px;
       font-weight: 800;
-      text-transform: uppercase;
-      padding: 4px 14px;
-      border-radius: 20px;
-    }
-    .price-num {
-      font-size: 38px;
-      font-weight: 900;
       color: #FFF;
-      margin: 16px 0 6px;
-    }
-    .pricing-features {
-      list-style: none;
-      margin: 24px 0 32px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .pricing-features li {
-      font-size: 14px;
-      color: var(--text-muted);
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .pricing-features li strong {
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 10px #10B981;
+    }
+
+    /* Table Grid Matrix */
+    .table-matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .t-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-light);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+
+    .t-card.occupied {
+      border-color: rgba(255, 94, 43, 0.45);
+      background: rgba(255, 94, 43, 0.06);
+    }
+
+    .t-card.billed {
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.06);
+    }
+
+    .t-card.vacant {
+      border-color: rgba(16, 185, 129, 0.25);
+      background: rgba(16, 185, 129, 0.03);
+    }
+
+    .t-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .t-status {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .t-status.occ { background: rgba(255, 94, 43, 0.2); color: #FF8A3D; }
+    .t-status.bil { background: rgba(16, 185, 129, 0.2); color: #34D399; }
+    .t-status.vac { background: rgba(16, 185, 129, 0.15); color: #10B981; }
+
+    .t-body {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .t-price {
+      font-weight: 800;
+      color: #FFF;
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    /* Thermal Bill Paper Simulation */
+    .receipt-paper {
+      background: #FAFAFA;
+      color: #1E293B;
+      border-radius: 12px;
+      padding: 20px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      position: relative;
+    }
+
+    .receipt-paper::after {
+      content: "";
+      position: absolute;
+      bottom: -8px;
+      left: 0;
+      right: 0;
+      height: 8px;
+      background: repeating-linear-gradient(45deg, #FAFAFA, #FAFAFA 5px, transparent 5px, transparent 10px);
+    }
+
+    .receipt-center {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .receipt-title {
+      font-weight: 800;
+      font-size: 15px;
+      color: #0F172A;
+    }
+
+    .receipt-divider {
+      border-bottom: 1px dashed #CBD5E1;
+      margin: 8px 0;
+    }
+
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 3px 0;
+    }
+
+    .receipt-total {
+      font-weight: 800;
+      font-size: 14px;
+      color: #0F172A;
+      margin-top: 4px;
+    }
+
+    /* Section Containers */
+    .section-container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 80px 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-title {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    .section-title h2 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 900;
+      letter-spacing: -0.8px;
+      margin-bottom: 14px;
+    }
+
+    .section-title h2 .serif-accent {
+      font-family: var(--font-display);
+      font-style: italic;
+      font-weight: 700;
+      color: #FF7D52;
+    }
+
+    .section-title p {
+      color: var(--text-sub);
+      font-size: 16px;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* Bento Grid */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 960px) {
+      .bento-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bento-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 24px;
+      padding: 32px;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .bento-card:hover {
+      border-color: rgba(255, 94, 43, 0.4);
+      background: var(--bg-card-hover);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.7), 0 0 25px rgba(255, 94, 43, 0.15);
+    }
+
+    .bento-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      background: rgba(255, 94, 43, 0.12);
+      border: 1px solid rgba(255, 94, 43, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 22px;
+    }
+
+    .bento-card h3 {
+      font-size: 21px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      color: #FFF;
+      letter-spacing: -0.3px;
+    }
+
+    .bento-card p {
+      color: var(--text-sub);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .bento-footer {
+      margin-top: 20px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Hardware Matrix Showcase */
+    .hardware-banner {
+      background: linear-gradient(135deg, rgba(24, 18, 14, 0.9) 0%, rgba(14, 24, 20, 0.8) 100%);
+      border: 1px solid rgba(255, 94, 43, 0.25);
+      border-radius: 28px;
+      padding: 40px;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 32px;
+      align-items: center;
+      margin: 40px 0;
+    }
+
+    @media (max-width: 860px) {
+      .hardware-banner {
+        grid-template-columns: 1fr;
+        padding: 24px;
+      }
+    }
+
+    .hw-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34D399;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .hardware-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .hw-chip {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-light);
+      padding: 6px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #E2E8F0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Pricing Section */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 40px;
+    }
+
+    @media (max-width: 960px) {
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .pricing-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 28px;
+      padding: 38px 28px;
+      position: relative;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.3s ease;
+    }
+
+    .pricing-card.featured {
+      background: linear-gradient(180deg, rgba(255, 94, 43, 0.12) 0%, rgba(26, 32, 42, 0.95) 100%);
+      border-color: #FF5E2B;
+      box-shadow: 0 20px 40px -10px rgba(255, 94, 43, 0.3);
+      transform: scale(1.03);
+    }
+
+    @media (max-width: 960px) {
+      .pricing-card.featured {
+        transform: none;
+      }
+    }
+
+    .featured-ribbon {
+      position: absolute;
+      top: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--brand-gradient);
+      color: #FFF;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 5px 16px;
+      border-radius: 999px;
+      box-shadow: 0 4px 14px rgba(255, 94, 43, 0.4);
+    }
+
+    .plan-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #FFF;
+      margin-bottom: 4px;
+    }
+
+    .plan-tagline {
+      font-size: 13px;
+      color: var(--text-sub);
+      min-height: 38px;
+    }
+
+    .plan-price-row {
+      margin: 20px 0 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .plan-curr {
+      font-size: 24px;
+      font-weight: 800;
+      color: #FF5E2B;
+    }
+
+    .plan-num {
+      font-size: 46px;
+      font-weight: 900;
+      color: #FFF;
+      letter-spacing: -1px;
+    }
+
+    .plan-cycle {
+      font-size: 14px;
+      color: var(--text-sub);
+      font-weight: 600;
+    }
+
+    .plan-savings {
+      font-size: 12px;
+      color: #10B981;
+      font-weight: 700;
+      margin-bottom: 24px;
+    }
+
+    .plan-features {
+      list-style: none;
+      margin-bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .plan-features li {
+      font-size: 14px;
+      color: #CBD5E1;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      line-height: 1.4;
+    }
+
+    .plan-features li strong {
       color: #FFF;
     }
-    .faq-container {
-      max-width: 800px;
+
+    /* Comparison Table Matrix */
+    .comparison-table-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 24px;
+      overflow-x: auto;
+      margin: 40px 0;
+      backdrop-filter: blur(16px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th, td {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-light);
+      font-size: 14px;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      font-weight: 800;
+      color: #FFF;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:nth-child(even) td {
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    .td-feat {
+      color: #F8FAFC;
+      font-weight: 600;
+    }
+
+    .td-ezbill {
+      color: #34D399;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .td-other {
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* FAQ Accordion */
+    .faq-grid {
+      max-width: 860px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
       gap: 16px;
     }
-    .faq-item {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
+
+    .faq-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 18px;
       padding: 24px;
+      transition: all 0.2s ease;
     }
-    .faq-item h4 {
+
+    .faq-card:hover {
+      border-color: rgba(255, 94, 43, 0.4);
+    }
+
+    .faq-card h4 {
       font-size: 17px;
-      font-weight: 700;
-      margin-bottom: 8px;
+      font-weight: 800;
+      color: #FFF;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .faq-card p {
+      font-size: 14px;
+      color: var(--text-sub);
+      line-height: 1.65;
+    }
+
+    /* SEO Tag Cloud */
+    .keywords-box {
+      background: rgba(18, 22, 28, 0.5);
+      border: 1px solid var(--border-light);
+      border-radius: 24px;
+      padding: 32px;
+      margin-top: 60px;
+      text-align: center;
+    }
+
+    .keywords-box h4 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #FF8A3D;
+      margin-bottom: 16px;
+      font-weight: 800;
+    }
+
+    .tag-pill {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--text-sub);
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 8px;
+      margin: 4px;
+      transition: all 0.2s;
+    }
+
+    .tag-pill:hover {
+      border-color: #FF5E2B;
       color: #FFF;
     }
-    .faq-item p {
-      font-size: 14px;
-      color: var(--text-muted);
-    }
-    .keywords-cloud {
-      background: rgba(22, 22, 28, 0.6);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 24px;
-      margin-top: 40px;
-      text-align: center;
-    }
-    .keywords-cloud h4 {
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #818CF8;
-      margin-bottom: 12px;
-    }
-    .tag {
-      display: inline-block;
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-muted);
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 6px;
-      margin: 4px;
-    }
+
+    /* Footer */
     footer {
-      border-top: 1px solid var(--border-color);
-      padding: 40px 24px;
+      border-top: 1px solid var(--border-light);
+      padding: 60px 24px 40px;
       text-align: center;
       color: var(--text-muted);
       font-size: 13px;
+      background: #050608;
+      position: relative;
+      z-index: 1;
     }
-    footer a {
-      color: #818CF8;
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+
+    .footer-links a {
+      color: #34D399;
       text-decoration: none;
-      margin: 0 8px;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: #FF5E2B;
     }
   </style>
 </head>
 <body>
 
-  <!-- Header / Navigation -->
+  <!-- Background Ambient Lights -->
+  <div class="ambient-glow-1"></div>
+  <div class="ambient-glow-2"></div>
+  <div class="ambient-glow-3"></div>
+
+  <!-- Header Navigation -->
   <header>
     <div class="nav-container">
       <a href="/" class="logo">
         <div class="logo-badge">🍽️</div>
-        <span>EzBill</span>
+        <span>EzBill <em>Restaurant POS</em></span>
       </a>
       <div class="nav-links">
         <a href="#features">Features</a>
-        <a href="#table-management">Table POS</a>
-        <a href="#gst-billing">GST Billing</a>
-        <a href="#pricing">Pricing</a>
+        <a href="#table-pos">Table Grid</a>
+        <a href="#thermal-printing">Thermal Print</a>
+        <a href="#pricing">Pricing (₹299)</a>
         <a href="#faq">FAQ</a>
         <a href="/login" class="btn btn-secondary">Login</a>
-        <a href="/register" class="btn btn-primary">Start Free Trial</a>
+        <a href="/register" class="btn btn-primary">Start Free Trial 🚀</a>
       </div>
     </div>
   </header>
 
   <!-- Hero Section -->
   <section class="hero">
-    <div class="tagline-badge">⚡ India's #1 Smart Restaurant ERP & Billing Engine</div>
-    <h1>Restaurant POS, Table Management & GST Billing Software</h1>
-    <p>
-      Accelerate your restaurant operations with EzBill. Instant 0ms table ordering, float-safe GST invoice calculation, wireless thermal bill printing (58mm/80mm), live KOT management, and offline POS capability starting at just ₹299/month.
+    <div class="pill-hero">
+      <div class="pill-dot"></div>
+      <span>India's #1 Ultra-Fast 0ms Restaurant ERP</span>
+    </div>
+
+    <h1>
+      <span class="gradient-text">Restaurant POS, Live Table ERP</span><br />
+      <span class="serif-accent">& Float-Safe GST Billing</span>
+    </h1>
+
+    <p class="hero-sub">
+      Power your restaurant with instant 0ms offline table ordering, float-safe integer GST calculation, wireless 58mm/80mm ESC/POS thermal printing, and multi-station KOT routing starting at just <strong>₹299/month</strong>.
     </p>
 
+    <!-- Cursive Accent Callout -->
+    <div class="hero-note">
+      <span class="cursive-tag">✨ Zero lag. Zero commissions. 100% peace of mind.</span>
+    </div>
+
     <div class="hero-actions">
-      <a href="/register" class="btn btn-primary" style="padding: 14px 28px; font-size: 16px;">
+      <a href="/register" class="btn btn-primary" style="padding: 16px 36px; font-size: 16px; border-radius: 14px;">
         🚀 Launch EzBill for ₹299/mo
       </a>
-      <a href="/demo-billing" class="btn btn-secondary" style="padding: 14px 28px; font-size: 16px;">
-        🎮 Try Instant Demo Billing
+      <a href="/demo-billing" class="btn btn-secondary" style="padding: 16px 32px; font-size: 16px; border-radius: 14px;">
+        🎮 Try Live Demo Billing
       </a>
     </div>
 
-    <div class="hero-perks">
-      <span>✅ 0ms Instant Local Speed</span>
-      <span>✅ 100% Float-Safe GST Math</span>
-      <span>✅ ESC/POS Thermal Printing</span>
-      <span>✅ Android, iOS, Windows & Web</span>
-      <span>✅ 1-Click PWA App</span>
+    <!-- Trust Row -->
+    <div class="trust-row">
+      <span>⚡ 0ms Local-First Speed</span>
+      <span>•</span>
+      <span>🧾 100% Float-Safe GST Math</span>
+      <span>•</span>
+      <span>🖨️ ESC/POS 58mm & 80mm</span>
+      <span>•</span>
+      <span>📲 1-Click PWA App</span>
+      <span>•</span>
+      <span>☁️ Cloud MongoDB Sync</span>
+    </div>
+
+    <!-- Live Interactive Billing Showcase Mockup -->
+    <div class="showcase-wrapper" id="table-pos">
+      <div class="showcase-inner">
+        <!-- Left: Live Table Matrix -->
+        <div>
+          <div class="mockup-header">
+            <div class="mockup-title">
+              <span class="live-dot"></span>
+              Live Dining Table Layout & Order Tracker
+            </div>
+            <span class="cursive-badge">Table Floor 1</span>
+          </div>
+
+          <div class="table-matrix-grid">
+            <div class="t-card occupied">
+              <div class="t-head">
+                <span>T-01 (4 Pax)</span>
+                <span class="t-status occ">Dining 28m</span>
+              </div>
+              <div class="t-body">
+                <div>3 Items (KOT Sent)</div>
+                <div class="t-price">₹ 780.00</div>
+              </div>
+            </div>
+
+            <div class="t-card billed">
+              <div class="t-head">
+                <span>T-02 (2 Pax)</span>
+                <span class="t-status bil">Billed</span>
+              </div>
+              <div class="t-body">
+                <div>5 Items (Bill Printed)</div>
+                <div class="t-price">₹ 1,420.00</div>
+              </div>
+            </div>
+
+            <div class="t-card vacant">
+              <div class="t-head">
+                <span>T-03 (6 Pax)</span>
+                <span class="t-status vac">Vacant</span>
+              </div>
+              <div class="t-body">
+                <div>Ready for Guests</div>
+                <div class="t-price" style="color: #64748B;">—</div>
+              </div>
+            </div>
+
+            <div class="t-card occupied">
+              <div class="t-head">
+                <span>T-04 (2 Pax)</span>
+                <span class="t-status occ">Ordering</span>
+              </div>
+              <div class="t-body">
+                <div>Captain: Rahul</div>
+                <div class="t-price">₹ 450.00</div>
+              </div>
+            </div>
+
+            <div class="t-card occupied">
+              <div class="t-head">
+                <span>T-05 (VIP)</span>
+                <span class="t-status occ">Dining 45m</span>
+              </div>
+              <div class="t-body">
+                <div>8 Items (Bar + Food)</div>
+                <div class="t-price">₹ 3,250.00</div>
+              </div>
+            </div>
+
+            <div class="t-card vacant">
+              <div class="t-head">
+                <span>T-06 (4 Pax)</span>
+                <span class="t-status vac">Cleaned</span>
+              </div>
+              <div class="t-body">
+                <div>Ready for Walk-in</div>
+                <div class="t-price" style="color: #64748B;">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px; align-items: center; color: var(--text-sub); font-size: 13px;">
+            <span style="display: flex; align-items: center; gap: 4px;"><span style="color: #10B981;">●</span> Vacant</span>
+            <span style="display: flex; align-items: center; gap: 4px;"><span style="color: #FF5E2B;">●</span> Occupied</span>
+            <span style="display: flex; align-items: center; gap: 4px;"><span style="color: #34D399;">●</span> Billed</span>
+            <span class="cursive-tag" style="margin-left: auto; font-size: 18px;">⚡ 0ms instant updates</span>
+          </div>
+        </div>
+
+        <!-- Right: Thermal Receipt & GST Calculator -->
+        <div id="thermal-printing">
+          <div class="mockup-header">
+            <div class="mockup-title">
+              🖨️ 80mm ESC/POS Thermal Invoice
+            </div>
+            <span style="font-size: 11px; color: #10B981; font-weight: 700;">FLOAT-SAFE GST</span>
+          </div>
+
+          <div class="receipt-paper">
+            <div class="receipt-center">
+              <div class="receipt-title">ROYAL BISTRO & CAFE</div>
+              <div>GSTIN: 27AAAAA0000A1Z5</div>
+              <div>FSSAI: 11521000000123</div>
+              <div style="font-size: 11px; color: #64748B;">Date: 18-Sep-2026 08:35 PM | Table: T-02</div>
+            </div>
+
+            <div class="receipt-divider"></div>
+            
+            <div class="receipt-row" style="font-weight: 700;">
+              <span>ITEM</span>
+              <span>QTY x RATE</span>
+              <span>AMT</span>
+            </div>
+            <div class="receipt-divider"></div>
+
+            <div class="receipt-row">
+              <span>Paneer Butter Masala</span>
+              <span>1 x 280.00</span>
+              <span>280.00</span>
+            </div>
+            <div class="receipt-row">
+              <span>Butter Garlic Naan</span>
+              <span>3 x 60.00</span>
+              <span>180.00</span>
+            </div>
+            <div class="receipt-row">
+              <span>Dal Makhani Special</span>
+              <span>1 x 240.00</span>
+              <span>240.00</span>
+            </div>
+            <div class="receipt-row">
+              <span>Fresh Lime Soda</span>
+              <span>2 x 90.00</span>
+              <span>180.00</span>
+            </div>
+
+            <div class="receipt-divider"></div>
+
+            <div class="receipt-row">
+              <span>Subtotal:</span>
+              <span>₹ 880.00</span>
+            </div>
+            <div class="receipt-row">
+              <span>CGST (2.5%):</span>
+              <span>₹ 22.00</span>
+            </div>
+            <div class="receipt-row">
+              <span>SGST (2.5%):</span>
+              <span>₹ 22.00</span>
+            </div>
+            <div class="receipt-row">
+              <span>Round Off:</span>
+              <span>₹ 0.00</span>
+            </div>
+
+            <div class="receipt-divider"></div>
+
+            <div class="receipt-row receipt-total">
+              <span>NET PAYABLE:</span>
+              <span>₹ 924.00</span>
+            </div>
+
+            <div class="receipt-center" style="margin-top: 10px; font-size: 11px; color: #475569;">
+              <div>*** THANK YOU FOR DINING WITH US ***</div>
+              <div style="color: #FF5E2B; font-weight: 700; margin-top: 2px;">Powered by EzBill POS</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- Core Features Grid -->
+  <!-- Core Features Bento Grid -->
   <section id="features" class="section-container">
     <div class="section-title">
-      <h2>Engineered for High-Volume Restaurants & Cafes</h2>
-      <p>Everything you need to manage orders, tables, billing, and staff in one cohesive ERP system.</p>
+      <span class="cursive-badge" style="margin-bottom: 12px;">Built for Real Kitchens & Fast Dining</span>
+      <h2>
+        Everything You Need to Run a <span class="serif-accent">High-Growth</span> Restaurant
+      </h2>
+      <p>Precision ERP engineered to handle high footfalls, complex kitchen tickets, and instant billing.</p>
     </div>
 
-    <div class="grid-3">
-      <!-- Feature 1: Table Management -->
-      <div class="card" id="table-management">
-        <div class="card-icon">🪑</div>
-        <h3>Live Table Management</h3>
-        <p>
-          Interactive visual table matrix with live status indicators (Vacant, Occupied, Billed, Settled). Split bills, merge tables, assign captains, and monitor live dining durations with 0ms latency.
-        </p>
+    <div class="bento-grid">
+      <!-- 1. Table POS -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon">🪑</div>
+          <h3>Live Table Management & Matrix</h3>
+          <p>
+            Color-coded table layouts showing live dining durations, split bills, merge tables, captain assignments, and instant floor status with 0ms lag.
+          </p>
+        </div>
+        <div class="bento-footer">
+          <span class="cursive-tag" style="font-size: 17px;">✨ Visual floor plan on any screen</span>
+        </div>
       </div>
 
-      <!-- Feature 2: GST Calculation -->
-      <div class="card" id="gst-billing">
-        <div class="card-icon">🧾</div>
-        <h3>Float-Safe GST Invoice Calculation</h3>
-        <p>
-          Eliminate rounding discrepancies forever. Built-in integer-paise math calculates CGST (2.5%), SGST (2.5%), flat discounts, customized service charges, and automatic round-off to the nearest rupee.
-        </p>
+      <!-- 2. GST Invoices -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon">🧾</div>
+          <h3>Float-Safe GST Calculation</h3>
+          <p>
+            Integer-paise math engine eliminates rounding errors. Computes CGST (2.5%), SGST (2.5%), custom discounts, service charges, and automatic round-off.
+          </p>
+        </div>
+        <div class="bento-footer">
+          <span class="cursive-tag" style="font-size: 17px; color: #34D399;">₹ 100% Tax Compliant</span>
+        </div>
       </div>
 
-      <!-- Feature 3: Thermal Printing -->
-      <div class="card">
-        <div class="card-icon">🖨️</div>
-        <h3>Thermal Bill & KOT Printing</h3>
-        <p>
-          Instant wireless printing for 58mm (2-inch) and 80mm (3-inch) thermal receipt printers. Works with Bluetooth, USB, WiFi, Ethernet (LAN), and direct browser print for Kitchen Order Tickets (KOT) and customer receipts.
-        </p>
+      <!-- 3. Thermal Bill & KOT -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon">🖨️</div>
+          <h3>Wireless Thermal & KOT Printing</h3>
+          <p>
+            Seamless compatibility with 58mm (2-inch) and 80mm (3-inch) ESC/POS thermal printers via Bluetooth, USB OTG, WiFi, LAN, and direct web browser.
+          </p>
+        </div>
+        <div class="bento-footer">
+          <span class="cursive-tag" style="font-size: 17px; color: #FF8A3D;">⚡ Instant 0-second print firing</span>
+        </div>
       </div>
 
-      <!-- Feature 4: Offline Local Engine -->
-      <div class="card">
-        <div class="card-icon">⚡</div>
-        <h3>0ms Offline-First Engine</h3>
-        <p>
-          Process orders, generate invoices, and print receipts without internet downtime. Local SQLite/AsyncStorage execution synchronizes silently with cloud MongoDB when network reconnects.
-        </p>
+      <!-- 4. Offline Local First -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon">⚡</div>
+          <h3>0ms Offline-First Engine</h3>
+          <p>
+            Never stop billing during Wi-Fi outages. Orders, tables, and bills process locally on-device with zero delay, syncing silently to the cloud upon reconnecting.
+          </p>
+        </div>
+        <div class="bento-footer">
+          <span class="cursive-tag" style="font-size: 17px; color: #FDBA74;">📶 Zero internet dependency</span>
+        </div>
       </div>
 
-      <!-- Feature 5: AI Smart Menu -->
-      <div class="card">
-        <div class="card-icon">🤖</div>
-        <h3>AI Smart Menu OCR</h3>
-        <p>
-          Upload photos of physical printed menus or food cards. Our advanced AI automatically parses categories, item names, descriptions, and pricing into your digital POS catalog within seconds.
-        </p>
+      <!-- 5. AI Smart Menu Importer -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon">🤖</div>
+          <h3>AI Smart Menu Importer (OCR)</h3>
+          <p>
+            Snap a photo of your paper menu or food card. Our AI automatically extracts categories, items, prices, and tax rates into your catalog in seconds.
+          </p>
+        </div>
+        <div class="bento-footer">
+          <span class="cursive-tag" style="font-size: 17px; color: #34D399;">📸 Setup catalog in 2 minutes</span>
+        </div>
       </div>
 
-      <!-- Feature 6: QR Digital Menu -->
-      <div class="card">
-        <div class="card-icon">📲</div>
-        <h3>QR Table Ordering & Feedback</h3>
-        <p>
-          Provide contactless dining. Diners scan QR codes at tables to browse the live digital menu, submit food orders directly to kitchen KOTs, and provide instant ratings and service feedback.
-        </p>
+      <!-- 6. QR Contactless Menu -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon">📲</div>
+          <h3>QR Code Digital Table Ordering</h3>
+          <p>
+            Empower diners to scan table QR codes, browse live digital menus with food photos, place direct kitchen orders, and leave authentic feedback.
+          </p>
+        </div>
+        <div class="bento-footer">
+          <span class="cursive-tag" style="font-size: 17px; color: #FF8A3D;">🚀 Faster table turnarounds</span>
+        </div>
       </div>
     </div>
-  </section>
 
-  <!-- Detailed GST & Table Walkthrough Section -->
-  <section class="section-container" style="background: #111116; border-radius: 28px; border: 1px solid var(--border-color);">
-    <div class="section-title">
-      <h2>How EzBill Solves Restaurant Billing Challenges</h2>
-      <p>Precision software designed for fine dining, QSR, cafes, cloud kitchens, and food trucks.</p>
-    </div>
-
-    <div class="grid-3" style="margin-bottom: 24px;">
-      <div style="padding: 16px;">
-        <h3 style="color: #635BFF; margin-bottom: 8px;">1. Fast KOT Dispatch</h3>
-        <p style="color: var(--text-muted); font-size: 14px;">
-          When a waiter punches an order, Kitchen Order Tickets (KOTs) print automatically to kitchen stations with table numbers, item modifications, and special cooking instructions.
+    <!-- Hardware Compatibility Banner -->
+    <div class="hardware-banner">
+      <div>
+        <div class="hw-badge">Hardware Agnostic POS</div>
+        <h3 style="font-size: 24px; font-weight: 800; color: #FFF; margin-bottom: 8px;">
+          Works with the Devices & Printers You Already Own
+        </h3>
+        <p style="color: var(--text-sub); font-size: 14px;">
+          No expensive proprietary hardware locks. Run EzBill on Android phones, iPads, Windows POS terminals, laptops, and connect to any standard ESC/POS printer.
         </p>
       </div>
 
-      <div style="padding: 16px;">
-        <h3 style="color: #10B981; margin-bottom: 8px;">2. Accurate GST Billing</h3>
-        <p style="color: var(--text-muted); font-size: 14px;">
-          Compliant with Indian GST guidelines. Generates itemized tax invoices with restaurant GSTIN, FSSAI registration numbers, SAC codes, and breakdown of CGST + SGST.
-        </p>
-      </div>
-
-      <div style="padding: 16px;">
-        <h3 style="color: #F59E0B; margin-bottom: 8px;">3. Midnight Business Reset</h3>
-        <p style="color: var(--text-muted); font-size: 14px;">
-          Automated 12:00 AM midnight rollover archives daily sales, resets live counters, and generates executive sales summaries without manual staff reconciliation.
-        </p>
+      <div class="hardware-chips">
+        <div class="hw-chip">🖨️ 58mm Thermal (2")</div>
+        <div class="hw-chip">🖨️ 80mm Thermal (3")</div>
+        <div class="hw-chip">🔵 Bluetooth 5.0</div>
+        <div class="hw-chip">🔌 USB OTG</div>
+        <div class="hw-chip">📶 WiFi & Ethernet LAN</div>
+        <div class="hw-chip">📱 Android & iOS App</div>
+        <div class="hw-chip">💻 Windows & Mac Browser</div>
+        <div class="hw-chip">📲 1-Click PWA Desktop</div>
       </div>
     </div>
   </section>
@@ -578,135 +1409,252 @@
   <!-- Transparent Pricing Section -->
   <section id="pricing" class="section-container">
     <div class="section-title">
-      <h2>Affordable Pricing for Every Restaurant Size</h2>
-      <p>Zero hidden commissions. Complete ownership of your restaurant data.</p>
+      <span class="cursive-badge" style="margin-bottom: 12px; color: #FDBA74; background: rgba(255, 94, 43, 0.12); border-color: rgba(255, 94, 43, 0.4);">Simple, Honest Pricing</span>
+      <h2>
+        No Setup Fees. <span class="serif-accent">No Commission.</span> Cancel Anytime.
+      </h2>
+      <p>Keep 100% of your restaurant revenue. Choose the plan tailored for your outlet.</p>
     </div>
 
     <div class="pricing-grid">
-      <!-- Starter Plan -->
+      <!-- Starter Plan (Featured) -->
       <div class="pricing-card featured">
-        <div class="pricing-badge">Most Popular</div>
-        <h3>Starter Plan</h3>
-        <p style="color: var(--text-muted); font-size: 13px;">For Single-Outlet Restaurants & Cafes</p>
-        <div class="price-num">₹299<span style="font-size: 15px; color: var(--text-muted); font-weight: 500;"> / month</span></div>
-        <p style="color: #10B981; font-size: 12px; font-weight: 700;">₹2,999 / year (Save 20%)</p>
+        <div class="featured-ribbon">⭐ BEST VALUE FOR STANDALONE OUTLETS</div>
+        <div>
+          <div class="plan-title">Starter 100% Local</div>
+          <div class="plan-tagline">Ultra-fast 0ms local speed for cafes, bakeries & standalone food spots</div>
+          
+          <div class="plan-price-row">
+            <span class="plan-curr">₹</span>
+            <span class="plan-num">299</span>
+            <span class="plan-cycle">/ month</span>
+          </div>
+          <div class="plan-savings">₹2,999 / year <span class="cursive-tag" style="font-size: 16px; margin-left: 6px;">(Save 20%)</span></div>
 
-        <ul class="pricing-features">
-          <li>✅ <strong>100% Local 0ms Billing Engine</strong></li>
-          <li>✅ Complete Table Management</li>
-          <li>✅ Thermal Bill & KOT Printing</li>
-          <li>✅ Float-Safe GST Invoice Calculation</li>
-          <li>✅ Cloud Database Backup</li>
-          <li>✅ Single-User Offline Processing</li>
-        </ul>
+          <ul class="plan-features">
+            <li>✅ <strong>100% Local 0ms Billing Engine</strong></li>
+            <li>✅ Complete Table Management Matrix</li>
+            <li>✅ Thermal Bill & KOT Receipt Printing</li>
+            <li>✅ Float-Safe GST Invoice Calculation</li>
+            <li>✅ Single-User Offline Fast Processing</li>
+            <li>✅ Automatic Midnight Daily Sales Reset</li>
+            <li>✅ Cloud Database Backup & Security</li>
+          </ul>
+        </div>
 
-        <a href="/register" class="btn btn-primary" style="width: 100%;">Choose Starter ₹299</a>
+        <a href="/register" class="btn btn-primary" style="width: 100%; padding: 14px;">
+          Choose Starter (₹299/mo)
+        </a>
       </div>
 
       <!-- Growth Plan -->
       <div class="pricing-card">
-        <h3>Growth Plan</h3>
-        <p style="color: var(--text-muted); font-size: 13px;">For Busy Restaurants & Dine-In Spots</p>
-        <div class="price-num">₹999<span style="font-size: 15px; color: var(--text-muted); font-weight: 500;"> / month</span></div>
-        <p style="color: #10B981; font-size: 12px; font-weight: 700;">₹9,999 / year</p>
+        <div>
+          <div class="plan-title">Growth Dine-In</div>
+          <div class="plan-tagline">Designed for busy dine-in spots with captain apps & kitchen displays</div>
+          
+          <div class="plan-price-row">
+            <span class="plan-curr">₹</span>
+            <span class="plan-num">999</span>
+            <span class="plan-cycle">/ month</span>
+          </div>
+          <div class="plan-savings">₹9,999 / year</div>
 
-        <ul class="pricing-features">
-          <li>✅ Everything in Starter</li>
-          <li>✅ <strong>Multi-Waiter Captain System (Up to 5 Users)</strong></li>
-          <li>✅ Live Kitchen Display System (KDS)</li>
-          <li>✅ Real-Time Multi-Device WebSocket Sync</li>
-          <li>✅ AI Smart Menu OCR Importer</li>
-          <li>✅ Inventory & Daily Expense Control</li>
-        </ul>
+          <ul class="plan-features">
+            <li>✅ Everything in Starter Plan</li>
+            <li>✅ <strong>Multi-Waiter Captain App (Up to 5 Users)</strong></li>
+            <li>✅ Live Kitchen Display System (KDS)</li>
+            <li>✅ Real-Time Multi-Device WebSocket Sync</li>
+            <li>✅ AI Smart Menu OCR Importer</li>
+            <li>✅ Inventory Stock & Daily Expense Tracking</li>
+            <li>✅ Staff Performance & Sales Reports</li>
+          </ul>
+        </div>
 
-        <a href="/register" class="btn btn-secondary" style="width: 100%;">Choose Growth</a>
+        <a href="/register" class="btn btn-secondary" style="width: 100%; padding: 14px;">
+          Choose Growth Plan
+        </a>
       </div>
 
-      <!-- Pro Plan -->
+      <!-- Pro Enterprise -->
       <div class="pricing-card">
-        <h3>Pro Enterprise</h3>
-        <p style="color: var(--text-muted); font-size: 13px;">For Large Multi-Floor Restaurants & Chains</p>
-        <div class="price-num">₹1,999<span style="font-size: 15px; color: var(--text-muted); font-weight: 500;"> / month</span></div>
-        <p style="color: #10B981; font-size: 12px; font-weight: 700;">₹19,999 / year</p>
+        <div>
+          <div class="plan-title">Pro Enterprise</div>
+          <div class="plan-tagline">For large multi-floor restaurants, bars, breweries, & chains</div>
+          
+          <div class="plan-price-row">
+            <span class="plan-curr">₹</span>
+            <span class="plan-num">1,999</span>
+            <span class="plan-cycle">/ month</span>
+          </div>
+          <div class="plan-savings">₹19,999 / year</div>
 
-        <ul class="pricing-features">
-          <li>✅ Everything in Growth</li>
-          <li>✅ <strong>Unlimited Staff & Captain Accounts</strong></li>
-          <li>✅ Customer QR Code Digital Menu & Ordering</li>
-          <li>✅ Multi-Terminal KOT Routing (Bar + Kitchen)</li>
-          <li>✅ Advanced Analytics & Export Reports</li>
-          <li>✅ Priority 24/7 Dedicated Support</li>
-        </ul>
+          <ul class="plan-features">
+            <li>✅ Everything in Growth Plan</li>
+            <li>✅ <strong>Unlimited Staff, Captains & KDS</strong></li>
+            <li>✅ Customer QR Digital Table Ordering</li>
+            <li>✅ Multi-Terminal KOT Routing (Bar + Main Kitchen)</li>
+            <li>✅ Customer Loyalty & Feedback System</li>
+            <li>✅ Advanced Analytics & CSV Export</li>
+            <li>✅ 24/7 Priority Dedicated Support</li>
+          </ul>
+        </div>
 
-        <a href="/register" class="btn btn-secondary" style="width: 100%;">Choose Pro</a>
+        <a href="/register" class="btn btn-secondary" style="width: 100%; padding: 14px;">
+          Choose Pro Enterprise
+        </a>
       </div>
+    </div>
+
+    <!-- Comparison Matrix Table -->
+    <div class="comparison-table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Feature / Capability</th>
+            <th style="color: #FF8A3D; text-align: center;">EzBill POS</th>
+            <th style="color: #94A3B8; text-align: center;">Legacy Cloud POS (Petpooja / Posist)</th>
+            <th style="color: #94A3B8; text-align: center;">Manual Bill Books / Excel</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="td-feat">Pricing & Affordability</td>
+            <td class="td-ezbill">₹299 / month</td>
+            <td class="td-other">₹1,500 – ₹3,500 / month</td>
+            <td class="td-other">Manual cost</td>
+          </tr>
+          <tr>
+            <td class="td-feat">0ms Local Offline Speed</td>
+            <td class="td-ezbill">✅ 100% Instant (0ms)</td>
+            <td class="td-other">⚠️ Slow / Requires strong Wi-Fi</td>
+            <td class="td-other">❌ Slow manual writing</td>
+          </tr>
+          <tr>
+            <td class="td-feat">Float-Safe GST Invoices</td>
+            <td class="td-ezbill">✅ Integer-Paise Precision</td>
+            <td class="td-other">⚠️ Prone to float rounding errors</td>
+            <td class="td-other">❌ High error rate</td>
+          </tr>
+          <tr>
+            <td class="td-feat">Thermal Printing (58mm/80mm)</td>
+            <td class="td-ezbill">✅ Universal ESC/POS & Web</td>
+            <td class="td-other">⚠️ Requires proprietary drivers</td>
+            <td class="td-other">❌ None</td>
+          </tr>
+          <tr>
+            <td class="td-feat">AI Menu Scanner (OCR)</td>
+            <td class="td-ezbill">✅ Built-in 1-Click OCR</td>
+            <td class="td-other">❌ Manual data entry</td>
+            <td class="td-other">❌ None</td>
+          </tr>
+          <tr>
+            <td class="td-feat">Platform Device Support</td>
+            <td class="td-ezbill">✅ Android, iOS, Windows, Mac & Web</td>
+            <td class="td-other">⚠️ Locked to Windows/Android POS</td>
+            <td class="td-other">❌ Paper only</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
-  <!-- FAQ Section for Google Rich Results -->
+  <!-- FAQ Accordion for SEO & Google Rich Results -->
   <section id="faq" class="section-container">
     <div class="section-title">
-      <h2>Frequently Asked Questions</h2>
-      <p>Have questions about EzBill Restaurant POS? We have answers.</p>
+      <span class="cursive-badge" style="margin-bottom: 12px;">Answers to Common Questions</span>
+      <h2>
+        Frequently Asked <span class="serif-accent">Questions</span>
+      </h2>
+      <p>Have questions about EzBill Restaurant POS? Here is everything you need to know.</p>
     </div>
 
-    <div class="faq-container">
-      <div class="faq-item">
-        <h4>How easy is it to set up EzBill?</h4>
-        <p>You can set up EzBill in under 3 minutes. Simply create an account, enter your restaurant details, add your menu categories, and start taking orders right away from any phone, tablet, laptop, or desktop browser.</p>
+    <div class="faq-grid">
+      <div class="faq-card">
+        <h4><span>💡</span> How fast can I set up EzBill for my restaurant?</h4>
+        <p>
+          You can get started in less than 3 minutes. Simply register an account, add your tables, upload your menu items (or use our AI Menu Scanner to photograph your physical menu), and start taking orders right away from your phone, tablet, laptop, or desktop.
+        </p>
       </div>
 
-      <div class="faq-item">
-        <h4>Can I print bills on standard thermal receipt printers?</h4>
-        <p>Yes. EzBill connects seamlessly with 58mm and 80mm ESC/POS thermal printers via Bluetooth, USB OTG, WiFi, or network LAN. You can also print directly from any web browser using standard Windows/Mac print drivers.</p>
+      <div class="faq-card">
+        <h4><span>🖨️</span> Does EzBill work with standard Bluetooth and USB thermal printers?</h4>
+        <p>
+          Yes! EzBill supports all standard 58mm (2-inch) and 80mm (3-inch) ESC/POS thermal printers. You can connect over Bluetooth, USB OTG, WiFi LAN, or print directly using your browser's native print dialog.
+        </p>
       </div>
 
-      <div class="faq-item">
-        <h4>Does EzBill calculate CGST and SGST correctly?</h4>
-        <p>Absolutely. EzBill's billing engine uses integer arithmetic in paise, preventing fractional rounding bugs common in web POS software. It produces precise CGST, SGST, service charges, and compliant invoice round-offs.</p>
+      <div class="faq-card">
+        <h4><span>🧾</span> How does EzBill ensure 100% Float-Safe GST calculations?</h4>
+        <p>
+          Traditional POS systems perform floating-point division which results in fractions of a paise (e.g. ₹0.0034) causing end-of-day discrepancy. EzBill executes integer arithmetic in whole paise, ensuring exact CGST (2.5%), SGST (2.5%), and compliant round-offs every single bill.
+        </p>
       </div>
 
-      <div class="faq-item">
-        <h4>Can I run EzBill on my existing Android phone or iPad?</h4>
-        <p>Yes! EzBill is built as a Progressive Web App (PWA) with native mobile apps available. You can install it directly to your iPhone, iPad, Android phone, tablet, Windows POS terminal, or Mac in 1-click.</p>
+      <div class="faq-card">
+        <h4><span>⚡</span> Does EzBill work offline if my restaurant internet disconnects?</h4>
+        <p>
+          Yes! With our Local-First engine, table statuses, order modifications, and thermal bill prints process locally on your device in 0ms. When internet connectivity resumes, changes sync silently to your secure cloud database.
+        </p>
+      </div>
+
+      <div class="faq-card">
+        <h4><span>📱</span> Can I install EzBill as an app on iOS and Android?</h4>
+        <p>
+          Absolutely. EzBill is engineered as a modern Progressive Web App (PWA) with native mobile applications. You can add it to your iPhone or iPad home screen, Android device, or Windows desktop in 1-click without going through app store delays.
+        </p>
       </div>
     </div>
 
-    <!-- SEO Keywords Cloud -->
-    <div class="keywords-cloud">
-      <h4>Trending Search Terms & Keywords</h4>
-      <span class="tag">Restaurant POS System</span>
-      <span class="tag">Table Management Software</span>
-      <span class="tag">Thermal Bill Printing POS</span>
-      <span class="tag">GST Invoice Calculation Engine</span>
-      <span class="tag">KOT Management System</span>
-      <span class="tag">Cafe Billing App</span>
-      <span class="tag">Cloud Kitchen POS Software</span>
-      <span class="tag">Restaurant ERP India</span>
-      <span class="tag">ESC/POS 58mm Thermal Printer</span>
-      <span class="tag">80mm Receipt Printer Software</span>
-      <span class="tag">QR Code Restaurant Menu</span>
-      <span class="tag">Offline Restaurant Billing</span>
-      <span class="tag">Affordable POS ₹299/mo</span>
-      <span class="tag">Bar & Pub Billing System</span>
-      <span class="tag">Waiter Captain Ordering App</span>
-      <span class="tag">Kitchen Display System (KDS)</span>
-      <span class="tag">Restaurant Inventory Control</span>
-      <span class="tag">AI Menu Importer</span>
+    <!-- SEO Search Terms Cloud -->
+    <div class="keywords-box">
+      <h4>Trending Search Keywords & Topics</h4>
+      <span class="tag-pill">Restaurant POS System</span>
+      <span class="tag-pill">Table Management Software</span>
+      <span class="tag-pill">Thermal Bill Printing POS</span>
+      <span class="tag-pill">GST Invoice Calculation Engine</span>
+      <span class="tag-pill">KOT Management System</span>
+      <span class="tag-pill">Cafe Billing App</span>
+      <span class="tag-pill">Cloud Kitchen POS Software</span>
+      <span class="tag-pill">Restaurant ERP India</span>
+      <span class="tag-pill">ESC/POS 58mm Thermal Printer</span>
+      <span class="tag-pill">80mm Receipt Printer Software</span>
+      <span class="tag-pill">QR Code Restaurant Menu</span>
+      <span class="tag-pill">Offline Restaurant Billing</span>
+      <span class="tag-pill">Affordable POS ₹299/mo</span>
+      <span class="tag-pill">Bar & Pub Billing System</span>
+      <span class="tag-pill">Waiter Captain Ordering App</span>
+      <span class="tag-pill">Kitchen Display System (KDS)</span>
+      <span class="tag-pill">Restaurant Inventory Control</span>
+      <span class="tag-pill">AI Menu Importer</span>
     </div>
   </section>
 
   <!-- Footer -->
   <footer>
-    <p>© 2026 EzBill / ProDevOpz Solutions. All rights reserved.</p>
-    <p style="margin-top: 8px;">
-      <a href="/pos-billing-software.html">Restaurant POS & ERP</a> |
-      <a href="/demo-billing">Demo Billing</a> |
-      <a href="/login">Portal Login</a> |
-      <a href="/register">Create Account</a> |
-      <a href="/legal">Privacy Policy & Terms</a> |
-      <a href="/sitemap.xml">XML Sitemap</a>
-    </p>
+    <div class="nav-container" style="flex-direction: column; gap: 16px;">
+      <a href="/" class="logo" style="justify-content: center;">
+        <div class="logo-badge">🍽️</div>
+        <span>EzBill <em>Restaurant POS & ERP</em></span>
+      </a>
+      <p style="max-width: 600px; margin: 0 auto; color: var(--text-sub);">
+        Empowering food businesses across India with ultra-fast 0ms local POS billing, real-time table management, and precision float-safe GST compliance.
+      </p>
+      
+      <div class="footer-links">
+        <a href="/pos-billing-software.html">Restaurant POS & ERP</a>
+        <a href="/pricing">Pricing Plans (₹299)</a>
+        <a href="/demo-billing">Live Billing Demo</a>
+        <a href="/login">Portal Login</a>
+        <a href="/register">Create Business Account</a>
+        <a href="/legal">Privacy & Terms</a>
+        <a href="/sitemap.xml">XML Sitemap</a>
+      </div>
+
+      <p style="color: #475569; font-size: 12px; margin-top: 12px;">
+        © 2026 EzBill / ProDevOpz Solutions. All rights reserved.
+      </p>
+    </div>
   </footer>
 
 </body>

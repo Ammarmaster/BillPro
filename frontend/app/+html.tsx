@@ -36,12 +36,20 @@ export default function Root({ children }: PropsWithChildren) {
 
         <meta name="google-site-verification" content="google1360c11d4597b537" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0F172A" />
+        <meta name="theme-color" content="#0A0A0E" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="EzBill" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="icon" type="image/png" href="/icon-192.png" />
+
+        <!-- Google Fonts: Plus Jakarta Sans (Modern Clean UI), Caveat (Authentic Cursive), Playfair Display (Luxury Editorial), JetBrains Mono (Thermal Bill & Math) -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap"
+          rel="stylesheet"
+        />
 
         <!-- Structured Data -->
         <script
@@ -107,6 +115,7 @@ export default function Root({ children }: PropsWithChildren) {
                 background: rgba(148, 163, 184, 0.65);
               }
               * {
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 scrollbar-width: thin;
                 scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
                 -webkit-font-smoothing: antialiased;

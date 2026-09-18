@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Pressable, SafeAreaView, StatusBar, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Pressable, SafeAreaView, StatusBar, ScrollView, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
@@ -30,13 +30,13 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#111111" }]} testID="landing-screen">
-      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#111111"} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#08090C" : "#0D0E12" }]} testID="landing-screen">
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#08090C" : "#0D0E12"} />
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
           {
-            backgroundColor: isDesktop ? "#0A0A0E" : "#111111",
+            backgroundColor: isDesktop ? "#08090C" : "#0D0E12",
             alignItems: isDesktop ? "center" : undefined,
             justifyContent: isDesktop ? "center" : "space-between",
             paddingVertical: isDesktop ? 48 : spacing.xxl,
@@ -51,12 +51,18 @@ export default function Index() {
             <View style={styles.logoBox}>
               <Ionicons name="restaurant" size={44} color="#FFFFFF" />
             </View>
-            <Text style={styles.brandTitle}>EzBill POS</Text>
+            <Text style={styles.brandTitle}>
+              EzBill <Text style={styles.brandSubTitle}>POS</Text>
+            </Text>
             <Text style={styles.tagline}>Smart Restaurant POS, Table Management & GST ERP</Text>
+
+            <Text style={styles.cursiveTag}>
+              ✨ Zero lag 0ms speed · Instant thermal KOT prints
+            </Text>
 
             <View style={styles.pillBadge}>
               <View style={styles.pillDot} />
-              <Text style={styles.pillText}>0ms OFFLINE SPEED · GST INVOICES · KOT PRINTING</Text>
+              <Text style={styles.pillText}>0ms OFFLINE SPEED · FLOAT-SAFE GST · ESC/POS 80mm</Text>
             </View>
           </View>
 
@@ -93,8 +99,8 @@ export default function Index() {
                 onPress={() => router.push("/pricing")}
               >
                 <View style={styles.btnRow}>
-                  <Ionicons name="pricetag-outline" size={15} color="#34D399" style={styles.btnIconLeft} />
-                  <Text style={[styles.demoBtnText, { color: "#34D399", fontSize: 13 }]}>Pricing (₹299/mo)</Text>
+                  <Ionicons name="pricetag-outline" size={15} color="#10B981" style={styles.btnIconLeft} />
+                  <Text style={[styles.demoBtnText, { color: "#10B981", fontSize: 13 }]}>Pricing (₹299/mo)</Text>
                 </View>
               </Pressable>
 
@@ -103,8 +109,8 @@ export default function Index() {
                 onPress={() => router.push("/pos-erp")}
               >
                 <View style={styles.btnRow}>
-                  <Ionicons name="sparkles-outline" size={15} color="#818CF8" style={styles.btnIconLeft} />
-                  <Text style={[styles.demoBtnText, { color: "#818CF8", fontSize: 13 }]}>Features & POS</Text>
+                  <Ionicons name="sparkles-outline" size={15} color="#FF8A3D" style={styles.btnIconLeft} />
+                  <Text style={[styles.demoBtnText, { color: "#FF8A3D", fontSize: 13 }]}>Features & POS</Text>
                 </View>
               </Pressable>
             </View>
@@ -128,7 +134,7 @@ export default function Index() {
           </View>
 
           {/* Footer Note */}
-          <Text style={styles.footerNote}>Trusted by leading restaurants, cafes, cloud kitchens & bars</Text>
+          <Text style={styles.footerNote}>Trusted by leading restaurants, cafes, cloud kitchens & bars across India</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -136,21 +142,21 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#111111" },
-  center: { flex: 1, backgroundColor: "#111111", justifyContent: "center", alignItems: "center" },
+  safe: { flex: 1, backgroundColor: "#08090C" },
+  center: { flex: 1, backgroundColor: "#08090C", justifyContent: "center", alignItems: "center" },
   desktopCardWrapper: {
     width: "100%",
-    maxWidth: 460,
+    maxWidth: 480,
     alignSelf: "center",
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(18, 22, 28, 0.9)",
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: "#2E2E38",
+    borderColor: "rgba(255, 255, 255, 0.08)",
     padding: 32,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
     elevation: 8,
   },
   scrollContent: {
@@ -162,11 +168,11 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: "center",
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   logoBox: {
-    width: 90,
-    height: 90,
+    width: 86,
+    height: 86,
     borderRadius: 24,
     backgroundColor: "#FF5E2B",
     justifyContent: "center",
@@ -174,7 +180,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     shadowColor: "#FF5E2B",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 6,
   },
@@ -184,48 +190,63 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.5,
   },
+  brandSubTitle: {
+    color: "#34D399",
+    fontFamily: Platform.OS === "web" ? "'Playfair Display', Georgia, serif" : undefined,
+    fontStyle: "italic",
+    fontWeight: "700",
+  },
   tagline: {
-    color: "#64748B",
+    color: "#94A3B8",
     marginTop: 6,
     fontSize: 14,
     fontWeight: "600",
+    textAlign: "center",
+  },
+  cursiveTag: {
+    fontFamily: Platform.OS === "web" ? "'Caveat', cursive, sans-serif" : undefined,
+    fontSize: 20,
+    color: "#FDBA74",
+    fontWeight: "600",
+    marginTop: 8,
+    textAlign: "center",
   },
   pillBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(255, 94, 43, 0.1)",
-    borderColor: "rgba(255, 94, 43, 0.2)",
+    backgroundColor: "rgba(255, 94, 43, 0.12)",
+    borderColor: "rgba(255, 94, 43, 0.3)",
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: radius.pill,
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
   },
   pillDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#FF5E2B",
+    backgroundColor: "#10B981",
   },
   pillText: {
-    color: "#FF5E2B",
+    color: "#FF8A3D",
     fontSize: 10,
     fontWeight: "800",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
 
   actionsCard: {
     gap: spacing.md,
     width: "100%",
-    backgroundColor: "#16161C",
+    backgroundColor: "rgba(24, 28, 36, 0.9)",
     padding: spacing.xl,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#2E2E38",
+    borderColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.25,
     shadowRadius: 24,
     elevation: 4,
     marginTop: spacing.xl,
@@ -251,38 +272,37 @@ const styles = StyleSheet.create({
   btnPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
   
   primaryBtn: {
-    height: 54,
+    height: 52,
     borderRadius: 14,
     backgroundColor: "#FF5E2B",
     shadowColor: "#FF5E2B",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 3,
   },
-  primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
+  primaryBtnText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15 },
   
   secondaryBtn: {
-    height: 54,
-    borderColor: "#2E2E38",
+    height: 52,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     borderWidth: 1,
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1C1C21",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
   },
-  secondaryBtnText: { color: "#FF5E2B", fontSize: 15, fontWeight: "700" },
+  secondaryBtnText: { color: "#FF8A3D", fontSize: 14, fontWeight: "700" },
   demoBtn: {
-    height: 54,
-    borderColor: "#6C5CE7",
-    borderWidth: 1.5,
+    height: 48,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#13131A",
-    marginTop: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
-  demoBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
+  demoBtnText: { fontWeight: "700" },
   
   dividerRow: {
     flexDirection: "row",
@@ -294,25 +314,27 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#2E2E38",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
   dividerText: {
-    color: "#475569",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "600",
   },
   
   ghostBtn: {
-    height: 54,
+    height: 50,
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(255, 94, 43, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 94, 43, 0.2)",
   },
-  ghostText: { color: "#FF5E2B", fontSize: 14, fontWeight: "700" },
+  ghostText: { color: "#FF8A3D", fontSize: 14, fontWeight: "700" },
   
   footerNote: {
-    color: "#475569",
+    color: "#64748B",
     fontSize: 12,
     fontWeight: "600",
     textAlign: "center",
