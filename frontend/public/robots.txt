@@ -1,6 +1,8 @@
 User-agent: *
 Allow: /
+Allow: /pricing
 Allow: /pos-billing-software.html
+Allow: /pos-erp
 Allow: /demo-billing
 Allow: /login
 Allow: /register
@@ -12,4 +14,4 @@ Allow: /sitemap.xml
 Disallow: /api/
 Disallow: /ws/
 
-Sitemap: https://ezbill.vercel.app/sitemap.xml
+Sitemap: https://ezbill.jobsio.in/sitemap.xml

@@ -87,15 +87,27 @@ export default function Index() {
               </View>
             </Pressable>
 
-            <Pressable
-              style={({ pressed }) => [styles.demoBtn, pressed && styles.btnPressed]}
-              onPress={() => router.push("/pos-erp")}
-            >
-              <View style={styles.btnRow}>
-                <Ionicons name="sparkles-outline" size={16} color="#818CF8" style={styles.btnIconLeft} />
-                <Text style={[styles.demoBtnText, { color: "#818CF8" }]}>Explore Features & Table POS</Text>
-              </View>
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
+                style={({ pressed }) => [styles.demoBtn, { flex: 1, marginTop: 0 }, pressed && styles.btnPressed]}
+                onPress={() => router.push("/pricing")}
+              >
+                <View style={styles.btnRow}>
+                  <Ionicons name="pricetag-outline" size={15} color="#34D399" style={styles.btnIconLeft} />
+                  <Text style={[styles.demoBtnText, { color: "#34D399", fontSize: 13 }]}>Pricing (₹299/mo)</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [styles.demoBtn, { flex: 1, marginTop: 0 }, pressed && styles.btnPressed]}
+                onPress={() => router.push("/pos-erp")}
+              >
+                <View style={styles.btnRow}>
+                  <Ionicons name="sparkles-outline" size={15} color="#818CF8" style={styles.btnIconLeft} />
+                  <Text style={[styles.demoBtnText, { color: "#818CF8", fontSize: 13 }]}>Features & POS</Text>
+                </View>
+              </Pressable>
+            </View>
 
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
