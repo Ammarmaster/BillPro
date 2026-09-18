@@ -9,9 +9,11 @@ Allow: /register
 Allow: /legal
 Allow: /manifest.json
 Allow: /sitemap.xml
+Allow: /sitemap.txt
 
 # Disallow internal authenticated API / admin calls from direct indexing
 Disallow: /api/
 Disallow: /ws/
 
 Sitemap: https://ezbill.jobsio.in/sitemap.xml
+Sitemap: https://ezbill.jobsio.in/sitemap.txt
