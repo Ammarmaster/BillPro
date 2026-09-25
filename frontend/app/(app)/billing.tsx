@@ -85,7 +85,7 @@ export default function Billing() {
         initialBill = existing;
       } else if (o) {
         const itemsToBill = o.items || [];
-        const subtotalToBill = Number(o.subtotal || 0);
+        const subtotalToBill = Number(o.subtotal || 0) || itemsToBill.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
         const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
         const cgst = gst ? Math.round((tax / 2) * 100) / 100 : 0;
         const sgst = gst ? Math.round((tax - cgst) * 100) / 100 : 0;
@@ -120,7 +120,10 @@ export default function Billing() {
 
       if (tOrders.length > 0) {
         const itemsToBill = tOrders.flatMap((o: any) => o.items || []);
-        const subtotalToBill = tOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+        const subtotalToBill = tOrders.reduce((sum: number, o: any) => {
+          const sub = Number(o.subtotal || 0) || (o.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+          return sum + sub;
+        }, 0);
         initialOrder = {
           table_number: tableNumber,
           items: itemsToBill,
@@ -270,7 +273,10 @@ export default function Billing() {
           (targetOrderIds.length > 0 ? targetOrderIds.includes(x.id) : isSameTable(x.table_number, tableNumber)) &&
           x.status !== "paid" && x.status !== "completed" && x.status !== "cancelled" && x.status !== "pending_scan"
         );
-        const subtotalToBill = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+        const subtotalToBill = tableOrders.reduce((sum: number, o: any) => {
+          const sub = Number(o.subtotal || 0) || (o.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+          return sum + sub;
+        }, 0);
 
         let b = (bills || []).find((x: any) => 
           isSameTable(x.table_number, tableNumber) && 
@@ -388,7 +394,19 @@ export default function Billing() {
     api.updateCachedBill(bill.id, updatedLocalBill);
     const oList = api.getCachedOrders() || [];
 
-    if (isIndividualOrder) {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+      if (isIndividualOrder) {
+        api.markBillPaid(updatedLocalBill, method).catch(() => {});
+      } else {
+        const targetOrderIds = bill?.order_ids || (order?.id ? [order.id] : undefined);
+        const finalAmt = Number(bill?.total || order?.subtotal || 0);
+        if (targetTbl && targetTbl !== "Takeaway") {
+          api.settleTable(targetTbl, method, targetOrderIds, finalAmt).catch(() => {});
+        } else {
+          api.markBillPaid(updatedLocalBill, method).catch(() => {});
+        }
+      }
+    } else if (isIndividualOrder) {
       // 1. INDIVIDUAL ORDER MARK PAID: Update ONLY the specific order paid!
       let targetOid = api.resolveTempId(orderId || bill.order_id);
       let realBillId = api.resolveTempId(bill.id);

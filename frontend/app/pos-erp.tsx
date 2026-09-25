@@ -27,21 +27,21 @@ export default function PosErpSeoScreen() {
     },
     {
       icon: "calculator-outline",
-      title: "Float-Safe GST Calculation",
+      title: "Accurate GST Invoices",
       cursive: "100% Tax Compliant",
-      desc: "Integer-paise math engine calculating CGST (2.5%), SGST (2.5%), flat discounts, custom service charges, and automatic round-off.",
+      desc: "Automatic calculation of CGST (2.5%), SGST (2.5%), customized discounts, service charges, and round-offs.",
     },
     {
       icon: "print-outline",
-      title: "Thermal Bill & KOT Printing",
-      cursive: "ESC/POS 58mm & 80mm",
+      title: "Fast Bill & KOT Printing",
+      cursive: "Works with all Printers",
       desc: "Instant wireless receipt printing for thermal printers via Bluetooth, USB, WiFi, Ethernet LAN, and direct Web Browser print.",
     },
     {
       icon: "flash-outline",
-      title: "0ms Local-First Speed",
+      title: "100% Offline Billing",
       cursive: "Zero Internet Lag",
-      desc: "Process table orders and customer invoices locally in 0ms on-device without internet latency, with single cloud background sync.",
+      desc: "Process table orders and customer invoices with zero lag even when internet disconnects, syncing automatically to cloud.",
     },
     {
       icon: "qr-code-outline",
@@ -52,8 +52,8 @@ export default function PosErpSeoScreen() {
     {
       icon: "scan-outline",
       title: "AI Smart Menu Importer",
-      cursive: "OCR Catalog Scanner",
-      desc: "Upload photos of physical printed menus to automatically parse categories, items, and pricing into your POS catalog in seconds.",
+      cursive: "Photo Catalog Scanner",
+      desc: "Upload photos of physical printed menus to automatically create categories, items, and pricing in seconds.",
     },
   ];
 
@@ -99,15 +99,15 @@ export default function PosErpSeoScreen() {
           </View>
 
           <Text style={styles.heroTitle}>
-            High-Speed POS, Table Matrix & Float-Safe GST Billing
+            High-Speed POS, Table Management & Accurate GST Billing
           </Text>
 
           <Text style={styles.heroSub}>
-            Zero latency 0ms table ordering, float-safe integer GST calculation, wireless thermal receipt printing (58mm/80mm), and offline POS billing starting at ₹299/month.
+            Fast table ordering, automated GST calculations, wireless thermal receipt & KOT printing, and offline billing starting at just ₹299/month.
           </Text>
 
           <Text style={styles.cursiveTag}>
-            ✨ Engineered for high-speed restaurant counters & busy dine-in floors
+            ✨ Designed for busy restaurants, cafes, food trucks & hotels
           </Text>
 
           <View style={styles.ctaRow}>
@@ -133,9 +133,9 @@ export default function PosErpSeoScreen() {
 
         {/* Core Features */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Engineered for Modern Food Businesses</Text>
+          <Text style={styles.sectionTitle}>Designed for Modern Food Businesses</Text>
           <Text style={styles.sectionSub}>
-            Everything you need to run high-volume food operations with 0ms delay:
+            Everything you need to manage orders, tables, and bills smoothly:
           </Text>
 
           <View style={styles.grid}>
@@ -164,7 +164,7 @@ export default function PosErpSeoScreen() {
               ₹299 <Text style={{ fontSize: 14, color: "#94A3B8" }}>/ month (₹2,999/year)</Text>
             </Text>
             <Text style={styles.planDesc}>
-              Includes 100% Local 0ms Speed Engine, Table Management, Thermal Bill & KOT Printing, and Cloud Database Backup.
+              Includes 100% Offline Billing, Table Management, Thermal Bill & KOT Printing, and Automatic Cloud Backup.
             </Text>
             <TouchableOpacity
               style={styles.planBtn}

@@ -49,20 +49,16 @@ export default function Index() {
           {/* Brand Hero Section */}
           <View style={styles.heroSection}>
             <View style={styles.logoBox}>
-              <Ionicons name="restaurant" size={44} color="#FFFFFF" />
+              <Ionicons name="restaurant" size={42} color="#FFFFFF" />
             </View>
             <Text style={styles.brandTitle}>
               EzBill <Text style={styles.brandSubTitle}>POS</Text>
             </Text>
-            <Text style={styles.tagline}>Smart Restaurant POS, Table Management & GST ERP</Text>
-
-            <Text style={styles.cursiveTag}>
-              ✨ Zero lag 0ms speed · Instant thermal KOT prints
-            </Text>
+            <Text style={styles.tagline}>Fast Billing & Table Management for Restaurants</Text>
 
             <View style={styles.pillBadge}>
               <View style={styles.pillDot} />
-              <Text style={styles.pillText}>0ms OFFLINE SPEED · FLOAT-SAFE GST · ESC/POS 80mm</Text>
+              <Text style={styles.pillText}>WORKS 100% OFFLINE · GST INVOICES · FAST KOT PRINTING</Text>
             </View>
           </View>
 
@@ -134,7 +130,7 @@ export default function Index() {
           </View>
 
           {/* Footer Note */}
-          <Text style={styles.footerNote}>Trusted by leading restaurants, cafes, cloud kitchens & bars across India</Text>
+          <Text style={styles.footerNote}>Trusted by restaurants, cafes, hotels & cloud kitchens across India</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -146,7 +142,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, backgroundColor: "#08090C", justifyContent: "center", alignItems: "center" },
   desktopCardWrapper: {
     width: "100%",
-    maxWidth: 480,
+    maxWidth: 460,
     alignSelf: "center",
     backgroundColor: "rgba(18, 22, 28, 0.9)",
     borderRadius: 28,
@@ -171,21 +167,21 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   logoBox: {
-    width: 86,
-    height: 86,
-    borderRadius: 24,
+    width: 82,
+    height: 82,
+    borderRadius: 22,
     backgroundColor: "#FF5E2B",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: spacing.lg,
     shadowColor: "#FF5E2B",
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
-    shadowRadius: 20,
+    shadowRadius: 18,
     elevation: 6,
   },
   brandTitle: {
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: -0.5,
@@ -202,24 +198,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
-  },
-  cursiveTag: {
-    fontFamily: Platform.OS === "web" ? "'Caveat', cursive, sans-serif" : undefined,
-    fontSize: 20,
-    color: "#FDBA74",
-    fontWeight: "600",
-    marginTop: 8,
-    textAlign: "center",
+    maxWidth: 340,
+    lineHeight: 20,
   },
   pillBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     backgroundColor: "rgba(255, 94, 43, 0.12)",
-    borderColor: "rgba(255, 94, 43, 0.3)",
+    borderColor: "rgba(255, 94, 43, 0.28)",
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: radius.pill,
     marginTop: spacing.md,
   },
@@ -233,7 +223,7 @@ const styles = StyleSheet.create({
     color: "#FF8A3D",
     fontSize: 10,
     fontWeight: "800",
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
 
   actionsCard: {

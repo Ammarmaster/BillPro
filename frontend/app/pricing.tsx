@@ -22,21 +22,21 @@ export default function PricingScreen() {
   const tiers = [
     {
       id: "starter",
-      name: "Starter 100% Local",
+      name: "Starter Offline Plan",
       badge: "⭐ MOST POPULAR FOR STANDALONE OUTLETS",
       popular: true,
       priceMonthly: 299,
       priceYearly: 2999,
-      tagline: "Ultra-fast 0ms local speed for standalone restaurants, cafes & bakeries",
-      cursiveNote: "✨ 0ms local engine · Single outlet favorite",
+      tagline: "Fast offline billing for standalone restaurants, cafes & bakeries",
+      cursiveNote: "✨ Works without internet · Single outlet favorite",
       features: [
-        "100% Local 0ms Billing Engine",
-        "Complete Table Management & Visual Matrix",
-        "Float-Safe GST Invoice Calculations",
-        "Thermal Bill & KOT Receipt Printing (58mm/80mm)",
-        "Single-User / 1-Device Offline Speed",
+        "100% Offline Fast Billing (No Internet Needed)",
+        "Complete Table Management & Visual Layout",
+        "Accurate GST Invoice & Tax Calculations",
+        "Thermal Bill & KOT Receipt Printing",
+        "Single-User Quick Offline Billing",
         "Automatic Daily Sales & Midnight Reset",
-        "Cloud Database Storage & Backup",
+        "Automatic Cloud Backup & Data Security",
       ],
       cta: "Choose Starter (₹299/mo)",
       ctaPrimary: true,
@@ -54,8 +54,8 @@ export default function PricingScreen() {
         "Everything in Starter Plan",
         "Multi-Waiter Captain System (Up to 5 Users)",
         "Live Kitchen Display System (KDS)",
-        "Real-Time Multi-Device WebSocket Sync",
-        "AI Smart Menu OCR Importer",
+        "Real-Time Multi-Device Sync",
+        "AI Smart Menu Photo Importer",
         "Inventory Stock & Daily Expense Tracking",
         "Waiter Performance & Sales Reports",
       ],
@@ -75,7 +75,7 @@ export default function PricingScreen() {
         "Everything in Growth Plan",
         "Unlimited Staff, Captains & Kitchen Displays",
         "Customer QR Code Digital Table Ordering",
-        "Multi-Terminal KOT Routing (Bar + Main Kitchen)",
+        "Multi-Station KOT Routing (Bar + Main Kitchen)",
         "Customer Feedback & Loyalty OTP Linking",
         "Advanced Analytics & Full Data Export",
         "24/7 Priority Dedicated Support",
@@ -86,13 +86,13 @@ export default function PricingScreen() {
   ];
 
   const comparisonRows = [
-    { feature: "0ms Local-First Speed", starter: "✅", growth: "✅", pro: "✅" },
-    { feature: "Float-Safe GST Invoices", starter: "✅", growth: "✅", pro: "✅" },
-    { feature: "Thermal Receipt & KOT Printing", starter: "✅", growth: "✅", pro: "✅" },
+    { feature: "Offline Billing (No Internet Lag)", starter: "✅", growth: "✅", pro: "✅" },
+    { feature: "Accurate GST & Tax Invoices", starter: "✅", growth: "✅", pro: "✅" },
+    { feature: "Thermal Bill & KOT Printing", starter: "✅", growth: "✅", pro: "✅" },
     { feature: "Table Management & Billing", starter: "✅", growth: "✅", pro: "✅" },
     { feature: "Staff / Waiter Accounts", starter: "1 User (Owner)", growth: "Up to 5 Users", pro: "Unlimited" },
     { feature: "Kitchen Display System (KDS)", starter: "—", growth: "✅", pro: "✅" },
-    { feature: "AI Menu Scanner & OCR", starter: "—", growth: "✅", pro: "✅" },
+    { feature: "AI Menu Scanner & Importer", starter: "—", growth: "✅", pro: "✅" },
     { feature: "Inventory & Expense Tracking", starter: "—", growth: "✅", pro: "✅" },
     { feature: "QR Code Self-Ordering Menu", starter: "—", growth: "—", pro: "✅" },
     { feature: "Multi-Station KOT Routing", starter: "—", growth: "—", pro: "✅" },
@@ -285,23 +285,23 @@ export default function PricingScreen() {
         <View style={styles.trustFooter}>
           <View style={styles.trustItem}>
             <Ionicons name="shield-checkmark-outline" size={20} color="#10B981" />
-            <Text style={styles.trustText}>100% Float-Safe GST Math</Text>
+            <Text style={styles.trustText}>100% Accurate GST Billing</Text>
           </View>
           <View style={styles.trustItem}>
             <Ionicons name="flash-outline" size={20} color="#FF7D52" />
-            <Text style={styles.trustText}>0ms Offline Local Speed</Text>
+            <Text style={styles.trustText}>100% Offline Fast Billing</Text>
           </View>
           <View style={styles.trustItem}>
             <Ionicons name="cloud-done-outline" size={20} color="#34D399" />
-            <Text style={styles.trustText}>Encrypted Cloud Backup</Text>
+            <Text style={styles.trustText}>Automatic Cloud Backup</Text>
           </View>
         </View>
 
         {/* SEO Keywords Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerBrand}>EzBill Restaurant POS & Table Management ERP</Text>
+          <Text style={styles.footerBrand}>EzBill Restaurant POS & Table Management Software</Text>
           <Text style={styles.footerKeywords}>
-            Restaurant POS · Table Management · Thermal Receipt Printing · Float-Safe GST Invoices · KOT Management · ESC/POS 58mm & 80mm Printers · Offline POS · Cloud Kitchen Software · QR Menu Ordering · ₹299 POS
+            Restaurant POS · Table Management · Thermal Receipt Printing · Accurate GST Invoices · Kitchen KOT · Bill Printing · Offline POS · Cafe & Bar Billing · QR Code Ordering · ₹299 POS
           </Text>
           <Text style={styles.copyright}>© 2026 EzBill / ProDevOpz Solutions. All rights reserved.</Text>
         </View>

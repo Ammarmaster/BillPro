@@ -117,16 +117,15 @@ export default function MenuScreen() {
     <View style={[styles.wrap, { paddingTop: insets.top }]} testID="menu-screen">
       <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 1300, alignSelf: "center" }]}>
         <View style={styles.header}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+          <View style={styles.headerLeft}>
             <Pressable onPress={() => router.replace("/(app)/more")} style={styles.backBtn} hitSlop={12}>
               <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
             </Pressable>
-            <Text style={styles.title}>Menu Management</Text>
+            <Text style={styles.title} numberOfLines={1}>Menu</Text>
           </View>
-          <View style={{ flexDirection: "row", gap: spacing.xs, alignItems: "center" }}>
-
+          <View style={styles.headerRight}>
             <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
-              <Ionicons name="folder-open" size={16} color={colors.brand} />
+              <Ionicons name="folder" size={15} color={colors.brand} />
               <Text style={styles.iconBtnText}>Category</Text>
             </Pressable>
             <Pressable style={styles.iconBtnPrimary} onPress={() => {
@@ -288,14 +287,16 @@ function Chip({ label, active, onPress, testID }: { label: string; active: boole
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
-  title: { color: colors.onSurface, fontSize: 24, fontWeight: "700" },
-  iconBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
+  headerRight: { flexDirection: "row", gap: spacing.sm, alignItems: "center", flexShrink: 0 },
+  title: { color: colors.onSurface, fontSize: 22, fontWeight: "700" },
+  iconBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary },
   iconBtnText: { color: colors.onSurface, fontSize: 13, fontWeight: "600" },
-  iconBtnPrimary: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.brand },
+  iconBtnPrimary: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, backgroundColor: colors.brand },
   iconBtnPrimaryText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
   chipsWrap: { maxHeight: 56, minHeight: 56 },
-  chipsRow: { paddingHorizontal: spacing.xl, gap: spacing.sm, alignItems: "center" },
+  chipsRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center" },
   chip: { paddingHorizontal: 14, height: 36, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, justifyContent: "center" },
   chipActive: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 13 },

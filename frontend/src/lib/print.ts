@@ -273,12 +273,16 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
       }
     };
 
-    addTotalRow("Subtotal", data.subtotal || 0);
+    const itemsSubtotal = (data.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+    const subtotalVal = Number(data.subtotal || 0) || itemsSubtotal;
+    const totalVal = Number(data.total || 0) || subtotalVal;
+
+    addTotalRow("Subtotal", subtotalVal);
     if (data.discount) {
       addTotalRow("Discount", -data.discount);
     }
     
-    const taxableAmt = (data.subtotal || 0) - (data.discount || 0);
+    const taxableAmt = subtotalVal - (data.discount || 0);
     if (data.discount || data.gst_enabled) {
       addTotalRow("Taxable Amount", taxableAmt);
     }
@@ -288,7 +292,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
       addTotalRow("SGST", data.sgst || 0);
     }
     lines.push(`[C]${divider}\n`);
-    addTotalRow("TOTAL", data.total || 0, true);
+    addTotalRow("TOTAL", totalVal, true);
     lines.push(`[C]${divider}\n`);
 
     if (data.status === "paid") {

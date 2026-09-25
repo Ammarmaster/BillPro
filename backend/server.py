@@ -1450,6 +1450,214 @@ async def delta_sync(since: Optional[str] = None, user: dict = Depends(get_curre
     }
 
 
+class BatchSyncAction(BaseModel):
+    id: Optional[str] = None
+    type: str
+    payload: dict = {}
+    localId: Optional[str] = None
+    createdAt: Optional[str] = None
+
+
+class BatchSyncRequest(BaseModel):
+    actions: List[BatchSyncAction] = []
+    restaurant: Optional[dict] = None
+    client_timestamp: Optional[str] = None
+
+
+@api.post("/sync/batch")
+async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    id_map = {}
+    synced_count = 0
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # If restaurant settings provided in batch, update them
+    if payload.restaurant:
+        r_data = {k: v for k, v in payload.restaurant.items() if k not in ["_id", "id", "tenant_id"]}
+        r_data["updated_at"] = now
+        await db.restaurants.update_one({"tenant_id": tid}, {"$set": r_data}, upsert=True)
+    
+    for action in payload.actions:
+        a_type = action.type
+        p = action.payload or {}
+        local_id = action.localId
+        
+        try:
+            if a_type == "CREATE_CATEGORY":
+                cid = str(uuid.uuid4())
+                doc = {"id": cid, "tenant_id": tid, "name": p.get("name"), "sort_order": p.get("sort_order", 0), "created_at": now}
+                await db.categories.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = cid
+                synced_count += 1
+                
+            elif a_type == "DELETE_CATEGORY":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                if target_id:
+                    await db.categories.update_one({"id": target_id, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
+                    await db.menu_items.update_many({"category_id": target_id, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
+                synced_count += 1
+                
+            elif a_type == "CREATE_MENU_ITEM":
+                iid = str(uuid.uuid4())
+                cat_id = id_map.get(p.get("category_id"), p.get("category_id"))
+                doc = {
+                    "id": iid,
+                    "tenant_id": tid,
+                    "name": p.get("name"),
+                    "category_id": cat_id,
+                    "price": float(p.get("price", 0)),
+                    "description": p.get("description", ""),
+                    "is_veg": p.get("is_veg", True),
+                    "created_at": now
+                }
+                await db.menu_items.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = iid
+                synced_count += 1
+                
+            elif a_type == "UPDATE_MENU_ITEM":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                if target_id:
+                    upd = {k: v for k, v in p.items() if k not in ["id", "_id", "tenant_id"] and v is not None}
+                    if "category_id" in upd:
+                        upd["category_id"] = id_map.get(upd["category_id"], upd["category_id"])
+                    if upd:
+                        await db.menu_items.update_one({"id": target_id, "tenant_id": tid}, {"$set": upd})
+                synced_count += 1
+                
+            elif a_type == "DELETE_MENU_ITEM":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                if target_id:
+                    await db.menu_items.update_one({"id": target_id, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
+                synced_count += 1
+                
+            elif a_type == "CREATE_TABLE":
+                tbl_id = str(uuid.uuid4())
+                doc = {"id": tbl_id, "tenant_id": tid, "label": p.get("label"), "seats": p.get("seats", 4), "created_at": now}
+                await db.tables.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = tbl_id
+                synced_count += 1
+                
+            elif a_type == "DELETE_TABLE":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                if target_id:
+                    await db.tables.update_one({"id": target_id, "tenant_id": tid}, {"$set": {"deleted_at": now, "is_deleted": True}})
+                synced_count += 1
+                
+            elif a_type == "SAVE_RESTAURANT":
+                r_data = {k: v for k, v in p.items() if k not in ["_id", "id", "tenant_id"]}
+                r_data["updated_at"] = now
+                await db.restaurants.update_one({"tenant_id": tid}, {"$set": r_data}, upsert=True)
+                synced_count += 1
+                
+            elif a_type == "CREATE_ORDER":
+                oid = local_id if (local_id and not local_id.startswith("temp-")) else str(uuid.uuid4())
+                items = p.get("items", [])
+                subtotal = float(p.get("subtotal", 0) or sum(float(x.get("price", 0)) * int(x.get("quantity", 1)) for x in items))
+                doc = {
+                    "id": oid,
+                    "tenant_id": tid,
+                    "order_number": p.get("order_number") or str(uuid.uuid4().hex[:4].upper()),
+                    "table_number": p.get("table_number", "Takeaway"),
+                    "customer_name": p.get("customer_name", "Guest"),
+                    "session_id": p.get("session_id", ""),
+                    "items": items,
+                    "subtotal": subtotal,
+                    "notes": p.get("notes", ""),
+                    "status": p.get("status", "placed"),
+                    "created_at": p.get("created_at") or now,
+                    "updated_at": now,
+                }
+                existing = await db.orders.find_one({"id": oid, "tenant_id": tid})
+                if existing:
+                    await db.orders.update_one({"id": oid, "tenant_id": tid}, {"$set": doc})
+                else:
+                    await db.orders.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = oid
+                synced_count += 1
+                
+            elif a_type == "UPDATE_ORDER":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                if target_id:
+                    upd = {k: v for k, v in p.items() if k not in ["id", "_id", "tenant_id"] and v is not None}
+                    upd["updated_at"] = now
+                    await db.orders.update_one({"id": target_id, "tenant_id": tid}, {"$set": upd})
+                synced_count += 1
+                
+            elif a_type == "UPDATE_ORDER_STATUS":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                if target_id:
+                    await db.orders.update_one({"id": target_id, "tenant_id": tid}, {"$set": {"status": p.get("status"), "updated_at": now}})
+                synced_count += 1
+                
+            elif a_type == "CREATE_BILL":
+                bid = local_id if (local_id and not local_id.startswith("temp-")) else str(uuid.uuid4())
+                mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
+                mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else [])
+                doc = {
+                    "id": bid,
+                    "tenant_id": tid,
+                    "bill_number": p.get("bill_number") or f"EZ-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}",
+                    "order_id": mapped_oid,
+                    "order_ids": mapped_oids,
+                    "table_number": p.get("table_number", "Takeaway"),
+                    "customer_name": p.get("customer_name", "Guest"),
+                    "items": p.get("items", []),
+                    "subtotal": float(p.get("subtotal", 0)),
+                    "total": float(p.get("total", 0)),
+                    "tax": float(p.get("tax", 0)),
+                    "discount": float(p.get("discount", 0)),
+                    "payment_method": p.get("payment_method", "UPI"),
+                    "status": p.get("status", "unpaid"),
+                    "created_at": p.get("created_at") or now,
+                    "paid_at": p.get("paid_at") or (now if p.get("status") == "paid" else None)
+                }
+                existing = await db.bills.find_one({"id": bid, "tenant_id": tid})
+                if existing:
+                    await db.bills.update_one({"id": bid, "tenant_id": tid}, {"$set": doc})
+                else:
+                    await db.bills.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = bid
+                synced_count += 1
+                
+            elif a_type == "MARK_BILL_PAID":
+                target_id = id_map.get(p.get("id"), p.get("id"))
+                pay_method = p.get("payment_method", "UPI")
+                if target_id:
+                    await db.bills.update_one({"id": target_id, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
+                mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else [])
+                if mapped_oids:
+                    await db.orders.update_many({"id": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
+                synced_count += 1
+                
+            elif a_type == "SETTLE_TABLE":
+                tbl = p.get("table_number")
+                mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else []
+                pay_method = p.get("payment_method", "UPI")
+                if mapped_oids:
+                    await db.orders.update_many({"id": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
+                    await db.bills.update_many({"order_ids": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                elif tbl:
+                    await db.orders.update_many({"table_number": tbl, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
+                    await db.bills.update_many({"table_number": tbl, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                synced_count += 1
+                
+        except Exception as e:
+            logger.warning(f"Batch sync item error for {a_type}: {e}")
+            
+    return {
+        "ok": True,
+        "synced_count": synced_count,
+        "id_map": id_map,
+        "timestamp": now
+    }
+
+
 
 # ---------- waiters (staff) ----------
 @api.post("/staff/waiters")

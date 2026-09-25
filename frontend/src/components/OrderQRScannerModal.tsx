@@ -326,7 +326,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
               {/* Subtotal Card */}
               <View style={[styles.totalRow, { borderTopColor: theme.border }]}>
                 <Text style={[styles.totalLbl, { color: theme.onSurface }]}>Total Amount</Text>
-                <Text style={styles.totalVal}>₹{scannedOrderPreview.subtotal}</Text>
+                <Text style={styles.totalVal}>₹{scannedOrderPreview.subtotal || (scannedOrderPreview.items || []).reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0)}</Text>
               </View>
 
               {/* Action Buttons */}

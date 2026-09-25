@@ -9,11 +9,12 @@ import {
   Image,
   Dimensions,
 } from "react-native";
+import { usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing } from "@/src/theme";
 
 export default function PWAInstallPrompt() {
-  if (Platform.OS !== "web") return null;
+  const pathname = usePathname();
 
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -151,6 +152,10 @@ export default function PWAInstallPrompt() {
     }
   };
 
+  if (Platform.OS !== "web" || pathname !== "/") {
+    return null;
+  }
+
   return (
     <>
       {/* 1. Notification Permission Banner when in Standalone / Web mode */}
@@ -224,7 +229,7 @@ export default function PWAInstallPrompt() {
                   <View style={styles.badgeRow}>
                     <View style={styles.badge}>
                       <Ionicons name="flash" size={11} color="#16A34A" />
-                      <Text style={styles.badgeText}>Instant 0ms Speed</Text>
+                      <Text style={styles.badgeText}>Superfast Speed</Text>
                     </View>
                     <View style={[styles.badge, { backgroundColor: "#EEF2FF" }]}>
                       <Ionicons name="notifications" size={11} color="#635BFF" />

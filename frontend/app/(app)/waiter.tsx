@@ -37,18 +37,7 @@ export default function WaiterScreen() {
 
   const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
-  const [tables, setTables] = useState<Table[]>(() => {
-    const cached = api.getCachedTables();
-    if (cached && cached.length > 0) return cached;
-    return [
-      { id: "tbl-1", label: "1", seats: 4 },
-      { id: "tbl-2", label: "2", seats: 4 },
-      { id: "tbl-3", label: "3", seats: 6 },
-      { id: "tbl-4", label: "4", seats: 2 },
-      { id: "tbl-5", label: "5", seats: 4 },
-      { id: "tbl-6", label: "6", seats: 4 },
-    ];
-  });
+  const [tables, setTables] = useState<Table[]>(() => api.getCachedTables() || []);
   const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
   
@@ -437,7 +426,10 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       })
     : [];
 
-  const totalTableAmount = tableOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0), 0);
+  const totalTableAmount = tableOrders.reduce((sum: number, o: any) => {
+    const sub = Number(o.subtotal || 0) || (o.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+    return sum + sub;
+  }, 0);
   const uniqueGuests = Array.from(new Set(tableOrders.map((o: any) => o.customer_name || "Guest 1")));
 
   // Persistent refs so BackHandler never gets unsubscribed or drops off on state mutations

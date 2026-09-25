@@ -96,7 +96,10 @@ export default function BillsHistory() {
   }, [bills, activeFilter, todayPaidBills]);
 
   const todayTotal = useMemo(() => {
-    return todayPaidBills.reduce((sum, b) => sum + Number(b.total || 0), 0);
+    return todayPaidBills.reduce((sum, b) => {
+      const amt = Number(b.total ?? b.subtotal ?? 0) || (b.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+      return sum + amt;
+    }, 0);
   }, [todayPaidBills]);
 
   const todayFormula = useMemo(() => {
