@@ -90,11 +90,15 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
     }
   } catch {}
 } else if (Platform.OS !== "web") {
-  loadQueueFromDisk().then((q) => {
-    syncQueue = q || [];
-    isInitialized = true;
-    notifyQueueListeners();
-  });
+  try {
+    loadQueueFromDisk()
+      .then((q) => {
+        syncQueue = q || [];
+        isInitialized = true;
+        notifyQueueListeners();
+      })
+      .catch(() => {});
+  } catch {}
 }
 
 export function getSyncQueue(): SyncAction[] {
@@ -458,42 +462,50 @@ export function startOfflineSyncRunner(
   updateCacheFn?: (type: SyncActionType, localId: string | undefined, realObj: any) => void
 ) {
   const triggerSync = async () => {
-    if (!isLocalModeFn()) return;
-    if (syncQueue.length === 0) return;
-    await processSyncQueue(reqFn, idMap, updateCacheFn);
+    try {
+      if (!isLocalModeFn || !isLocalModeFn()) return;
+      if (syncQueue.length === 0) return;
+      await processSyncQueue(reqFn, idMap, updateCacheFn);
+    } catch {}
   };
 
   const triggerMidnightSync = async () => {
-    if (!isLocalModeFn()) return;
-    const shouldSync = await shouldRunMidnightSync();
-    if (shouldSync) {
-      console.log("[MidnightSync] Running scheduled 12:00 AM cloud synchronization...");
-      const result = await processSyncQueue(reqFn, idMap, updateCacheFn);
-      if (result.failed === 0) {
-        await markMidnightSyncComplete();
+    try {
+      if (!isLocalModeFn || !isLocalModeFn()) return;
+      const shouldSync = await shouldRunMidnightSync();
+      if (shouldSync) {
+        console.log("[MidnightSync] Running scheduled 12:00 AM cloud synchronization...");
+        const result = await processSyncQueue(reqFn, idMap, updateCacheFn);
+        if (result && result.failed === 0) {
+          await markMidnightSyncComplete();
+        }
       }
-    }
+    } catch {}
   };
 
   // 1. Web network reconnection listener: triggers all-at-once batch sync
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    window.addEventListener("online", () => {
-      console.log("[OfflineSync] Network reconnected — uploading all offline data to cloud at once.");
-      triggerSync();
-    });
+    try {
+      window.addEventListener("online", () => {
+        console.log("[OfflineSync] Network reconnected — uploading all offline data to cloud at once.");
+        triggerSync().catch(() => {});
+      });
+    } catch {}
   }
 
   // 2. Periodic check for 12:00 AM Midnight scheduled cloud sync
   const interval = setInterval(() => {
-    triggerMidnightSync();
+    triggerMidnightSync().catch(() => {});
   }, 60000);
 
   // Check midnight sync on startup
   setTimeout(() => {
-    triggerMidnightSync();
+    triggerMidnightSync().catch(() => {});
   }, 3000);
 
   return () => {
-    clearInterval(interval);
+    try {
+      clearInterval(interval);
+    } catch {}
   };
 }

@@ -1437,11 +1437,17 @@ function updateCacheFromSync(type: SyncActionType, localId: string | undefined, 
   }
 }
 
-// Auto-start offline sync scheduler on module initialization
-startOfflineSyncRunner(
-  (path, opts, auth) => req(path, opts, auth),
-  tempIdMap,
-  () => api.isLocalProcessingMode(),
-  updateCacheFromSync
-);
+// Auto-start offline sync scheduler safely after module initialization
+setTimeout(() => {
+  try {
+    startOfflineSyncRunner(
+      (path, opts, auth) => req(path, opts, auth),
+      tempIdMap,
+      () => (api.isLocalProcessingMode ? api.isLocalProcessingMode() : false),
+      updateCacheFromSync
+    );
+  } catch (err) {
+    console.warn("[OfflineSync] Failed to initialize runner:", err);
+  }
+}, 1000);
 

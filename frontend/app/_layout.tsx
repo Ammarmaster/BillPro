@@ -1,6 +1,7 @@
+import "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LogBox, StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -15,19 +16,31 @@ import DynamicIslandBanner from "@/src/components/DynamicIslandBanner";
 import PWAInstallPrompt from "@/src/components/PWAInstallPrompt";
 
 LogBox.ignoreAllLogs(true);
-SplashScreen.preventAutoHideAsync();
+try {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+} catch {}
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
+  const [fontTimeout, setFontTimeout] = useState(false);
 
   useEffect(() => {
-    if (loaded || error) SplashScreen.hideAsync();
+    const timer = setTimeout(() => {
+      setFontTimeout(true);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (loaded || error || fontTimeout) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
     if (typeof document !== "undefined") {
       document.title = "EzBill - Smart Restaurant POS & ERP";
     }
-  }, [loaded, error]);
+  }, [loaded, error, fontTimeout]);
 
-  if (!loaded && !error) return null;
+  if (!loaded && !error && !fontTimeout) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
