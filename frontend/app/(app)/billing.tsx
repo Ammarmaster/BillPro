@@ -115,6 +115,7 @@ export default function Billing() {
 
       const tOrders = oList.filter((x: any) => 
         (targetOrderIds.length > 0 ? targetOrderIds.includes(x.id) : isSameTable(x.table_number, tableNumber)) &&
+        !String(x.id).startsWith("temp-") &&
         x.status !== "paid" && x.status !== "completed" && x.status !== "cancelled" && x.status !== "pending_scan"
       );
 

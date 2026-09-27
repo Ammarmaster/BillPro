@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { BillingEngine } from "./billingEngine";
+import { isTodayBusinessDay, safeParseDate } from "./dateUtils";
 import {
   enqueueSyncAction,
   getPendingSyncCount,
@@ -105,25 +106,12 @@ function isSameTable(a: string | undefined | null, b: string | undefined | null)
 
 function isTodayDate(ts?: any): boolean {
   if (!ts) return true;
-  try {
-    const clean = String(ts).trim();
-    if (!clean) return true;
-    const d = new Date(clean);
-    if (isNaN(d.getTime())) return true;
-    const now = new Date();
-    return (
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate()
-    );
-  } catch {
-    return true;
-  }
+  return isTodayBusinessDay(ts);
 }
 
 export function computeLocalSummary(): any {
-  const bList = memoryCache["/bills"] || [];
-  const oList = memoryCache["/orders"] || [];
+  const bList = (memoryCache["/bills"] || []).filter((b: any) => b && !String(b.id).startsWith("temp-"));
+  const oList = (memoryCache["/orders"] || []).filter((o: any) => o && !String(o.id).startsWith("temp-"));
   const todayStr = getTodayDateString();
 
   const isPaid = (status?: any) => {
@@ -167,16 +155,16 @@ export function computeLocalSummary(): any {
   revenue_today += unbilledRevenue;
 
   const orders_today = todayOrders.length;
-  const orders_open = oList.filter(
+  const orders_open = todayOrders.filter(
     (o: any) =>
       !isPaid(o.status) &&
       o.status !== "cancelled"
   ).length;
-  const pending_count = oList.filter((o: any) => o.status === "placed").length;
-  const cooking_count = oList.filter(
+  const pending_count = todayOrders.filter((o: any) => o.status === "placed").length;
+  const cooking_count = todayOrders.filter(
     (o: any) => o.status === "cooking" || o.status === "preparing"
   ).length;
-  const ready_count = oList.filter((o: any) => o.status === "ready").length;
+  const ready_count = todayOrders.filter((o: any) => o.status === "ready").length;
 
   const webPaidOrdersToday = todayOrders.filter(
     (o: any) =>
@@ -219,7 +207,7 @@ export function computeLocalSummary(): any {
     revenue_total: Math.max(revenue_today, Number(currentSummary.revenue_total || 0)),
     orders_today,
     orders_open,
-    orders_total: Math.max(oList.length, Number(currentSummary.orders_total || 0)),
+    orders_total: Math.max(todayOrders.length, Number(currentSummary.orders_total || 0)),
     pending_count,
     cooking_count,
     ready_count,
@@ -236,6 +224,19 @@ export function computeLocalSummary(): any {
   return summary;
 }
 
+function sanitizeHydratedData(key: string, parsed: any): any {
+  if (key === "/dashboard/summary") {
+    return sanitizeSummaryForNewDay(parsed);
+  }
+  if (key === "/orders" && Array.isArray(parsed)) {
+    return parsed.filter((o: any) => o && !String(o.id).startsWith("temp-"));
+  }
+  if (key === "/bills" && Array.isArray(parsed)) {
+    return parsed.filter((b: any) => b && !String(b.id).startsWith("temp-"));
+  }
+  return parsed;
+}
+
 // Synchronous disk hydration on Web and startup
 if (Platform.OS === "web" && typeof window !== "undefined") {
   try {
@@ -244,7 +245,7 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
       const v = window.localStorage.getItem("disk_cache_" + k);
       if (v) {
         const parsed = JSON.parse(v);
-        memoryCache[k] = k === "/dashboard/summary" ? sanitizeSummaryForNewDay(parsed) : parsed;
+        memoryCache[k] = sanitizeHydratedData(k, parsed);
       }
     }
   } catch {}
@@ -256,7 +257,7 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
       if (v) {
         try {
           const parsed = JSON.parse(v);
-          memoryCache[k] = k === "/dashboard/summary" ? sanitizeSummaryForNewDay(parsed) : parsed;
+          memoryCache[k] = sanitizeHydratedData(k, parsed);
           notifyCacheUpdate(k, memoryCache[k]);
         } catch {}
       }
@@ -479,6 +480,17 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     }
 
     if (isGet) {
+      if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+        if (path === "/dashboard/summary") {
+          return computeLocalSummary();
+        }
+        if (path === "/orders" || path === "/bills" || path === "/tables" || path === "/categories" || path === "/menu-items") {
+          const localList = memoryCache[path];
+          if (Array.isArray(localList) && localList.length > 0) {
+            return localList;
+          }
+        }
+      }
       if (path === "/dashboard/summary" && data && typeof data === "object") {
         data.__cache_date = getTodayDateString();
       }
@@ -531,7 +543,12 @@ export const api = {
     clearCachePrefix("/restaurant");
     return req("/restaurant", { method: "POST", body: JSON.stringify(payload) });
   },
-  listCategories: () => req("/categories"),
+  listCategories: async () => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode() && memoryCache["/categories"]) {
+      return memoryCache["/categories"];
+    }
+    return req("/categories");
+  },
   createCategory: async (payload: any) => {
     if (api.isLocalProcessingMode()) {
       const localId = "cat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
@@ -560,7 +577,12 @@ export const api = {
     clearCachePrefix("/categories");
     return req(`/categories/${id}`, { method: "DELETE" });
   },
-  listMenu: () => req("/menu-items"),
+  listMenu: async () => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode() && memoryCache["/menu-items"]) {
+      return memoryCache["/menu-items"];
+    }
+    return req("/menu-items");
+  },
   createMenuItem: async (payload: any) => {
     if (api.isLocalProcessingMode()) {
       const localId = "item_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
@@ -609,7 +631,12 @@ export const api = {
     clearCachePrefix("/menu-items");
     return req(`/menu-items/${id}`, { method: "DELETE" });
   },
-  listTables: () => req("/tables"),
+  listTables: async () => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+      return memoryCache["/tables"] || [];
+    }
+    return req("/tables");
+  },
   createTable: async (payload: any) => {
     if (api.isLocalProcessingMode()) {
       const localId = "tbl_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
@@ -650,12 +677,34 @@ export const api = {
   
   isLocalProcessingMode: () => {
     const sub = memoryCache["/subscriptions/mine"];
-    if (!sub) return false;
-    if (sub.is_local_mode || sub.limits?.is_local_mode) return true;
-    const price = Number(sub.price || 0);
-    if (price === 299 || price === 2999) return true;
-    const pName = String(sub.plan_name || sub.plan_id || "").toLowerCase();
-    if (pName.includes("starter") || pName.includes("basic") || pName.includes("299")) return true;
+    if (sub) {
+      if (sub.is_local_mode || sub.limits?.is_local_mode) return true;
+      const price = Number(sub.price || 0);
+      if (price === 299 || price === 2999) return true;
+      const pName = String(sub.plan_name || sub.plan_id || "").toLowerCase();
+      if (pName.includes("starter") || pName.includes("basic") || pName.includes("299")) return true;
+    }
+    try {
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        const cachedSub = window.localStorage.getItem("cached_sub") || window.localStorage.getItem("disk_cache_/subscriptions/mine");
+        if (cachedSub) {
+          const s = JSON.parse(cachedSub);
+          if (s.is_local_mode || s.limits?.is_local_mode) return true;
+          const p = Number(s.price || 0);
+          if (p === 299 || p === 2999) return true;
+          const n = String(s.plan_name || s.plan_id || "").toLowerCase();
+          if (n.includes("starter") || n.includes("basic") || n.includes("299")) return true;
+        }
+        const userStr = window.localStorage.getItem("lumina_user");
+        if (userStr) {
+          const u = JSON.parse(userStr);
+          const p = Number(u.subscription?.price || u.price || 0);
+          if (p === 299 || p === 2999) return true;
+          const n = String(u.subscription?.plan_name || u.plan_id || "").toLowerCase();
+          if (n.includes("starter") || n.includes("basic") || n.includes("299")) return true;
+        }
+      }
+    } catch {}
     return false;
   },
 
@@ -679,9 +728,10 @@ export const api = {
         updated_at: nowIso,
       };
 
-      // 1. Instant local cache update
+      // 1. Instant local cache update - Purge any temp- orders from the list
       const list = memoryCache["/orders"] || [];
-      memoryCache["/orders"] = [localOrder, ...list];
+      const cleanedList = list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== localId);
+      memoryCache["/orders"] = [localOrder, ...cleanedList];
       setDiskCache("disk_cache_/orders", JSON.stringify(memoryCache["/orders"])).catch(() => {});
       notifyCacheUpdate("/orders", memoryCache["/orders"]);
 
@@ -710,7 +760,7 @@ export const api = {
 
     const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
     const list = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id)];
+    memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id && !String(o.id).startsWith("temp-"))];
     clearCachePrefix("/tables");
     clearCachePrefix("/dashboard/summary");
     return res;
@@ -720,29 +770,34 @@ export const api = {
     const isLocal = api.isLocalProcessingMode();
     if (isLocal) {
       const list = memoryCache["/orders"] || [];
-      const updated = list.map((o: any) => {
-        if (o.id === resolvedId || o.id === id) {
-          const items = payload.items || o.items || [];
-          const computedSubtotal = payload.subtotal !== undefined
-            ? Number(payload.subtotal)
-            : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-          return {
-            ...o,
-            ...payload,
-            items,
-            subtotal: computedSubtotal,
-            updated_at: new Date().toISOString()
-          };
-        }
-        return o;
-      });
+      const updated = list
+        .filter((o: any) => !String(o.id).startsWith("temp-") || o.id === resolvedId || o.id === id)
+        .map((o: any) => {
+          if (o.id === resolvedId || o.id === id) {
+            const items = payload.items || o.items || [];
+            const computedSubtotal = payload.subtotal !== undefined
+              ? Number(payload.subtotal)
+              : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+            return {
+              ...o,
+              ...payload,
+              items,
+              subtotal: computedSubtotal,
+              updated_at: new Date().toISOString()
+            };
+          }
+          return o;
+        });
       memoryCache["/orders"] = updated;
       setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
       notifyCacheUpdate("/orders", updated);
 
+      const summary = computeLocalSummary();
+      notifyCacheUpdate("/dashboard/summary", summary);
+
       await enqueueSyncAction("UPDATE_ORDER", { id: resolvedId, ...payload });
 
-      return { id: resolvedId, ...payload };
+      return updated.find((o: any) => o.id === resolvedId || o.id === id) || { id: resolvedId, ...payload };
     }
 
     const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
@@ -752,7 +807,16 @@ export const api = {
     clearCachePrefix("/dashboard/summary");
     return res;
   },
-  listOrders: (status?: string) => req(`/orders${status ? `?status_filter=${status}` : ""}`),
+  listOrders: async (status?: string) => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+      const list = (memoryCache["/orders"] || []).filter((o: any) => o && !String(o.id).startsWith("temp-"));
+      if (status) {
+        return list.filter((o: any) => o.status === status);
+      }
+      return list;
+    }
+    return req(`/orders${status ? `?status_filter=${status}` : ""}`);
+  },
   updateOrderStatus: async (id: string, status: string) => {
     const resolvedId = tempIdMap[id] || id;
     const isLocal = api.isLocalProcessingMode();
@@ -873,8 +937,8 @@ export const api = {
     const isLocal = api.isLocalProcessingMode();
 
     if (isLocal) {
-      const bList = memoryCache["/bills"] || [];
-      const oList = memoryCache["/orders"] || [];
+      const bList = (memoryCache["/bills"] || []).filter((b: any) => !String(b.id).startsWith("temp-") || b.id === rawId || b.id === resolvedId);
+      const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
       let targetBill: any = null;
       let found = false;
 
@@ -891,8 +955,24 @@ export const api = {
           const items = b.items && b.items.length > 0 ? b.items : (passedObj?.items || []);
           const subtotal = Number(b.subtotal ?? b.total ?? 0) || Number(passedObj?.subtotal ?? passedObj?.total ?? 0) || items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
           const total = Number(b.total ?? b.subtotal ?? 0) || Number(passedObj?.total ?? passedObj?.subtotal ?? 0) || subtotal;
+
+          // Always ensure a permanent bill_ ID (never keep temp- ID on paid bill)
+          const realBillId = (b.id && !String(b.id).startsWith("temp-"))
+            ? b.id
+            : (passedObj?.id && !String(passedObj.id).startsWith("temp-"))
+              ? passedObj.id
+              : ("bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7));
+
+          const billNumber = (b.bill_number && !b.bill_number.includes("OFFLINE"))
+            ? b.bill_number
+            : (passedObj?.bill_number && !passedObj.bill_number.includes("OFFLINE"))
+              ? passedObj.bill_number
+              : `EZ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
           targetBill = {
             ...b,
+            id: realBillId,
+            bill_number: billNumber,
             items,
             subtotal,
             total,
@@ -922,14 +1002,22 @@ export const api = {
 
         const total = Number(passedObj?.total || 0) || subtotal;
         const tableNum = passedObj?.table_number || matchingOrder?.table_number || "Takeaway";
-        const orderIds = passedObj?.order_ids || (passedObj?.order_id ? [passedObj.order_id] : (matchingOrder ? [matchingOrder.id] : (resolvedId ? [resolvedId] : [])));
+        const orderIds = passedObj?.order_ids || (passedObj?.order_id ? [passedObj.order_id] : (matchingOrder ? [matchingOrder.id] : (resolvedId && !resolvedId.startsWith("temp-") ? [resolvedId] : [])));
 
-        const billId = rawId && !rawId.startsWith("temp-") ? rawId : ("bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7));
+        const billId = (rawId && !rawId.startsWith("temp-"))
+          ? rawId
+          : (passedObj?.id && !String(passedObj.id).startsWith("temp-"))
+            ? passedObj.id
+            : ("bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7));
+
+        const billNumber = (passedObj?.bill_number && !passedObj.bill_number.includes("OFFLINE"))
+          ? passedObj.bill_number
+          : `EZ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         targetBill = {
           id: billId,
-          bill_number: passedObj?.bill_number || `EZ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-          order_id: orderIds[0] || billId,
+          bill_number: billNumber,
+          order_id: orderIds[0] || matchingOrder?.id || billId,
           order_ids: orderIds,
           table_number: tableNum,
           customer_name: passedObj?.customer_name || matchingOrder?.customer_name || "Guest",
@@ -944,9 +1032,10 @@ export const api = {
         updatedBills.unshift(targetBill);
       }
 
-      memoryCache["/bills"] = updatedBills;
-      setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
-      notifyCacheUpdate("/bills", updatedBills);
+      const finalCleanBills = updatedBills.filter((b: any) => b && !String(b.id).startsWith("temp-"));
+      memoryCache["/bills"] = finalCleanBills;
+      setDiskCache("disk_cache_/bills", JSON.stringify(finalCleanBills)).catch(() => {});
+      notifyCacheUpdate("/bills", finalCleanBills);
 
       const orderIdsToSettle = targetBill?.order_ids || (targetBill?.order_id ? [targetBill.order_id] : [resolvedId]);
       const updatedOrders = oList.map((o: any) => {
@@ -1002,11 +1091,24 @@ export const api = {
     const isLocal = api.isLocalProcessingMode();
 
     if (isLocal) {
-      api.settleTableInCache(tableNumber);
+      const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
+      const cleanOrderIds = (orderIds || []).filter((id: string) => id && !String(id).startsWith("temp-"));
 
-      const oList = memoryCache["/orders"] || [];
+      // 1. Filter ONLY the active (unpaid/uncompleted) orders currently on this table
+      const activeTableOrders = oList.filter((o: any) =>
+        (cleanOrderIds.length > 0 ? cleanOrderIds.includes(o.id) : isSameTable(o.table_number, tableNumber)) &&
+        o.status !== "paid" && o.status !== "completed" && o.status !== "cancelled" && o.status !== "settled"
+      );
+
+      const ordersToSettle = activeTableOrders.length > 0
+        ? activeTableOrders
+        : oList.filter((o: any) => (cleanOrderIds.length > 0 ? cleanOrderIds.includes(o.id) : isSameTable(o.table_number, tableNumber)) && o.status !== "cancelled");
+
+      const targetOrderIds = ordersToSettle.map((o: any) => o.id);
+
+      // 2. Mark ONLY these target orders as paid
       const updatedOrders = oList.map((o: any) => {
-        if ((orderIds && orderIds.includes(o.id)) || isSameTable(o.table_number, tableNumber)) {
+        if (targetOrderIds.includes(o.id) || isSameTable(o.table_number, tableNumber)) {
           return { ...o, status: "paid" };
         }
         return o;
@@ -1015,18 +1117,23 @@ export const api = {
       setDiskCache("disk_cache_/orders", JSON.stringify(updatedOrders)).catch(() => {});
       notifyCacheUpdate("/orders", updatedOrders);
 
-      const tableOrders = oList.filter((o: any) => (orderIds && orderIds.includes(o.id)) || isSameTable(o.table_number, tableNumber));
-      const combinedItems = tableOrders.flatMap((o: any) => o.items || []);
-      const computedSubtotal = tableOrders.reduce((sum: number, o: any) => {
+      // 3. Compute accurate items and subtotal from only the orders being settled
+      const combinedItems = ordersToSettle.flatMap((o: any) => o.items || []);
+      const computedSubtotal = ordersToSettle.reduce((sum: number, o: any) => {
         const sub = Number(o.subtotal || 0) || (o.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
         return sum + sub;
       }, 0);
       const finalTotal = total !== undefined && total > 0 ? total : computedSubtotal;
 
-      const bList = memoryCache["/bills"] || [];
+      // 4. Update or create bill for this settlement
+      const bList = (memoryCache["/bills"] || []).filter((b: any) => !String(b.id).startsWith("temp-"));
       let foundMatchingBill = false;
       const updatedBills = bList.map((b: any) => {
-        if (isSameTable(b.table_number, tableNumber) || (orderIds && (orderIds.includes(b.order_id) || (b.order_ids && b.order_ids.some((id: string) => orderIds.includes(id)))))) {
+        const isMatch =
+          (targetOrderIds.length > 0 && (targetOrderIds.includes(b.order_id) || (b.order_ids && b.order_ids.some((id: string) => targetOrderIds.includes(id))))) ||
+          (isSameTable(b.table_number, tableNumber) && b.status !== "paid");
+
+        if (isMatch) {
           foundMatchingBill = true;
           const billTotal = Number(b.total ?? b.subtotal ?? 0) || finalTotal;
           return { ...b, total: billTotal, status: "paid", payment_method: paymentMethod, paid_at: new Date().toISOString() };
@@ -1039,10 +1146,10 @@ export const api = {
         const newBill = {
           id: localBillId,
           bill_number: `EZ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-          order_id: tableOrders[0]?.id,
-          order_ids: orderIds || tableOrders.map((o: any) => o.id),
+          order_id: targetOrderIds[0] || localBillId,
+          order_ids: targetOrderIds,
           table_number: tableNumber,
-          customer_name: tableOrders[0]?.customer_name || "Guest",
+          customer_name: ordersToSettle[0]?.customer_name || "Guest",
           items: combinedItems,
           subtotal: computedSubtotal,
           total: finalTotal,
@@ -1058,13 +1165,25 @@ export const api = {
       setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
       notifyCacheUpdate("/bills", updatedBills);
 
+      // 5. Update table status to available in cache
+      const tList = memoryCache["/tables"] || [];
+      const updatedTables = tList.map((t: any) =>
+        isSameTable(t.label, tableNumber)
+          ? { ...t, status: "available" }
+          : t
+      );
+      memoryCache["/tables"] = updatedTables;
+      setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+      notifyCacheUpdate("/tables", updatedTables);
+
+      // 6. Recalculate local dashboard summary
       const summary = computeLocalSummary();
       notifyCacheUpdate("/dashboard/summary", summary);
 
       await enqueueSyncAction("SETTLE_TABLE", {
         table_number: tableNumber,
         payment_method: paymentMethod,
-        order_ids: orderIds,
+        order_ids: targetOrderIds,
         total: finalTotal
       });
 
@@ -1094,7 +1213,12 @@ export const api = {
     api.dashboardSummary().catch(() => {});
     return res;
   },
-  listBills: () => req("/bills"),
+  listBills: async () => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+      return (memoryCache["/bills"] || []).filter((b: any) => b && !String(b.id).startsWith("temp-"));
+    }
+    return req("/bills");
+  },
   dashboardSummary: async () => {
     if (api.isLocalProcessingMode()) {
       const summary = computeLocalSummary();
@@ -1284,11 +1408,12 @@ export const api = {
   },
   injectCachedOrder: (order: any) => {
     if (!order || !order.id) return;
-    const isLocal = api.isLocalProcessingMode();
     const list = memoryCache["/orders"] || [];
-    let updated = [order, ...list.filter((o: any) => o.id !== order.id)];
-    if (!isLocal) {
-      updated = updated.filter((o: any) => !String(o.id).startsWith("temp-"));
+    let updated: any[];
+    if (!String(order.id).startsWith("temp-")) {
+      updated = [order, ...list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== order.id)];
+    } else {
+      updated = [order, ...list.filter((o: any) => o.id !== order.id)];
     }
     memoryCache["/orders"] = updated;
     setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
@@ -1296,11 +1421,12 @@ export const api = {
   },
   injectCachedBill: (bill: any) => {
     if (!bill || !bill.id) return;
-    const isLocal = api.isLocalProcessingMode();
     const list = memoryCache["/bills"] || [];
-    let updated = [bill, ...list.filter((b: any) => b.id !== bill.id)];
-    if (!isLocal) {
-      updated = updated.filter((b: any) => !String(b.id).startsWith("temp-"));
+    let updated: any[];
+    if (!String(bill.id).startsWith("temp-")) {
+      updated = [bill, ...list.filter((b: any) => !String(b.id).startsWith("temp-") && b.id !== bill.id)];
+    } else {
+      updated = [bill, ...list.filter((b: any) => b.id !== bill.id)];
     }
     memoryCache["/bills"] = updated;
     setDiskCache("disk_cache_/bills", JSON.stringify(updated)).catch(() => {});
@@ -1308,42 +1434,23 @@ export const api = {
   },
   updateCachedOrder: (id: string, realOrder: any) => {
     if (!realOrder || !realOrder.id) return;
-    const isLocal = api.isLocalProcessingMode();
     const list = memoryCache["/orders"] || [];
-    const exists = list.some((o: any) => o.id === realOrder.id);
-    let updated: any[];
-    if (exists) {
-      updated = list.map((o: any) => o.id === realOrder.id ? realOrder : o).filter((o: any) => o.id !== id || o.id === realOrder.id);
-    } else {
-      updated = [realOrder, ...list.filter((o: any) => o.id !== id)];
-    }
-    if (!isLocal) {
-      updated = updated.filter((o: any) => !String(o.id).startsWith("temp-"));
-    }
+    const updated = [realOrder, ...list.filter((o: any) => o.id !== id && o.id !== realOrder.id && !String(o.id).startsWith("temp-"))];
     memoryCache["/orders"] = updated;
     setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
     notifyCacheUpdate("/orders", updated);
   },
   updateCachedBill: (id: string, realBill: any) => {
     if (!realBill || !realBill.id) return;
-    const isLocal = api.isLocalProcessingMode();
     const list = memoryCache["/bills"] || [];
-    const exists = list.some((b: any) => b.id === realBill.id);
-    let updated: any[];
-    if (exists) {
-      updated = list.map((b: any) => b.id === realBill.id ? realBill : b).filter((b: any) => b.id !== id || b.id === realBill.id);
-    } else {
-      updated = [realBill, ...list.filter((b: any) => b.id !== id)];
-    }
-    if (!isLocal) {
-      updated = updated.filter((b: any) => !String(b.id).startsWith("temp-"));
-    }
+    const updated = [realBill, ...list.filter((b: any) => b.id !== id && b.id !== realBill.id && !String(b.id).startsWith("temp-"))];
     memoryCache["/bills"] = updated;
     setDiskCache("disk_cache_/bills", JSON.stringify(updated)).catch(() => {});
     notifyCacheUpdate("/bills", updated);
   },
   setCachedOrders: (orders: any[]) => {
-    memoryCache["/orders"] = orders;
+    const clean = (Array.isArray(orders) ? orders : []).filter((o: any) => o && !String(o.id).startsWith("temp-"));
+    memoryCache["/orders"] = clean;
   },
   setCachedTables: (tables: any[]) => {
     memoryCache["/tables"] = tables;
@@ -1354,29 +1461,47 @@ export const api = {
   updateOrderStatusInCache: (orderId: string, status: string) => {
     const list = memoryCache["/orders"] || [];
     const resolvedId = tempIdMap[orderId] || orderId;
-    const updated = list.map((o: any) => o.id === resolvedId ? { ...o, status } : o);
+    const updated = list
+      .filter((o: any) => !String(o.id).startsWith("temp-") || o.id === resolvedId || o.id === orderId)
+      .map((o: any) => (o.id === resolvedId || o.id === orderId) ? { ...o, status } : o);
     memoryCache["/orders"] = updated;
+    setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
     notifyCacheUpdate("/orders", updated);
   },
   settleTableInCache: (tableNumber: string) => {
     const list = memoryCache["/orders"] || [];
-    const updated = list.map((o: any) => 
-      isSameTable(o.table_number, tableNumber)
-        ? { ...o, status: "paid" }
-        : o
-    );
+    const updated = list
+      .filter((o: any) => !String(o.id).startsWith("temp-"))
+      .map((o: any) => 
+        isSameTable(o.table_number, tableNumber)
+          ? { ...o, status: "paid" }
+          : o
+      );
     memoryCache["/orders"] = updated;
+    setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
     notifyCacheUpdate("/orders", updated);
     
     // Also mark bills as paid
     const billsList = memoryCache["/bills"] || [];
-    const updatedBills = billsList.map((b: any) => 
-      isSameTable(b.table_number, tableNumber) || updated.some((o: any) => o.id === b.order_id && o.status === "paid")
-        ? { ...b, status: "paid", paid_at: b.paid_at || new Date().toISOString() }
-        : b
-    );
+    const updatedBills = billsList
+      .filter((b: any) => !String(b.id).startsWith("temp-"))
+      .map((b: any) => 
+        isSameTable(b.table_number, tableNumber) || updated.some((o: any) => o.id === b.order_id && o.status === "paid")
+          ? { ...b, status: "paid", paid_at: b.paid_at || new Date().toISOString() }
+          : b
+      );
     memoryCache["/bills"] = updatedBills;
+    setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
     notifyCacheUpdate("/bills", updatedBills);
+
+    // Free the table
+    const tList = memoryCache["/tables"] || [];
+    const updatedTables = tList.map((t: any) =>
+      isSameTable(t.label, tableNumber) ? { ...t, status: "available" } : t
+    );
+    memoryCache["/tables"] = updatedTables;
+    setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+    notifyCacheUpdate("/tables", updatedTables);
   },
   notifyCacheUpdate: (path: string, data: any) => {
     notifyCacheUpdate(path, data);

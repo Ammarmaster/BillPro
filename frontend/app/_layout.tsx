@@ -2,7 +2,7 @@ import "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
-import { LogBox, StatusBar } from "react-native";
+import { LogBox, StatusBar, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -35,7 +35,7 @@ export default function RootLayout() {
     if (loaded || error || fontTimeout) {
       SplashScreen.hideAsync().catch(() => {});
     }
-    if (typeof document !== "undefined") {
+    if (Platform.OS === "web" && typeof document !== "undefined") {
       document.title = "EzBill - Smart Restaurant POS & ERP";
     }
   }, [loaded, error, fontTimeout]);
@@ -50,7 +50,7 @@ export default function RootLayout() {
             <NotificationProvider>
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
               <DynamicIslandBanner />
-              <PWAInstallPrompt />
+              {Platform.OS === "web" && <PWAInstallPrompt />}
             </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>

@@ -25,94 +25,100 @@ export default function PWAInstallPrompt() {
   const [showNotifBanner, setShowNotifBanner] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (Platform.OS !== "web" || typeof window === "undefined" || typeof document === "undefined") return;
 
-    // 0. Ensure PWA tags & Service Worker are injected into document.head
     try {
-      const injectTag = (tag: string, attrs: Record<string, string>) => {
-        let el = document.querySelector(`${tag}[name="${attrs.name || ""}"]`) ||
-                 document.querySelector(`${tag}[rel="${attrs.rel || ""}"]`);
-        if (!el) {
-          el = document.createElement(tag);
-          Object.entries(attrs).forEach(([k, v]) => el!.setAttribute(k, v));
-          document.head.appendChild(el);
+      // 0. Ensure PWA tags & Service Worker are injected into document.head
+      try {
+        const injectTag = (tag: string, attrs: Record<string, string>) => {
+          let el = document.querySelector(`${tag}[name="${attrs.name || ""}"]`) ||
+                   document.querySelector(`${tag}[rel="${attrs.rel || ""}"]`);
+          if (!el) {
+            el = document.createElement(tag);
+            Object.entries(attrs).forEach(([k, v]) => el!.setAttribute(k, v));
+            document.head.appendChild(el);
+          }
+        };
+
+        injectTag("link", { rel: "manifest", href: "/manifest.json" });
+        injectTag("link", { rel: "apple-touch-icon", href: "/apple-touch-icon.png" });
+        injectTag("meta", { name: "theme-color", content: "#0F172A" });
+        injectTag("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
+        injectTag("meta", { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" });
+        injectTag("meta", { name: "apple-mobile-web-app-title", content: "EzBill" });
+        injectTag("meta", { name: "google-site-verification", content: "google1360c11d4597b537" });
+
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.register("/sw.js").catch((err) => {
+            console.warn("[PWA] SW register warning:", err);
+          });
+        }
+      } catch (e) {}
+
+      // 1. Detect Standalone / Installed mode
+      const standalone =
+        (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches) ||
+        (window.navigator as any)?.standalone === true ||
+        (document.referrer && document.referrer.includes("android-app://"));
+
+      setIsStandalone(Boolean(standalone));
+
+      // 2. Detect iOS / iPadOS
+      const ua = window.navigator?.userAgent || "";
+      const isAppleMobile =
+        /iPad|iPhone|iPod/.test(ua) ||
+        (window.navigator?.platform === "MacIntel" && (window.navigator?.maxTouchPoints || 0) > 1);
+      setIsIOS(Boolean(isAppleMobile));
+
+      // 3. Check Notification permission
+      if (typeof window !== "undefined" && "Notification" in window) {
+        setNotificationPermission(Notification.permission);
+        if (Notification.permission === "default" && standalone) {
+          // In standalone mode, if notifications not granted yet, show prompt banner
+          setShowNotifBanner(true);
+        }
+      }
+
+      // 4. If already installed, don't show install popup
+      if (standalone) {
+        return;
+      }
+
+      // 5. Listen for Android / Chrome beforeinstallprompt event
+      const handleBeforeInstall = (e: Event) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+        // Auto show modal on first visit if not dismissed
+        const dismissed = typeof sessionStorage !== "undefined" ? sessionStorage.getItem("ezbill_pwa_dismissed") : null;
+        if (!dismissed) {
+          setShowModal(true);
+        } else {
+          setShowFloatingPill(true);
         }
       };
 
-      injectTag("link", { rel: "manifest", href: "/manifest.json" });
-      injectTag("link", { rel: "apple-touch-icon", href: "/apple-touch-icon.png" });
-      injectTag("meta", { name: "theme-color", content: "#0F172A" });
-      injectTag("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
-      injectTag("meta", { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" });
-      injectTag("meta", { name: "apple-mobile-web-app-title", content: "EzBill" });
-      injectTag("meta", { name: "google-site-verification", content: "google1360c11d4597b537" });
+      window.addEventListener("beforeinstallprompt", handleBeforeInstall);
 
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/sw.js").catch((err) => {
-          console.warn("[PWA] SW register warning:", err);
-        });
-      }
-    } catch (e) {}
+      // 6. For iOS Safari (which doesn't have beforeinstallprompt)
+      const dismissed = typeof sessionStorage !== "undefined" ? sessionStorage.getItem("ezbill_pwa_dismissed") : null;
+      const timer = setTimeout(() => {
+        if (!standalone && !dismissed) {
+          setShowModal(true);
+        } else if (!standalone) {
+          setShowFloatingPill(true);
+        }
+      }, 1200);
 
-    // 1. Detect Standalone / Installed mode
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true ||
-      document.referrer.includes("android-app://");
-
-    setIsStandalone(standalone);
-
-    // 2. Detect iOS / iPadOS
-    const ua = window.navigator.userAgent;
-    const isAppleMobile =
-      /iPad|iPhone|iPod/.test(ua) ||
-      (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
-    setIsIOS(isAppleMobile);
-
-    // 3. Check Notification permission
-    if ("Notification" in window) {
-      setNotificationPermission(Notification.permission);
-      if (Notification.permission === "default" && standalone) {
-        // In standalone mode, if notifications not granted yet, show prompt banner
-        setShowNotifBanner(true);
-      }
+      return () => {
+        window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+        clearTimeout(timer);
+      };
+    } catch (e) {
+      console.warn("[PWAInstallPrompt] init error:", e);
     }
-
-    // 4. If already installed, don't show install popup
-    if (standalone) {
-      return;
-    }
-
-    // 5. Listen for Android / Chrome beforeinstallprompt event
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      // Auto show modal on first visit if not dismissed
-      const dismissed = sessionStorage.getItem("ezbill_pwa_dismissed");
-      if (!dismissed) {
-        setShowModal(true);
-      } else {
-        setShowFloatingPill(true);
-      }
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
-
-    // 6. For iOS Safari (which doesn't have beforeinstallprompt)
-    const dismissed = sessionStorage.getItem("ezbill_pwa_dismissed");
-    const timer = setTimeout(() => {
-      if (!standalone && !dismissed) {
-        setShowModal(true);
-      } else if (!standalone) {
-        setShowFloatingPill(true);
-      }
-    }, 1200);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
-      clearTimeout(timer);
-    };
   }, []);
+
+  if (Platform.OS !== "web") return null;
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {

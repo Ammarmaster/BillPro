@@ -230,10 +230,15 @@ const isSameTable = (a: string | undefined | null, b: string | undefined | null)
 // Helper to determine table status & matching active orders (kitchen status NEVER clears table until paid)
 const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[]) => {
   const matchingOrders = ordersList.filter((o: any) => {
+    if (!o) return false;
+    if (String(o.id).startsWith("temp-")) {
+      const hasRealOrder = ordersList.some((ro: any) => ro && !String(ro.id).startsWith("temp-") && isSameTable(ro.table_number, tblLabel));
+      if (hasRealOrder) return false;
+    }
     if (!isSameTable(o.table_number, tblLabel)) return false;
     if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
     if (o.status === "cancelled" || o.status === "pending_scan") return false;
-    if (o.status === "paid" || o.status === "completed") return false;
+    if (o.status === "paid" || o.status === "completed" || o.status === "settled") return false;
     const isPaid = billsList.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");
     if (isPaid) return false;
     return true;
@@ -416,10 +421,15 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
 
   const tableOrders = selectedTableObj
     ? orders.filter((o: any) => {
+        if (!o) return false;
+        if (String(o.id).startsWith("temp-")) {
+          const hasRealOrder = orders.some((ro: any) => ro && !String(ro.id).startsWith("temp-") && isSameTable(ro.table_number, selectedTableObj.label));
+          if (hasRealOrder) return false;
+        }
         if (!isSameTable(o.table_number, selectedTableObj.label)) return false;
         if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
         if (o.status === "cancelled" || o.status === "pending_scan") return false;
-        if (o.status === "paid" || o.status === "completed") return false;
+        if (o.status === "paid" || o.status === "completed" || o.status === "settled") return false;
         const isPaid = bills.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");
         if (isPaid) return false;
         return true;
