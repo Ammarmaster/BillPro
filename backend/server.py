@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 import uuid
 import bcrypt
@@ -432,18 +433,21 @@ def optimize_logo_base64(b64_str: str, max_w: int = 100, max_h: int = 100) -> st
 def clean_url_string(val: Optional[str]) -> str:
     if not val:
         return ""
-    val_str = str(val).strip()
-    if not val_str:
-        return ""
-    match = re.search(r'(https?://[^\s]+)', val_str, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    domain_match = re.search(r'((?:share\.google|maps\.app\.goo\.gl|g\.page|goo\.gl|maps\.google\.[a-z.]+|google\.[a-z.]+/maps)[^\s]*)', val_str, re.IGNORECASE)
-    if domain_match:
-        return "https://" + domain_match.group(1).strip()
-    if val_str.startswith("www.") or ("." in val_str and " " not in val_str):
-        return "https://" + re.sub(r'^[^\w]+', '', val_str).strip()
-    return val_str
+    try:
+        val_str = str(val).strip()
+        if not val_str:
+            return ""
+        match = re.search(r'(https?://[^\s]+)', val_str, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        domain_match = re.search(r'((?:share\.google|maps\.app\.goo\.gl|g\.page|goo\.gl|maps\.google\.[a-z.]+|google\.[a-z.]+/maps)[^\s]*)', val_str, re.IGNORECASE)
+        if domain_match:
+            return "https://" + domain_match.group(1).strip()
+        if val_str.startswith("www.") or ("." in val_str and " " not in val_str):
+            return "https://" + re.sub(r'^[^\w]+', '', val_str).strip()
+        return val_str
+    except Exception:
+        return str(val).strip()
 
 
 def parse_qr_data(qr_data: str):
@@ -2090,7 +2094,7 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
 # ---------- public guest api ----------
 @api.get("/public/restaurant/{tenant_id}")
 async def public_get_restaurant(tenant_id: str):
-    res = await db.restaurants.find_one({"id": tenant_id}, {"_id": 0})
+    res = await db.restaurants.find_one({"$or": [{"id": tenant_id}, {"owner_user_id": tenant_id}]}, {"_id": 0})
     if not res:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     return {
@@ -2109,8 +2113,12 @@ async def public_get_restaurant(tenant_id: str):
 
 @api.get("/public/menu/{tenant_id}")
 async def public_list_menu(tenant_id: str):
-    items = await db.menu_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
-    categories = await db.categories.find({"tenant_id": tenant_id}, {"_id": 0}).sort("sort_order", 1).to_list(500)
+    real_tid = tenant_id
+    rest = await db.restaurants.find_one({"$or": [{"id": tenant_id}, {"owner_user_id": tenant_id}]}, {"_id": 0, "id": 1})
+    if rest and rest.get("id"):
+        real_tid = rest["id"]
+    items = await db.menu_items.find({"tenant_id": real_tid}, {"_id": 0}).to_list(1000)
+    categories = await db.categories.find({"tenant_id": real_tid}, {"_id": 0}).sort("sort_order", 1).to_list(500)
     return {
         "items": items,
         "categories": categories
