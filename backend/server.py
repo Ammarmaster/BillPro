@@ -429,6 +429,23 @@ def optimize_logo_base64(b64_str: str, max_w: int = 100, max_h: int = 100) -> st
         return b64_str
 
 
+def clean_url_string(val: Optional[str]) -> str:
+    if not val:
+        return ""
+    val_str = str(val).strip()
+    if not val_str:
+        return ""
+    match = re.search(r'(https?://[^\s]+)', val_str, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    domain_match = re.search(r'((?:share\.google|maps\.app\.goo\.gl|g\.page|goo\.gl|maps\.google\.[a-z.]+|google\.[a-z.]+/maps)[^\s]*)', val_str, re.IGNORECASE)
+    if domain_match:
+        return "https://" + domain_match.group(1).strip()
+    if val_str.startswith("www.") or ("." in val_str and " " not in val_str):
+        return "https://" + re.sub(r'^[^\w]+', '', val_str).strip()
+    return val_str
+
+
 def parse_qr_data(qr_data: str):
     qr_data = qr_data.strip()
     if qr_data.startswith("EZBILL_ORDER:"):
@@ -1301,6 +1318,11 @@ async def create_or_update_restaurant(payload: RestaurantIn, user: dict = Depend
     now = datetime.now(timezone.utc).isoformat()
     
     doc_data = payload.dict()
+    if "google_maps_link" in doc_data:
+        doc_data["google_maps_link"] = clean_url_string(doc_data.get("google_maps_link"))
+    if "googleReviewUrl" in doc_data:
+        doc_data["googleReviewUrl"] = clean_url_string(doc_data.get("googleReviewUrl"))
+
     if payload.logo_base64:
         doc_data["logo_base64_58"] = optimize_logo_base64(payload.logo_base64, 100, 100)
         doc_data["logo_base64_80"] = optimize_logo_base64(payload.logo_base64, 130, 130)
@@ -2081,8 +2103,8 @@ async def public_get_restaurant(tenant_id: str):
         "phone": res.get("phone"),
         "upi_id": res.get("upi_id"),
         "merchant_name": res.get("merchant_name"),
-        "google_maps_link": res.get("google_maps_link", ""),
-        "googleReviewUrl": res.get("googleReviewUrl", ""),
+        "google_maps_link": clean_url_string(res.get("google_maps_link", "")),
+        "googleReviewUrl": clean_url_string(res.get("googleReviewUrl", "")),
     }
 
 @api.get("/public/menu/{tenant_id}")

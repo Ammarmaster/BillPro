@@ -138,6 +138,20 @@ export default function SettingsDetails() {
     }
   };
 
+  const cleanUrl = (val: string) => {
+    if (!val) return "";
+    const trimmed = val.trim();
+    if (!trimmed) return "";
+    const match = trimmed.match(/(https?:\/\/[^\s]+)/i);
+    if (match && match[1]) return match[1].trim();
+    const domainMatch = trimmed.match(/((?:share\.google|maps\.app\.goo\.gl|g\.page|goo\.gl|maps\.google\.[a-z.]+|google\.[a-z.]+\/maps)[^\s]*)/i);
+    if (domainMatch && domainMatch[1]) return "https://" + domainMatch[1].trim();
+    if (trimmed.startsWith("www.") || (trimmed.includes(".") && !trimmed.includes(" "))) {
+      return "https://" + trimmed.replace(/^[^\w]+/, "").trim();
+    }
+    return trimmed;
+  };
+
   const save = async () => {
     setErr(null); setMsg(null);
     if (!form.name.trim() || !form.owner_name.trim() || !form.upi_id.trim()) {
@@ -147,6 +161,8 @@ export default function SettingsDetails() {
     try {
       await api.saveRestaurant({
         ...form,
+        google_maps_link: cleanUrl(form.google_maps_link),
+        googleReviewUrl: cleanUrl(form.googleReviewUrl),
         gst_rate: parseFloat(form.gst_rate) || 0.0,
         merchant_name: form.merchant_name || form.name
       });

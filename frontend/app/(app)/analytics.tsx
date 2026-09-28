@@ -23,6 +23,7 @@ export default function Analytics() {
   const [selectedCustomDate, setSelectedCustomDate] = useState<Date>(new Date());
   const [bills, setBills] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [restaurant, setRestaurant] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exportModal, setExportModal] = useState(false);
@@ -31,12 +32,14 @@ export default function Analytics() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bList, oList] = await Promise.all([
+      const [bList, oList, rData] = await Promise.all([
         api.listBills().catch(() => []),
         api.listOrders().catch(() => []),
+        api.getRestaurant().catch(() => null),
       ]);
       setBills(Array.isArray(bList) ? bList : []);
       setOrders(Array.isArray(oList) ? oList : []);
+      if (rData) setRestaurant(rData);
     } catch {
       setBills([]);
       setOrders([]);
@@ -227,11 +230,11 @@ export default function Analytics() {
     const exportDishes = realTopDishes.length > 0 ? realTopDishes : Object.values(itemStats);
     try {
       if (format === "pdf") {
-        await exportAnalyticsPDF(period, currentHeroRev, totalOrders, avgBill, upiPct, cashPct, exportBills, exportDishes);
+        await exportAnalyticsPDF(period, currentHeroRev, totalOrders, avgBill, upiPct, cashPct, exportBills, exportDishes, restaurant);
       } else if (format === "excel") {
-        await exportAnalyticsExcel(period, exportBills, exportDishes);
+        await exportAnalyticsExcel(period, exportBills, exportDishes, restaurant);
       } else if (format === "docx") {
-        await exportAnalyticsDocx(period, currentHeroRev, totalOrders, avgBill, exportBills, exportDishes);
+        await exportAnalyticsDocx(period, currentHeroRev, totalOrders, avgBill, exportBills, exportDishes, restaurant);
       }
     } catch (e: any) {
       console.warn("handleExport error:", e);

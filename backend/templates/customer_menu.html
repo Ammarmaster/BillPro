@@ -1604,12 +1604,46 @@
       });
     }
 
-    async function continueToGoogleMaps() {
-      let mapsUrl = restaurantInfo.googleReviewUrl || restaurantInfo.google_maps_link;
-      if (!mapsUrl) {
-        mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurantInfo.name + ' ' + (restaurantInfo.address || ''))}`;
+    function resolveGoogleMapsUrl(info) {
+      if (!info) return "https://www.google.com/maps";
+      
+      const rawUrl = String(info.googleReviewUrl || info.google_maps_link || "").trim();
+      
+      if (rawUrl) {
+        // 1. If text contains an explicit http/https URL (e.g. "Hotel Master Cheff https://share.google/f6O2UwhPqP2R6f7z9" or "https://maps.app.goo.gl/xyz")
+        const urlMatch = rawUrl.match(/(https?:\/\/[^\s]+)/i);
+        if (urlMatch && urlMatch[1]) {
+          return urlMatch[1].trim();
+        }
+
+        // 2. If text contains standard Google share domains without http prefix (e.g. "share.google/...", "maps.app.goo.gl/...", "g.page/...")
+        const domainMatch = rawUrl.match(/((?:share\.google|maps\.app\.goo\.gl|g\.page|goo\.gl|maps\.google\.[a-z.]+|google\.[a-z.]+\/maps)[^\s]*)/i);
+        if (domainMatch && domainMatch[1]) {
+          return "https://" + domainMatch[1].trim();
+        }
+
+        // 3. If rawUrl looks like a domain name
+        if (rawUrl.startsWith("www.") || (rawUrl.includes(".") && !rawUrl.includes(" "))) {
+          return "https://" + rawUrl.replace(/^[^\w]+/, "").trim();
+        }
       }
-      window.open(mapsUrl, "_blank");
+
+      // 4. Fallback to direct Google Maps Search Query using restaurant name + address
+      const queryParts = [info.name, info.address].filter(Boolean);
+      const query = queryParts.length > 0 ? queryParts.join(" ") : "restaurant";
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+
+    async function continueToGoogleMaps() {
+      const mapsUrl = resolveGoogleMapsUrl(restaurantInfo);
+      try {
+        const newWin = window.open(mapsUrl, "_blank", "noopener,noreferrer");
+        if (!newWin || newWin.closed || typeof newWin.closed === "undefined") {
+          window.location.href = mapsUrl;
+        }
+      } catch (_) {
+        window.location.href = mapsUrl;
+      }
     }
 
     async function submitCheckoutPrivateFeedback() {
