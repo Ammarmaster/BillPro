@@ -529,19 +529,38 @@ export const api = {
   me: () => req("/auth/me"),
   updateConsent: (consent_type: string, status: "accepted" | "withdrawn") =>
     req("/users/consent", { method: "POST", body: JSON.stringify({ consent_type, status }) }),
-  getRestaurant: () => req("/restaurant"),
+  getRestaurant: async () => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode() && memoryCache["/restaurant"]) {
+      return memoryCache["/restaurant"];
+    }
+    const cached = memoryCache["/restaurant"];
+    const ttl = getCacheTTL("/restaurant");
+    const lastFetch = cacheTimestamps["/restaurant"] || 0;
+    if (cached && (Date.now() - lastFetch < ttl)) {
+      return cached;
+    }
+    return req("/restaurant");
+  },
   saveRestaurant: async (payload: any) => {
     if (api.isLocalProcessingMode()) {
       const existing = memoryCache["/restaurant"] || {};
       const updated = { ...existing, ...payload, updated_at: new Date().toISOString() };
       memoryCache["/restaurant"] = updated;
+      cacheTimestamps["/restaurant"] = Date.now();
       setDiskCache("disk_cache_/restaurant", JSON.stringify(updated)).catch(() => {});
       notifyCacheUpdate("/restaurant", updated);
       await enqueueSyncAction("SAVE_RESTAURANT", payload);
       return updated;
     }
     clearCachePrefix("/restaurant");
-    return req("/restaurant", { method: "POST", body: JSON.stringify(payload) });
+    const res = await req("/restaurant", { method: "POST", body: JSON.stringify(payload) });
+    if (res) {
+      memoryCache["/restaurant"] = res;
+      cacheTimestamps["/restaurant"] = Date.now();
+      setDiskCache("disk_cache_/restaurant", JSON.stringify(res)).catch(() => {});
+      notifyCacheUpdate("/restaurant", res);
+    }
+    return res;
   },
   listCategories: async () => {
     if (api.isLocalProcessingMode && api.isLocalProcessingMode() && memoryCache["/categories"]) {

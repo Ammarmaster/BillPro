@@ -1,7 +1,7 @@
 {
-  "name": "EzBill - Smart Restaurant POS & ERP",
+  "name": "EzBill - Restaurant POS & ERP Billing Software",
   "short_name": "EzBill",
-  "description": "Smart Restaurant POS, KOT & Real-Time Billing ERP System",
+  "description": "EzBill - India's #1 Restaurant POS, Table Management, KOT & GST Billing ERP System",
   "start_url": "/",
   "id": "/",
   "display": "standalone",
@@ -9,6 +9,16 @@
   "theme_color": "#0F172A",
   "orientation": "any",
   "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",

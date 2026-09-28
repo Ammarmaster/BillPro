@@ -66,40 +66,110 @@ export default function SettingsDetails() {
     }
   };
 
-  const [form, setForm] = useState({
-    name: "", owner_name: "", bio: "", address: "", phone: "", phone2: "",
-    gst: "", gst_enabled: false, gst_rate: "5", fssai: "", upi_id: "", merchant_name: "",
-    logo_base64: "", google_maps_link: "", googleReviewUrl: "",
+  const getInitialForm = () => {
+    const cached = api.getCachedRestaurant() || (user as any)?.restaurant_profile || null;
+    return {
+      name: cached?.name || "",
+      owner_name: cached?.owner_name || user?.full_name || "",
+      bio: cached?.bio || "",
+      address: cached?.address || "",
+      phone: cached?.phone || "",
+      phone2: cached?.phone2 || "",
+      gst: cached?.gst || "",
+      gst_enabled: !!cached?.gst_enabled,
+      gst_rate: String(cached?.gst_rate ?? "5"),
+      fssai: cached?.fssai || "",
+      upi_id: cached?.upi_id || "",
+      merchant_name: cached?.merchant_name || "",
+      logo_base64: cached?.logo_base64 || "",
+      google_maps_link: cached?.google_maps_link || "",
+      googleReviewUrl: cached?.googleReviewUrl || "",
+    };
+  };
+
+  const [form, setForm] = useState(getInitialForm);
+  const [loading, setLoading] = useState(() => {
+    const cached = api.getCachedRestaurant() || (user as any)?.restaurant_profile;
+    return !cached;
   });
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [printerUrl, setPrinterUrl] = useState<string | null>(null);
   const [showMediaDisclosure, setShowMediaDisclosure] = useState(false);
 
+  // Subscribe to real-time local cache changes
+  useEffect(() => {
+    const { subscribeToCache } = require("@/src/lib/api");
+    const unsubscribe = subscribeToCache((path: string, data: any) => {
+      if (path === "/restaurant" && data) {
+        setForm(f => ({
+          ...f,
+          name: data.name || f.name || "",
+          owner_name: data.owner_name || f.owner_name || "",
+          bio: data.bio || f.bio || "",
+          address: data.address || f.address || "",
+          phone: data.phone || f.phone || "",
+          phone2: data.phone2 || f.phone2 || "",
+          gst: data.gst || f.gst || "",
+          gst_enabled: data.gst_enabled !== undefined ? !!data.gst_enabled : f.gst_enabled,
+          gst_rate: String(data.gst_rate ?? f.gst_rate ?? "5"),
+          fssai: data.fssai || f.fssai || "",
+          upi_id: data.upi_id || f.upi_id || "",
+          merchant_name: data.merchant_name || f.merchant_name || "",
+          logo_base64: data.logo_base64 || f.logo_base64 || "",
+          google_maps_link: data.google_maps_link || f.google_maps_link || "",
+          googleReviewUrl: data.googleReviewUrl || f.googleReviewUrl || "",
+        }));
+        setLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const load = useCallback(async () => {
-    setLoading(true); setErr(null);
+    const cached = api.getCachedRestaurant() || (user as any)?.restaurant_profile;
+    if (!cached && !form.name) {
+      setLoading(true);
+    }
+    setErr(null);
     refreshUser().catch(() => {});
     try {
-      const [r, url] = await Promise.all([
-        api.getRestaurant(),
-        getDefaultPrinter()
-      ]);
-      setPrinterUrl(url);
+      const restPromise = api.getRestaurant().catch((e: any) => {
+        console.warn("[Settings] getRestaurant error:", e);
+        return cached || null;
+      });
+      const printPromise = getDefaultPrinter().catch(() => null);
+
+      const [r, url] = await Promise.all([restPromise, printPromise]);
+      if (url !== undefined) setPrinterUrl(url);
       if (r) {
         setForm({
-          name: r.name || "", owner_name: r.owner_name || "", bio: r.bio || "",
-          address: r.address || "", phone: r.phone || "", phone2: r.phone2 || "",
-          gst: r.gst || "", gst_enabled: !!r.gst_enabled, gst_rate: String(r.gst_rate ?? "5"), fssai: r.fssai || "",
-          upi_id: r.upi_id || "", merchant_name: r.merchant_name || "",
-          logo_base64: r.logo_base64 || "", google_maps_link: r.google_maps_link || "",
+          name: r.name || "",
+          owner_name: r.owner_name || "",
+          bio: r.bio || "",
+          address: r.address || "",
+          phone: r.phone || "",
+          phone2: r.phone2 || "",
+          gst: r.gst || "",
+          gst_enabled: !!r.gst_enabled,
+          gst_rate: String(r.gst_rate ?? "5"),
+          fssai: r.fssai || "",
+          upi_id: r.upi_id || "",
+          merchant_name: r.merchant_name || "",
+          logo_base64: r.logo_base64 || "",
+          google_maps_link: r.google_maps_link || "",
           googleReviewUrl: r.googleReviewUrl || "",
         });
       }
-    } catch (e: any) { setErr(e.message); }
-    finally { setLoading(false); }
-  }, []);
+    } catch (e: any) {
+      if (!cached && !form.name) {
+        setErr(e.message || "Failed to load business settings");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

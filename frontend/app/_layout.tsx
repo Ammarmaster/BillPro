@@ -36,7 +36,17 @@ export default function RootLayout() {
       SplashScreen.hideAsync().catch(() => {});
     }
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      document.title = "EzBill - Smart Restaurant POS & ERP";
+      document.title = "EzBill - #1 Restaurant POS, ERP & GST Billing Software";
+      
+      // Ensure favicon icon link tags exist in the DOM head
+      let favicon = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+      if (!favicon) {
+        favicon = document.createElement("link");
+        favicon.rel = "shortcut icon";
+        document.getElementsByTagName("head")[0].appendChild(favicon);
+      }
+      favicon.href = "/favicon.ico";
+      favicon.type = "image/x-icon";
     }
   }, [loaded, error, fontTimeout]);
 
