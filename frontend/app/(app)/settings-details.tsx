@@ -1,12 +1,13 @@
 import { useCallback, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Switch, Alert,
+  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Switch, Alert, Share,
 } from "react-native";
 import PermissionDisclosureModal from "@/src/components/PermissionDisclosureModal";
+import AttractiveQRStandeeModal from "@/src/components/AttractiveQRStandeeModal";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
@@ -97,6 +98,7 @@ export default function SettingsDetails() {
   const [msg, setMsg] = useState<string | null>(null);
   const [printerUrl, setPrinterUrl] = useState<string | null>(null);
   const [showMediaDisclosure, setShowMediaDisclosure] = useState(false);
+  const [showMenuQrModal, setShowMenuQrModal] = useState(false);
 
   // Subscribe to real-time local cache changes
   useEffect(() => {
@@ -129,11 +131,7 @@ export default function SettingsDetails() {
 
   const load = useCallback(async () => {
     const cached = api.getCachedRestaurant() || (user as any)?.restaurant_profile;
-    if (!cached && !form.name) {
-      setLoading(true);
-    }
     setErr(null);
-    refreshUser().catch(() => {});
     try {
       const restPromise = api.getRestaurant().catch((e: any) => {
         console.warn("[Settings] getRestaurant error:", e);
@@ -144,23 +142,24 @@ export default function SettingsDetails() {
       const [r, url] = await Promise.all([restPromise, printPromise]);
       if (url !== undefined) setPrinterUrl(url);
       if (r) {
-        setForm({
-          name: r.name || "",
-          owner_name: r.owner_name || "",
-          bio: r.bio || "",
-          address: r.address || "",
-          phone: r.phone || "",
-          phone2: r.phone2 || "",
-          gst: r.gst || "",
-          gst_enabled: !!r.gst_enabled,
-          gst_rate: String(r.gst_rate ?? "5"),
-          fssai: r.fssai || "",
-          upi_id: r.upi_id || "",
-          merchant_name: r.merchant_name || "",
-          logo_base64: r.logo_base64 || "",
-          google_maps_link: r.google_maps_link || "",
-          googleReviewUrl: r.googleReviewUrl || "",
-        });
+        setForm(prev => ({
+          ...prev,
+          name: r.name || prev.name || "",
+          owner_name: r.owner_name || prev.owner_name || "",
+          bio: r.bio || prev.bio || "",
+          address: r.address || prev.address || "",
+          phone: r.phone || prev.phone || "",
+          phone2: r.phone2 || prev.phone2 || "",
+          gst: r.gst || prev.gst || "",
+          gst_enabled: r.gst_enabled !== undefined ? !!r.gst_enabled : prev.gst_enabled,
+          gst_rate: String(r.gst_rate ?? prev.gst_rate ?? "5"),
+          fssai: r.fssai || prev.fssai || "",
+          upi_id: r.upi_id || prev.upi_id || "",
+          merchant_name: r.merchant_name || prev.merchant_name || "",
+          logo_base64: r.logo_base64 || prev.logo_base64 || "",
+          google_maps_link: r.google_maps_link || prev.google_maps_link || "",
+          googleReviewUrl: r.googleReviewUrl || prev.googleReviewUrl || "",
+        }));
       }
     } catch (e: any) {
       if (!cached && !form.name) {
@@ -169,9 +168,11 @@ export default function SettingsDetails() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const pickLogo = async () => {
     if (Platform.OS === "web") {
@@ -242,7 +243,11 @@ export default function SettingsDetails() {
   };
 
   const handleBack = () => {
-    router.replace("/(app)/more");
+    if (isDesktop) {
+      router.replace("/(app)/dashboard");
+    } else {
+      router.replace("/(app)/more");
+    }
   };
 
   const field = (key: keyof typeof form, label: string, placeholder: string, opts: any = {}) => (
@@ -366,6 +371,76 @@ export default function SettingsDetails() {
                   </Pressable>
                 </View>
 
+                {/* Digital Web Menu QR Card (Free & Available for All Plans & Restaurants) */}
+                <View style={{ marginTop: spacing.md, padding: spacing.lg, borderRadius: 20, borderWidth: 1.5, borderColor: isDark ? "rgba(99, 91, 255, 0.4)" : "rgba(99, 91, 255, 0.25)", backgroundColor: isDark ? "#12192B" : "#F4F6FF" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xs }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#635BFF", justifyContent: "center", alignItems: "center" }}>
+                        <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 16, fontWeight: "900", color: theme.onSurface }}>Digital Web Menu QR</Text>
+                        <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary }}>Contactless Menu Browsing (View-Only)</Text>
+                      </View>
+                    </View>
+                    <View style={{ backgroundColor: "#10B98120", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#10B981" }}>ALL PLANS</Text>
+                    </View>
+                  </View>
+
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, lineHeight: 17, marginVertical: spacing.sm }}>
+                    One universal QR code for all your guests to browse food items, prices, and categories on their phone (view-only web menu, no ordering required).
+                  </Text>
+
+                  <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: 4 }}>
+                    <Pressable
+                      style={{
+                        flex: 1,
+                        backgroundColor: "#635BFF",
+                        paddingVertical: 12,
+                        borderRadius: 14,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                      }}
+                      onPress={() => setShowMenuQrModal(true)}
+                    >
+                      <Ionicons name="eye-outline" size={17} color="#FFFFFF" />
+                      <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 13 }}>View & Download QR Standee</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={{
+                        backgroundColor: isDark ? "#1F293D" : "#FFFFFF",
+                        borderWidth: 1.5,
+                        borderColor: theme.border,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        borderRadius: 14,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                      }}
+                      onPress={async () => {
+                        const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+                        const tid = user?.tenant_id || "undefined";
+                        const url = `${backendBase}/menu/${tid}?mode=menu`;
+                        if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+                          await navigator.clipboard.writeText(url);
+                          Alert.alert("Link Copied", "Web Menu link copied to clipboard!");
+                        } else {
+                          await Share.share({ message: url, url, title: `${form.name || "Restaurant"} Web Menu` });
+                        }
+                      }}
+                    >
+                      <Ionicons name="share-social-outline" size={17} color={theme.onSurface} />
+                      <Text style={{ color: theme.onSurface, fontWeight: "700", fontSize: 13 }}>Share</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
                 {/* Privacy & Consent Settings Card */}
                 <View style={{ marginTop: spacing.md, padding: spacing.md, borderRadius: 16, borderWidth: 1.5, borderColor: theme.border, backgroundColor: theme.surfaceSecondary }}>
                   <Text style={{ fontSize: 16, fontWeight: "900", color: theme.onSurface, marginBottom: spacing.xs }}>Privacy & Consent Settings</Text>
@@ -440,6 +515,15 @@ export default function SettingsDetails() {
         icon="images-outline"
         onAllow={handleAllowMedia}
         onCancel={() => setShowMediaDisclosure(false)}
+      />
+
+      <AttractiveQRStandeeModal
+        visible={showMenuQrModal}
+        onClose={() => setShowMenuQrModal(false)}
+        title="Digital Web Menu QR"
+        restaurantName={form.name || "Restaurant"}
+        badgeText="DIGITAL WEB MENU"
+        targetUrl={`${(process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "")}/menu/${user?.tenant_id || "undefined"}?mode=menu`}
       />
     </SafeAreaView>
   );

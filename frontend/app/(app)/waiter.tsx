@@ -109,7 +109,7 @@ export default function WaiterScreen() {
         const cSettings = await getPrinterSettings("cashier");
         const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
         const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
-        const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
+        const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
         if (shouldPrint) {
           await printKitchenKOT(finalOrder);
         }
@@ -381,7 +381,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           const cSettings = await getPrinterSettings("cashier");
           const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
           const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
-          const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
+          const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
           if (shouldPrint) {
             await printKitchenKOT(optimisticOrder);
           }
@@ -1652,9 +1652,35 @@ const styles = StyleSheet.create({
   chipTextActive: { color: colors.brand, fontWeight: "600" },
   menuCard: { aspectRatio: 0.95, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   menuImg: { flex: 1, width: "100%" },
-  menuOverlay: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: "rgba(13,13,13,0.75)", padding: spacing.sm },
-  menuName: { color: colors.onSurface, fontSize: 13, fontWeight: "600" },
-  menuPrice: { color: colors.brand, fontSize: 15, fontWeight: "700", marginTop: 2 },
+  menuOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderBottomLeftRadius: radius.lg - 1,
+    borderBottomRightRadius: radius.lg - 1,
+  },
+  menuName: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    textShadowColor: "rgba(0, 0, 0, 0.9)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  menuPrice: {
+    color: "#A5B4FC",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 2,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   plus: { position: "absolute", right: 8, top: 8, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center" },
   cta: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: "transparent", overflow: "visible" },

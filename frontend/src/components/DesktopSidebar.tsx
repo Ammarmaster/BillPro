@@ -38,6 +38,7 @@ export default function DesktopSidebar() {
   if (isAdmin) {
     adminNav.push(
       { name: "Overview", route: "/(app)/dashboard", icon: "grid-outline", iconActive: "grid" },
+      { name: "Payments & Txns", route: "/(app)/admin-payments", icon: "cash-outline", iconActive: "cash" },
       { name: "Restaurants", route: "/(app)/admin-restaurants", icon: "business-outline", iconActive: "business" },
       { name: "Users & Staff", route: "/(app)/admin-users", icon: "people-outline", iconActive: "people" },
       { name: "Subscription Plans", route: "/(app)/admin-plans", icon: "card-outline", iconActive: "card" }

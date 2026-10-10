@@ -13,6 +13,7 @@ import * as Haptics from "expo-haptics";
 import {
   savePrinterSettings, getPrinterSettings, printThermalDirect, forgetPrinter,
   subscribePrinterStatus, checkPrinterConnection, scanNearbyPrinters, autoConnectPrinter,
+  connectWebBluetoothPrinter, isWebBluetoothSupported,
   PrinterSettings, PrinterConnectionStatus
 } from "@/src/lib/print";
 
@@ -41,6 +42,7 @@ export default function PrinterSettingsScreen() {
   const [cashierName, setCashierName] = useState("Cashier Thermal Printer");
   const [cashierWidth, setCashierWidth] = useState<58 | 80>(58);
   const [cashierAuto, setCashierAuto] = useState(true);
+  const [cashierPrintKOT, setCashierPrintKOT] = useState(false);
 
   // Kitchen printer states
   const [kitchenType, setKitchenType] = useState<"network" | "bluetooth" | "system" | "none">("none");
@@ -76,6 +78,7 @@ export default function PrinterSettingsScreen() {
       setCashierName(cashier.name);
       setCashierWidth(cashier.width);
       setCashierAuto(cashier.auto_print);
+      setCashierPrintKOT(cashier.print_kot ?? false);
     }
 
     const kitchen = await getPrinterSettings("kitchen");
@@ -100,6 +103,21 @@ export default function PrinterSettingsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setScanning(true);
     try {
+      if (Platform.OS === "web" && isWebBluetoothSupported()) {
+        const paired = await connectWebBluetoothPrinter(activeTab);
+        if (paired) {
+          await loadSettings();
+          const dev = await getPrinterSettings(activeTab);
+          if (dev) {
+            setDevices([{ name: dev.name, address: dev.address, type: (dev.type === "network" ? "network" : "bluetooth") }]);
+          }
+          Alert.alert(
+            "Bluetooth Thermal Printer Connected",
+            `Connected to Web Bluetooth printer.`
+          );
+          return;
+        }
+      }
       const found = await scanNearbyPrinters();
       setDevices(found);
     } catch (e: any) {
@@ -113,6 +131,14 @@ export default function PrinterSettingsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setConnectingAddress(dev.address);
     try {
+      if (Platform.OS === "web" && dev.type === "bluetooth" && isWebBluetoothSupported()) {
+        const paired = await connectWebBluetoothPrinter(activeTab);
+        if (paired) {
+          await loadSettings();
+          return;
+        }
+      }
+
       const isCashier = activeTab === "cashier";
       const newType = dev.type;
       
@@ -173,6 +199,7 @@ export default function PrinterSettingsScreen() {
               setCashierType("none");
               setCashierIP("");
               setCashierMAC("");
+              setCashierPrintKOT(false);
             } else {
               setKitchenType("none");
               setKitchenIP("");
@@ -194,7 +221,8 @@ export default function PrinterSettingsScreen() {
         port: cashierPort.trim(),
         name: cashierName.trim(),
         width: cashierWidth,
-        auto_print: cashierAuto
+        auto_print: cashierAuto,
+        print_kot: cashierPrintKOT,
       };
       await savePrinterSettings("cashier", cashierSettings);
 
@@ -228,7 +256,7 @@ export default function PrinterSettingsScreen() {
       sgst: 8.75,
       discount: 0,
       total: 367.50,
-      status: "paid",
+      status: "unpaid",
       payment_method: "UPI",
       items: [
         { name: "Butter Chicken", quantity: 1, price: 280.00 },
@@ -516,6 +544,26 @@ export default function PrinterSettingsScreen() {
               thumbColor="#FFFFFF"
             />
           </View>
+
+          {/* Cashier Print KOT Switch */}
+          {activeTab === "cashier" && (
+            <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                  Print KOT on Bill Printer
+                </Text>
+                <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
+                  Also print Kitchen Order Tickets (KOT) from this cashier/billing printer
+                </Text>
+              </View>
+              <Switch
+                value={cashierPrintKOT}
+                onValueChange={setCashierPrintKOT}
+                trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          )}
         </View>
 
         {/* Nearby Discovery Scanner Section */}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Switch, SafeAreaView, StatusBar, Alert,
 } from "react-native";
@@ -11,6 +11,7 @@ import { api } from "@/src/lib/api";
 import { radius, spacing } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import FeatureLockModal from "@/src/components/FeatureLockModal";
+import AttractiveQRStandeeModal from "@/src/components/AttractiveQRStandeeModal";
 
 export default function More() {
   const insets = useSafeAreaInsets();
@@ -19,6 +20,16 @@ export default function More() {
   const { isDesktop } = useResponsive();
   const router = useRouter();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showMenuQr, setShowMenuQr] = useState(false);
+  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
+
+  useEffect(() => {
+    if (!restaurant) {
+      api.getRestaurant().then(r => {
+        if (r) setRestaurant(r);
+      }).catch(() => {});
+    }
+  }, []);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -121,6 +132,24 @@ export default function More() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Settings</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>GST, UPI, printer, restaurant info</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* 4.5. Web Menu QR */}
+            <Pressable style={styles.rowItem} onPress={() => setShowMenuQr(true)} testID="manage-web-menu-qr-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="qr-code" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Web Menu QR</Text>
+                  <View style={{ backgroundColor: "#10B98120", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 9, fontWeight: "800", color: "#10B981" }}>ALL PLANS</Text>
+                  </View>
+                </View>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Download & print digital menu QR standee</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>
@@ -240,6 +269,17 @@ export default function More() {
           router.push("/(app)/subscribe");
         }}
         onCancel={() => setShowUpgradeModal(false)}
+      />
+
+      <AttractiveQRStandeeModal
+        visible={showMenuQr}
+        onClose={() => setShowMenuQr(false)}
+        title="Web Menu QR Standee"
+        restaurantName={restaurant?.name || api.getCachedRestaurant()?.name || (user as any)?.restaurant_profile?.name || "Restaurant"}
+        badgeText={api.hasFeature("customer_ordering") || api.hasFeature("qr_web_menu") ? "DIGITAL ORDERING & MENU" : "DIGITAL WEB MENU"}
+        callToActionText={api.hasFeature("customer_ordering") || api.hasFeature("qr_web_menu") ? "✦ SCAN TO ORDER ✦" : "✦ SCAN FOR MENU ✦"}
+        helperText={api.hasFeature("customer_ordering") || api.hasFeature("qr_web_menu") ? "Scan with phone camera to view menu & order" : "Scan with phone camera to view menu & prices"}
+        targetUrl={`${(process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "")}/menu/${user?.tenant_id || restaurant?.id || restaurant?.tenant_id || "undefined"}`}
       />
     </SafeAreaView>
   );

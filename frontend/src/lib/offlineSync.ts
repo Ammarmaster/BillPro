@@ -8,6 +8,7 @@ export type SyncActionType =
   | "UPDATE_MENU_ITEM"
   | "DELETE_MENU_ITEM"
   | "CREATE_TABLE"
+  | "UPDATE_TABLE"
   | "DELETE_TABLE"
   | "SAVE_RESTAURANT"
   | "CREATE_ORDER"
@@ -271,6 +272,16 @@ export async function processSyncQueue(
           case "DELETE_TABLE": {
             const tableId = idMap[payload.id] || payload.id;
             res = await reqFn(`/tables/${tableId}`, { method: "DELETE" });
+            break;
+          }
+
+          case "UPDATE_TABLE": {
+            const tableId = idMap[payload.id] || payload.id;
+            const { id, ...rest } = payload;
+            res = await reqFn(`/tables/${tableId}`, {
+              method: "PUT",
+              body: JSON.stringify(rest),
+            });
             break;
           }
 

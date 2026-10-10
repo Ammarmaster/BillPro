@@ -6,12 +6,13 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import AttractiveQRStandeeModal from "@/src/components/AttractiveQRStandeeModal";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
 
-type Table = { id: string; label: string; seats: number };
+type Table = { id: string; label: string; seats: number; custom_qr?: string };
 
 export default function TablesScreen() {
   const insets = useSafeAreaInsets();
@@ -24,6 +25,7 @@ export default function TablesScreen() {
   const [modal, setModal] = useState(false);
   const [qrTable, setQrTable] = useState<Table | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [restaurantName, setRestaurantName] = useState<string>(() => api.getCachedRestaurant()?.name || "");
   const [label, setLabel] = useState("");
   const [seats, setSeats] = useState("4");
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,10 @@ export default function TablesScreen() {
     const { subscribeToCache } = require("@/src/lib/api");
     const unsubscribe = subscribeToCache((path: string, data: any) => {
       if (path === "/tables" && data) setTables(data);
-      if (path === "/restaurant" && data) setTenantId(data.id);
+      if (path === "/restaurant" && data) {
+        setTenantId(data.id);
+        if (data.name) setRestaurantName(data.name);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -52,6 +57,7 @@ export default function TablesScreen() {
       setTables(tbls);
       if (rest) {
         setTenantId(rest.id);
+        if (rest.name) setRestaurantName(rest.name);
       } else if (user?.tenant_id) {
         setTenantId(user.tenant_id);
       }
@@ -194,62 +200,36 @@ export default function TablesScreen() {
           </Pressable>
         </Modal>
 
-        <Modal transparent visible={!!qrTable} animationType="fade" onRequestClose={() => setQrTable(null)}>
-          <Pressable 
-            style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]} 
-            onPress={() => setQrTable(null)}
-          >
-            <Pressable 
-              style={[
-                styles.modalCard, 
-                { 
-                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl, 
-                  alignItems: "center",
-                  width: isDesktop ? 480 : "100%",
-                  borderRadius: isDesktop ? 20 : radius.lg,
-                }
-              ]} 
-              onPress={() => {}}
-            >
-              {qrTable && (() => {
-                const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
-                const qrUrl = `${backendBase}/menu/${tenantId || user?.tenant_id || "undefined"}/${qrTable.label}`;
-                const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`;
-                const hasTenant = !!(tenantId || user?.tenant_id);
-                return (
-                  <>
-                    <View style={[styles.modalHead, { width: "100%" }]}>
-                      <Text style={styles.modalTitle}>Table {qrTable.label} QR Code</Text>
-                      <Pressable onPress={() => setQrTable(null)} hitSlop={12}>
-                        <Ionicons name="close" size={24} color={colors.onSurfaceSecondary} />
-                      </Pressable>
-                    </View>
-                    
-                    {hasTenant ? (
-                      <>
-                        <View style={styles.qrContainer}>
-                          <Image source={{ uri: qrImgUrl }} style={styles.qrImage} />
-                        </View>
-                        
-                        <Text style={styles.qrText}>
-                          Scan this QR code with any smartphone to open the contactless restaurant menu for Table {qrTable.label}.
-                        </Text>
-                      </>
-                    ) : (
-                      <Text style={[styles.qrText, { color: colors.onError, marginVertical: 30 }]}>
-                        Warning: Tenant ID not found. Please complete restaurant setup in Settings first.
-                      </Text>
-                    )}
-                    
-                    <Pressable style={[styles.primaryBtn, { width: "100%" }]} onPress={() => setQrTable(null)}>
-                      <Text style={styles.primaryText}>Done</Text>
-                    </Pressable>
-                  </>
-                );
-              })()}
-            </Pressable>
-          </Pressable>
-        </Modal>
+        {qrTable && (() => {
+          const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+          const tid = tenantId || user?.tenant_id || "undefined";
+          const tableTarget = qrTable.custom_qr ? qrTable.custom_qr : qrTable.label;
+          const targetUrl = `${backendBase}/menu/${tid}/${tableTarget}`;
+
+          return (
+            <AttractiveQRStandeeModal
+              visible={!!qrTable}
+              onClose={() => setQrTable(null)}
+              title={`Table ${qrTable.label} QR Standee`}
+              restaurantName={restaurantName || "Restaurant"}
+              badgeText={`TABLE ${qrTable.label}`}
+              targetUrl={targetUrl}
+              isTable={true}
+              tableLabel={qrTable.label}
+              customQrValue={qrTable.custom_qr}
+              onSaveCustomQr={async (customVal: string) => {
+                await api.updateTable(qrTable.id, { custom_qr: customVal });
+                setQrTable(prev => prev ? { ...prev, custom_qr: customVal } : null);
+                await load();
+              }}
+              onClearCustomQr={async () => {
+                await api.updateTable(qrTable.id, { custom_qr: "" });
+                setQrTable(prev => prev ? { ...prev, custom_qr: "" } : null);
+                await load();
+              }}
+            />
+          );
+        })()}
       </View>
     </View>
   );

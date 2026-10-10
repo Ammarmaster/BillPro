@@ -177,7 +177,7 @@ export default function TakeawayScreen() {
     try {
       setPrintingId(`kot_${item.id}`);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      await printKitchenKOT(item.raw);
+      await printKitchenKOT(item.raw, true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (err: any) {
       console.warn("Print KOT error:", err);
@@ -264,7 +264,7 @@ export default function TakeawayScreen() {
           const cSettings = await getPrinterSettings("cashier");
           const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
           const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
-          const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
+          const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
           if (shouldPrint) {
             await printKitchenKOT(optimisticOrder);
           }

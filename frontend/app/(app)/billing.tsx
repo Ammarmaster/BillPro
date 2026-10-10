@@ -585,7 +585,7 @@ export default function Billing() {
             
             {/* Centered Logo block */}
             {!!logoBase64 && (
-              <View style={{ alignItems: "center", marginBottom: spacing.md }}>
+              <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
                 <Image
                   source={{ uri: `data:image/png;base64,${logoBase64}` }}
                   style={styles.previewLogo}
@@ -596,32 +596,31 @@ export default function Billing() {
 
             <Text style={[styles.restaurantHeaderTitle, { color: theme.onSurface }]}>{restaurantName}</Text>
             {!!restaurantAddress && (
-              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>{restaurantAddress}</Text>
+              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>{restaurantAddress}</Text>
             )}
-            {(restaurantPhone && restaurantPhone2) ? (
-              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>Phone: {restaurantPhone} / {restaurantPhone2}</Text>
-            ) : (restaurantPhone || restaurantPhone2) ? (
-              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>Phone: {restaurantPhone || restaurantPhone2}</Text>
+            {(restaurantPhone || (bill?.restaurant_snapshot?.gst || restaurant?.gst)) ? (
+              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>
+                {[
+                  restaurantPhone ? `Ph: ${restaurantPhone}${restaurantPhone2 && restaurantPhone2 !== restaurantPhone ? ` / ${restaurantPhone2}` : ''}` : '',
+                  (bill?.restaurant_snapshot?.gst || restaurant?.gst) ? `GST: ${bill?.restaurant_snapshot?.gst || restaurant?.gst}` : ''
+                ].filter(Boolean).join(" · ")}
+              </Text>
             ) : null}
-            {!!(bill?.restaurant_snapshot?.gst || restaurant?.gst) && (
-              <Text style={[styles.restaurantSubText, { color: theme.onSurfaceSecondary }]}>GSTIN: {bill?.restaurant_snapshot?.gst || restaurant?.gst}</Text>
-            )}
             
             <View style={styles.divider} />
 
             {/* Metadata Rows */}
-            <View style={{ gap: 4, marginBottom: spacing.sm }}>
+            <View style={{ gap: 2, marginBottom: spacing.xs }}>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Bill No: #{billNo}</Text>
-                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Date: {dateStr.split(",")[0] || dateStr}</Text>
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Bill #{billNo}</Text>
+                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>{dateStr}</Text>
               </View>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>{tableName}</Text>
-                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Time: {dateStr.includes(",") ? dateStr.split(",")[1]?.trim() : ""}</Text>
+                {!!(bill?.customer_name || order?.customer_name) && (bill?.customer_name !== "Guest" && order?.customer_name !== "Guest") ? (
+                  <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Guest: {bill?.customer_name || order?.customer_name}</Text>
+                ) : null}
               </View>
-              {!!(bill?.customer_name || order?.customer_name) && (
-                <Text style={[styles.metaText, { color: theme.onSurfaceSecondary }]}>Customer: {bill?.customer_name || order?.customer_name}</Text>
-              )}
             </View>
 
             <View style={styles.divider} />
@@ -637,11 +636,11 @@ export default function Billing() {
             <View style={styles.divider} />
             
             {/* Items List */}
-            <View style={{ marginVertical: spacing.sm, gap: 8 }}>
+            <View style={{ marginVertical: 2, gap: 4 }}>
               {itemsList.map((it: any, idx: number) => (
                 <View key={idx} style={styles.previewItemRow}>
-                  <Text style={[styles.itemNameText, { color: theme.onSurface, flex: 1, textAlign: "left" }]} numberOfLines={2}>{it.name}</Text>
-                  <Text style={[styles.itemQtyText, { color: theme.onSurfaceSecondary, width: 32, textAlign: "right" }]}>{it.quantity}</Text>
+                  <Text style={[styles.itemNameText, { color: theme.onSurface, flex: 1, textAlign: "left" }]} numberOfLines={1}>{it.name}</Text>
+                  <Text style={[styles.itemQtyText, { color: theme.onSurfaceSecondary, width: 32, textAlign: "right" }]}>{it.quantity}x</Text>
                   <Text style={[styles.itemRateText, { color: theme.onSurfaceSecondary, width: 64, textAlign: "right" }]}>{formatCurrency(it.price)}</Text>
                   <Text style={[styles.itemPriceText, { color: theme.onSurface, width: 72, textAlign: "right" }]}>{formatCurrency(it.price * it.quantity)}</Text>
                 </View>
@@ -663,26 +662,11 @@ export default function Billing() {
               </View>
             )}
 
-            {!!((bill?.discount || order?.discount) || (bill?.gst_enabled || order?.gst_enabled)) && (
+            {!!(bill?.gst_enabled || order?.gst_enabled) && ((Number(bill?.cgst || 0) + Number(bill?.sgst || 0)) > 0) && (
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>Taxable Amount</Text>
-                <Text style={[styles.summaryVal, { color: theme.onSurface }]}>
-                  {formatCurrency((bill?.subtotal || order?.subtotal || totalAmt) - (bill?.discount || order?.discount || 0))}
-                </Text>
+                <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>GST (Taxes)</Text>
+                <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(Number(bill?.cgst || 0) + Number(bill?.sgst || 0))}</Text>
               </View>
-            )}
-
-            {!!(bill?.gst_enabled || order?.gst_enabled) && (
-              <>
-                <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>CGST</Text>
-                  <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(bill?.cgst || 0)}</Text>
-                </View>
-                <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>SGST</Text>
-                  <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(bill?.sgst || 0)}</Text>
-                </View>
-              </>
             )}
 
             <View style={styles.divider} />
@@ -694,7 +678,7 @@ export default function Billing() {
             {isPaid && (
               <>
                 <View style={styles.divider} />
-                <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 }}>
                   <Text style={{ fontSize: 13, fontWeight: "700", color: theme.onSurfaceSecondary }}>Payment: {(bill?.payment_method || "CASH").toUpperCase()}</Text>
                   <Text style={{ fontSize: 13, fontWeight: "800", color: theme.onSurface }}>{formatCurrency(totalAmt)}</Text>
                 </View>
@@ -703,8 +687,8 @@ export default function Billing() {
 
             {/* Always Crisp Black & White UPI QR Container */}
             {!isPaid && (
-              <View style={[styles.upiBox, { backgroundColor: "#FFFFFF", borderRadius: radius.xl, padding: spacing.xl, alignItems: "center", marginTop: spacing.xl }]}>
-                <Text style={{ color: "#635BFF", fontSize: 16, fontWeight: "800" }}>Scan & Pay (UPI)</Text>
+              <View style={[styles.upiBox, { backgroundColor: "#FFFFFF", borderRadius: radius.lg, padding: spacing.md, alignItems: "center", marginTop: spacing.md }]}>
+                <Text style={{ color: "#635BFF", fontSize: 13, fontWeight: "800" }}>Scan & Pay (UPI)</Text>
                 {qrUri ? (
                   <Image source={{ uri: qrUri }} style={styles.qrCodeImg} contentFit="contain" testID="bill-qr-image" />
                 ) : (
@@ -712,8 +696,8 @@ export default function Billing() {
                     <ActivityIndicator color="#635BFF" />
                   </View>
                 )}
-                <Text style={{ color: "#0F172A", fontSize: 14, fontWeight: "800" }}>{upiId}</Text>
-                <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "600" }}>Auto-fills {formatCurrency(totalAmt)}</Text>
+                <Text style={{ color: "#0F172A", fontSize: 13, fontWeight: "800" }}>{upiId}</Text>
+                <Text style={{ color: "#64748B", fontSize: 11, fontWeight: "600" }}>Auto-fills {formatCurrency(totalAmt)}</Text>
               </View>
             )}
           </View>
@@ -830,7 +814,7 @@ const styles = StyleSheet.create({
   billCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: radius.xl,
-    padding: spacing.xl,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     shadowColor: "rgba(0,0,0,0.03)",
@@ -839,32 +823,32 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  restaurantHeaderTitle: { color: "#0F172A", fontSize: 22, fontWeight: "900", textAlign: "center", marginBottom: 2 },
-  restaurantSubText: { color: "#64748B", fontSize: 13, textAlign: "center", marginBottom: 2, fontWeight: "500" },
+  restaurantHeaderTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900", textAlign: "center", marginBottom: 2 },
+  restaurantSubText: { color: "#64748B", fontSize: 12, textAlign: "center", marginBottom: 2, fontWeight: "500" },
   itemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 2 },
-  itemQty: { color: "#635BFF", fontSize: 15, fontWeight: "800", width: 32 },
-  itemName: { color: "#0F172A", fontSize: 15, fontWeight: "600", flex: 1 },
-  itemPrice: { color: "#0F172A", fontSize: 15, fontWeight: "700" },
-  divider: { height: 1, backgroundColor: "#F1F5F9", marginVertical: spacing.md },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  summaryLbl: { color: "#64748B", fontSize: 15, fontWeight: "500" },
-  summaryVal: { color: "#0F172A", fontSize: 16, fontWeight: "800" },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  totalLbl: { color: "#0F172A", fontSize: 18, fontWeight: "900", letterSpacing: 0.5 },
-  totalVal: { color: "#0F172A", fontSize: 22, fontWeight: "900" },
+  itemQty: { color: "#635BFF", fontSize: 14, fontWeight: "800", width: 32 },
+  itemName: { color: "#0F172A", fontSize: 14, fontWeight: "600", flex: 1 },
+  itemPrice: { color: "#0F172A", fontSize: 14, fontWeight: "700" },
+  divider: { height: 1, backgroundColor: "#F1F5F9", marginVertical: 8 },
+  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 1 },
+  summaryLbl: { color: "#64748B", fontSize: 13.5, fontWeight: "500" },
+  summaryVal: { color: "#0F172A", fontSize: 14.5, fontWeight: "800" },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 },
+  totalLbl: { color: "#0F172A", fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
+  totalVal: { color: "#0F172A", fontSize: 20, fontWeight: "900" },
 
   upiBox: {
     backgroundColor: "#F1F0FF",
-    borderRadius: radius.xl,
-    padding: spacing.xl,
+    borderRadius: radius.lg,
+    padding: spacing.md,
     alignItems: "center",
-    marginTop: spacing.xl,
-    gap: spacing.xs,
+    marginTop: spacing.md,
+    gap: 2,
   },
-  upiTitle: { color: "#635BFF", fontSize: 16, fontWeight: "800" },
-  qrCodeImg: { width: 220, height: 220, marginVertical: spacing.sm, borderRadius: radius.md },
-  upiIdText: { color: "#0F172A", fontSize: 14, fontWeight: "800" },
-  upiSubText: { color: "#64748B", fontSize: 12, fontWeight: "600" },
+  upiTitle: { color: "#635BFF", fontSize: 14, fontWeight: "800" },
+  qrCodeImg: { width: 130, height: 130, marginVertical: 4, borderRadius: radius.md },
+  upiIdText: { color: "#0F172A", fontSize: 13, fontWeight: "800" },
+  upiSubText: { color: "#64748B", fontSize: 11, fontWeight: "600" },
 
   bottomActionBar: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#FFFFFF", flexDirection: "row", padding: spacing.lg, gap: spacing.md, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
   printBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 16, borderRadius: radius.lg, backgroundColor: "#F1F0FF", borderWidth: 1, borderColor: "rgba(99,91,255,0.2)" },

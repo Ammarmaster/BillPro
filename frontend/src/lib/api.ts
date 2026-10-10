@@ -684,6 +684,19 @@ export const api = {
     clearCachePrefix("/tables");
     return req(`/tables/${id}`, { method: "DELETE" });
   },
+  updateTable: async (id: string, payload: any) => {
+    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+      const list = memoryCache["/tables"] || [];
+      const updated = list.map((t: any) => t.id === id ? { ...t, ...payload } : t);
+      memoryCache["/tables"] = updated;
+      setDiskCache("disk_cache_/tables", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/tables", updated);
+      await enqueueSyncAction("UPDATE_TABLE", { id, ...payload });
+      return updated.find((t: any) => t.id === id);
+    }
+    clearCachePrefix("/tables");
+    return req(`/tables/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
   listWaiters: () => req("/staff/waiters"),
   createWaiter: (payload: any) => {
     clearCachePrefix("/staff/waiters");
@@ -1274,6 +1287,21 @@ export const api = {
     req("/admin/broadcast-notification", { method: "POST", body: JSON.stringify(payload) }),
   adminToggleRestaurantStatus: (tid: string, is_active?: boolean) =>
     req(`/admin/restaurants/${tid}/toggle-status`, { method: "POST", body: JSON.stringify(is_active !== undefined ? { is_active } : {}) }),
+  adminListPayments: (params?: { status?: string; search?: string; page?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append("status", params.status);
+    if (params?.search) q.append("search", params.search);
+    if (params?.page) q.append("page", String(params.page));
+    if (params?.limit) q.append("limit", String(params.limit));
+    const qs = q.toString();
+    return req(`/admin/payments${qs ? `?${qs}` : ""}`);
+  },
+  adminRecordManualPayment: (payload: { tenant_id: string; plan_id: string; amount: number; payment_method?: string; reference_id?: string; valid_days?: number; notes?: string }) =>
+    req("/admin/payments/record-manual", { method: "POST", body: JSON.stringify(payload) }),
+  adminRefundPayment: (pid: string, payload?: { refund_reason?: string; cancel_subscription?: boolean }) =>
+    req(`/admin/payments/${pid}/refund`, { method: "POST", body: JSON.stringify(payload || {}) }),
+  adminBusinessSummary: () => req("/admin/reports/business-summary"),
+  adminExportBusinessReportUrl: () => `${API_URL}/api/admin/reports/export`,
   
   cancelSubscription: async () => {
     const res = await req("/subscriptions/cancel", { method: "POST" });

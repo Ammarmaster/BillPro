@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, WebSocket, WebSocketDisconnect, BackgroundTasks, File, UploadFile, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -680,6 +680,13 @@ class MenuItemUpdate(BaseModel):
 class TableIn(BaseModel):
     label: str
     seats: int = 4
+    custom_qr: Optional[str] = None
+
+
+class TableUpdateIn(BaseModel):
+    label: Optional[str] = None
+    seats: Optional[int] = None
+    custom_qr: Optional[str] = None
 
 
 class WaiterIn(BaseModel):
@@ -1441,6 +1448,18 @@ async def list_tables(user: dict = Depends(get_current_user)):
     return tables
 
 
+@api.put("/tables/{tbl_id}")
+async def update_table(tbl_id: str, payload: TableUpdateIn, user: dict = Depends(require_roles("owner", "manager"))):
+    tid = await _ensure_tenant(user)
+    upd = {k: v for k, v in payload.dict().items() if v is not None}
+    if not upd:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    res = await db.tables.update_one({"id": tbl_id, "tenant_id": tid}, {"$set": upd})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Table not found")
+    return await db.tables.find_one({"id": tbl_id}, {"_id": 0})
+
+
 @api.delete("/tables/{tbl_id}")
 async def delete_table(tbl_id: str, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
@@ -2097,6 +2116,12 @@ async def public_get_restaurant(tenant_id: str):
     res = await db.restaurants.find_one({"$or": [{"id": tenant_id}, {"owner_user_id": tenant_id}]}, {"_id": 0})
     if not res:
         raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    real_tid = res.get("id", tenant_id)
+    limits = await get_tenant_plan_limits(real_tid)
+    features = limits.get("features", {})
+    can_order = bool(features.get("customer_ordering", False) or features.get("qr_web_menu", False))
+
     return {
         "id": res.get("id"),
         "name": res.get("name"),
@@ -2109,6 +2134,7 @@ async def public_get_restaurant(tenant_id: str):
         "merchant_name": res.get("merchant_name"),
         "google_maps_link": clean_url_string(res.get("google_maps_link", "")),
         "googleReviewUrl": clean_url_string(res.get("googleReviewUrl", "")),
+        "can_order": can_order,
     }
 
 @api.get("/public/menu/{tenant_id}")
@@ -2152,6 +2178,15 @@ async def public_create_order(payload: PublicOrderIn):
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     
+    # Verify restaurant plan allows online customer ordering
+    limits = await get_tenant_plan_limits(payload.tenant_id)
+    features = limits.get("features", {})
+    if not (features.get("customer_ordering", False) or features.get("qr_web_menu", False)):
+        raise HTTPException(
+            status_code=403, 
+            detail="Online ordering is not available for this restaurant's plan. Please contact staff to place your order."
+        )
+    
     is_online_paid = payload.payment_method == "UPI" and bool(payload.razorpay_payment_id)
 
     if is_online_paid:
@@ -2173,7 +2208,11 @@ async def public_create_order(payload: PublicOrderIn):
     if payload.table_id:
         table = await db.tables.find_one({"tenant_id": payload.tenant_id, "id": payload.table_id})
     if not table and payload.table_number:
-        table = await db.tables.find_one({"tenant_id": payload.tenant_id, "label": payload.table_number})
+        table = await db.tables.find_one({
+            "tenant_id": payload.tenant_id,
+            "is_deleted": {"$ne": True},
+            "$or": [{"label": payload.table_number}, {"custom_qr": payload.table_number}]
+        })
         
     if not table:
         raise HTTPException(status_code=400, detail="This table is no longer available.")
@@ -3496,23 +3535,37 @@ class ResetPasswordIn(BaseModel):
     new_password: str = Field(min_length=4)
 
 
+class ManualPaymentIn(BaseModel):
+    tenant_id: str
+    plan_id: str
+    amount: float
+    payment_method: str = "UPI"  # "UPI" | "Bank Transfer" | "Cash" | "Razorpay" | "Cheque"
+    reference_id: Optional[str] = None
+    valid_days: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class RefundPaymentIn(BaseModel):
+    refund_reason: Optional[str] = "Customer request"
+    cancel_subscription: Optional[bool] = True
+
+
 @api.get("/admin/summary")
 async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin_employee"))):
     try:
+        now = datetime.now(timezone.utc)
+        in_7_days = (now + timedelta(days=7)).isoformat()
+        now_iso = now.isoformat()
+
         total_restaurants = await db.restaurants.count_documents({})
+        active_restaurants = await db.restaurants.count_documents({"is_active": {"$ne": False}})
+        suspended_restaurants = total_restaurants - active_restaurants
+        
         total_users = await db.users.count_documents({})
         total_owners = await db.users.count_documents({"role": "owner"})
-        total_waiters = await db.users.count_documents({"role": "waiter"})
-        total_kitchen = await db.users.count_documents({"role": "kitchen"})
-        
-        # Platform scale metrics
-        total_bills = await db.bills.count_documents({"status": "paid"})
-        total_orders = await db.orders.count_documents({})
-        total_menu_items = await db.menu_items.count_documents({"is_deleted": {"$ne": True}})
-        total_tables = await db.tables.count_documents({"is_deleted": {"$ne": True}})
+        total_staff = total_users - total_owners
 
         active_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0}).to_list(2000)
-        # Compute MRR safely: monthly plans + yearly plans / 12
         mrr = 0.0
         for s in active_subs:
             try:
@@ -3522,10 +3575,22 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
                     mrr += price / 12
                 else:
                     mrr += price
-            except:
+            except Exception:
                 pass
 
-        # Recent Platform Activity (latest registrations & subs)
+        # Subscriptions expiring soon (within next 7 days)
+        expiring_soon_count = await db.subscriptions.count_documents({
+            "status": "active",
+            "ends_at": {"$gte": now_iso, "$lte": in_7_days}
+        })
+
+        # Calculate total revenue collected from payment orders
+        payment_orders = await db.payment_orders.find({"status": "paid"}, {"_id": 0, "amount": 1, "created_at": 1}).to_list(2000)
+        total_revenue_collected = sum(float(p.get("amount") or 0) for p in payment_orders)
+        if total_revenue_collected == 0 and active_subs:
+            total_revenue_collected = sum(float(s.get("price") or 0) for s in active_subs)
+
+        # Recent Platform Activity
         recent_rests = await db.restaurants.find({}, {"_id": 0, "id": 1, "name": 1, "owner_name": 1, "created_at": 1}).sort("created_at", -1).to_list(5)
         recent_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0, "tenant_id": 1, "plan_name": 1, "price": 1, "created_at": 1}).sort("created_at", -1).to_list(5)
         
@@ -3533,57 +3598,398 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
         for r in recent_rests:
             recent_activity.append({
                 "type": "restaurant_registered",
-                "title": f"🏪 New Restaurant: {r.get('name', 'Unknown')}",
+                "title": f"🏪 New Store: {r.get('name', 'Unknown')}",
                 "meta": f"Owner: {r.get('owner_name', 'N/A')}",
-                "timestamp": r.get("created_at") or datetime.now(timezone.utc).isoformat()
+                "timestamp": r.get("created_at") or now_iso
             })
         for s in recent_subs:
             recent_activity.append({
                 "type": "subscription_activated",
-                "title": f"⚡ Plan Activated: {s.get('plan_name', 'Plan')}",
+                "title": f"⚡ License Active: {s.get('plan_name', 'Plan')}",
                 "meta": f"Amount: ₹{s.get('price', 0)}",
-                "timestamp": s.get("created_at") or datetime.now(timezone.utc).isoformat()
+                "timestamp": s.get("created_at") or now_iso
             })
         recent_activity.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
 
         return {
             "total_restaurants": total_restaurants,
+            "active_restaurants": active_restaurants,
+            "suspended_restaurants": suspended_restaurants,
             "total_users": total_users,
             "total_owners": total_owners,
-            "total_waiters": total_waiters,
-            "total_kitchen": total_kitchen,
+            "total_staff": total_staff,
             "active_subscriptions": len(active_subs),
+            "expiring_soon_count": expiring_soon_count,
             "mrr": round(mrr, 2),
             "arr": round(mrr * 12, 2),
-            "total_bills": total_bills,
-            "lifetime_gmv": 0.0,
-            "total_orders": total_orders,
-            "total_menu_items": total_menu_items,
-            "total_tables": total_tables,
-            "today_orders_count": 0,
-            "today_sales_total": 0.0,
+            "total_revenue_collected": round(total_revenue_collected, 2),
             "recent_activity": recent_activity[:8],
         }
     except Exception as e:
         logger.error(f"Error in admin_summary: {e}")
         return {
             "total_restaurants": 0,
+            "active_restaurants": 0,
+            "suspended_restaurants": 0,
             "total_users": 0,
             "total_owners": 0,
-            "total_waiters": 0,
-            "total_kitchen": 0,
+            "total_staff": 0,
             "active_subscriptions": 0,
+            "expiring_soon_count": 0,
             "mrr": 0.0,
             "arr": 0.0,
-            "total_bills": 0,
-            "lifetime_gmv": 0.0,
-            "total_orders": 0,
-            "total_menu_items": 0,
-            "total_tables": 0,
-            "today_orders_count": 0,
-            "today_sales_total": 0.0,
+            "total_revenue_collected": 0.0,
             "recent_activity": [],
         }
+
+
+# ============================================================================
+# SUPER ADMIN PAYMENTS & TRANSACTIONS MANAGEMENT
+# ============================================================================
+@api.get("/admin/payments")
+async def admin_list_payments(
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+    user: dict = Depends(require_roles("super_admin", "admin_employee"))
+):
+    try:
+        query = {}
+        if status and status.lower() != "all":
+            query["status"] = status.lower()
+
+        # Fetch payment orders
+        all_orders = await db.payment_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+        # Build lookup for restaurants and plans
+        restaurants = await db.restaurants.find({}, {"_id": 0, "id": 1, "name": 1, "owner_name": 1, "phone": 1, "owner_user_id": 1}).to_list(2000)
+        rest_map = {r["id"]: r for r in restaurants}
+
+        plans = await db.plans.find({}, {"_id": 0, "id": 1, "name": 1, "price": 1, "interval": 1}).to_list(200)
+        plan_map = {p["id"]: p for p in plans}
+
+        users = await db.users.find({"role": "owner"}, {"_id": 0, "id": 1, "email": 1, "full_name": 1}).to_list(2000)
+        user_map = {u["id"]: u for u in users}
+
+        enriched_payments = []
+        total_collected = 0.0
+        total_refunded = 0.0
+        paid_cnt = 0
+        failed_cnt = 0
+        refunded_cnt = 0
+
+        for po in all_orders:
+            tid = po.get("tenant_id")
+            rest = rest_map.get(tid) or {}
+            plan = plan_map.get(po.get("plan_id")) or {}
+            owner_u = user_map.get(rest.get("owner_user_id")) or {}
+
+            raw_amt = po.get("amount", 0)
+            amt_rupees = raw_amt / 100.0 if raw_amt > 10000 and po.get("razorpay_order_id") else float(raw_amt or 0)
+            if amt_rupees == 0 and plan.get("price"):
+                amt_rupees = float(plan.get("price"))
+
+            st = po.get("status", "created").lower()
+            if st == "paid":
+                total_collected += amt_rupees
+                paid_cnt += 1
+            elif st == "refunded":
+                total_refunded += amt_rupees
+                refunded_cnt += 1
+            elif st in ("failed", "cancelled", "expired"):
+                failed_cnt += 1
+
+            p_item = {
+                "id": po.get("id") or str(po.get("_id", "")),
+                "tenant_id": tid,
+                "restaurant_name": rest.get("name") or "Unknown Restaurant",
+                "owner_name": rest.get("owner_name") or owner_u.get("full_name") or "Store Owner",
+                "owner_email": owner_u.get("email") or "",
+                "owner_phone": rest.get("phone") or "",
+                "plan_id": po.get("plan_id") or "",
+                "plan_name": plan.get("name") or po.get("plan_name") or "Custom Plan",
+                "amount": round(amt_rupees, 2),
+                "currency": "INR",
+                "payment_method": po.get("payment_method") or ("Razorpay" if po.get("razorpay_payment_id") else "Online UPI"),
+                "gateway_order_id": po.get("razorpay_order_id") or po.get("razorpay_subscription_id") or "",
+                "gateway_payment_id": po.get("razorpay_payment_id") or po.get("reference_id") or "",
+                "status": st,
+                "created_at": po.get("created_at") or po.get("paid_at") or "",
+                "paid_at": po.get("paid_at") or po.get("created_at") or "",
+                "refunded_at": po.get("refunded_at"),
+                "refund_reason": po.get("refund_reason"),
+                "notes": po.get("notes"),
+            }
+
+            if search and search.strip():
+                s_low = search.strip().lower()
+                matches = (
+                    s_low in p_item["restaurant_name"].lower() or
+                    s_low in p_item["owner_name"].lower() or
+                    s_low in p_item["owner_email"].lower() or
+                    s_low in p_item["owner_phone"].lower() or
+                    s_low in p_item["gateway_payment_id"].lower() or
+                    s_low in p_item["id"].lower()
+                )
+                if not matches:
+                    continue
+
+            enriched_payments.append(p_item)
+
+        total_txns = len(enriched_payments)
+        success_rate = round((paid_cnt / max(1, paid_cnt + failed_cnt)) * 100, 1)
+
+        start_idx = (page - 1) * limit
+        paginated = enriched_payments[start_idx:start_idx + limit]
+
+        return {
+            "payments": paginated,
+            "total": total_txns,
+            "stats": {
+                "total_collected": round(total_collected, 2),
+                "total_refunded": round(total_refunded, 2),
+                "net_revenue": round(total_collected - total_refunded, 2),
+                "paid_count": paid_cnt,
+                "failed_count": failed_cnt,
+                "refunded_count": refunded_cnt,
+                "success_rate": success_rate,
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in admin_list_payments: {e}")
+        return {
+            "payments": [],
+            "total": 0,
+            "stats": {
+                "total_collected": 0.0,
+                "total_refunded": 0.0,
+                "net_revenue": 0.0,
+                "paid_count": 0,
+                "failed_count": 0,
+                "refunded_count": 0,
+                "success_rate": 100.0,
+            }
+        }
+
+
+@api.post("/admin/payments/record-manual")
+async def admin_record_manual_payment(payload: ManualPaymentIn, user: dict = Depends(require_roles("super_admin"))):
+    rest = await db.restaurants.find_one({"id": payload.tenant_id}, {"_id": 0})
+    if not rest:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+        
+    plan = await db.plans.find_one({"id": payload.plan_id}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    valid_days = payload.valid_days or plan.get("valid_days") or (365 if plan.get("interval") == "year" else 30)
+    ends_at = datetime.now(timezone.utc) + timedelta(days=int(valid_days))
+
+    payment_id = "pay_man_" + str(uuid.uuid4())[:12]
+    doc = {
+        "id": payment_id,
+        "tenant_id": payload.tenant_id,
+        "plan_id": plan["id"],
+        "plan_name": plan["name"],
+        "amount": float(payload.amount),
+        "payment_method": payload.payment_method or "Manual / UPI",
+        "reference_id": payload.reference_id or f"OFFLINE-{int(datetime.now().timestamp())}",
+        "status": "paid",
+        "notes": payload.notes or "Manual payment recorded by Super Admin",
+        "created_at": now_iso,
+        "paid_at": now_iso,
+        "recorded_by": user.get("email") or "super_admin",
+    }
+    await db.payment_orders.insert_one(doc)
+    doc.pop("_id", None)
+
+    # Cancel previous active subscriptions and activate new one
+    await db.subscriptions.update_many(
+        {"tenant_id": payload.tenant_id, "status": "active"},
+        {"$set": {"status": "cancelled"}}
+    )
+
+    is_local_mode = bool(plan.get("is_local_mode") or plan.get("price") in (299, 299.0, 2999, 2999.0) or "starter" in plan.get("name", "").lower() or "basic" in plan.get("name", "").lower())
+    sub = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": payload.tenant_id,
+        "plan_id": plan["id"],
+        "plan_name": plan["name"],
+        "price": float(payload.amount),
+        "interval": plan.get("interval", "month"),
+        "is_local_mode": is_local_mode,
+        "status": "active",
+        "payment_method": payload.payment_method or "Manual",
+        "reference_id": payload.reference_id,
+        "created_at": now_iso,
+        "ends_at": ends_at.isoformat(),
+    }
+    await db.subscriptions.insert_one(sub)
+    sub.pop("_id", None)
+
+    limits = await get_tenant_plan_limits(payload.tenant_id)
+    await notify_tenant(
+        payload.tenant_id,
+        "subscription",
+        "Payment Recorded & License Activated",
+        f"Your {plan['name']} license has been activated for {valid_days} days. (Amt: ₹{payload.amount})",
+        {"event": "subscription.updated", "subscription": sub, "limits": limits}
+    )
+
+    return {"ok": True, "payment": doc, "subscription": sub}
+
+
+@api.post("/admin/payments/{pid}/refund")
+async def admin_refund_payment(pid: str, payload: RefundPaymentIn, user: dict = Depends(require_roles("super_admin"))):
+    po = await db.payment_orders.find_one({"$or": [{"id": pid}, {"razorpay_payment_id": pid}, {"reference_id": pid}]})
+    if not po:
+        raise HTTPException(status_code=404, detail="Payment record not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.payment_orders.update_one(
+        {"id": po["id"]},
+        {"$set": {
+            "status": "refunded",
+            "refunded_at": now_iso,
+            "refund_reason": payload.refund_reason or "Super Admin manual refund",
+            "refunded_by": user.get("email") or "super_admin"
+        }}
+    )
+
+    tid = po.get("tenant_id")
+    if tid and payload.cancel_subscription:
+        await db.subscriptions.update_many(
+            {"tenant_id": tid, "status": "active"},
+            {"$set": {"status": "cancelled", "ends_at": now_iso}}
+        )
+        limits = await get_tenant_plan_limits(tid)
+        await notify_tenant(
+            tid,
+            "subscription",
+            "Subscription Refunded",
+            f"Your recent payment has been refunded ({payload.refund_reason or 'Refund processed'}). Your subscription is cancelled.",
+            {"event": "subscription.refunded", "limits": limits}
+        )
+
+    return {"ok": True, "status": "refunded", "message": "Payment marked as refunded."}
+
+
+# ============================================================================
+# SUPER ADMIN BUSINESS REPORTS & ANALYTICS
+# ============================================================================
+@api.get("/admin/reports/business-summary")
+async def admin_business_summary(user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    try:
+        now = datetime.now(timezone.utc)
+        in_7_days = (now + timedelta(days=7)).isoformat()
+        now_iso = now.isoformat()
+
+        total_rests = await db.restaurants.count_documents({})
+        active_rests = await db.restaurants.count_documents({"is_active": {"$ne": False}})
+        suspended_rests = total_rests - active_rests
+
+        active_subs = await db.subscriptions.find({"status": "active"}, {"_id": 0}).to_list(2000)
+        
+        mrr = 0.0
+        plan_counts = {}
+        for s in active_subs:
+            p_name = s.get("plan_name", "Custom")
+            plan_counts[p_name] = plan_counts.get(p_name, 0) + 1
+            price = float(s.get("price") or 0)
+            if s.get("interval") == "year":
+                mrr += price / 12.0
+            else:
+                mrr += price
+
+        # Expiring soon stores (active sub ends within next 7 days)
+        expiring_subs = await db.subscriptions.find({
+            "status": "active",
+            "ends_at": {"$gte": now_iso, "$lte": in_7_days}
+        }, {"_id": 0}).to_list(100)
+
+        expiring_rests = []
+        for s in expiring_subs:
+            r = await db.restaurants.find_one({"id": s.get("tenant_id")}, {"_id": 0, "name": 1, "owner_name": 1, "phone": 1}) or {}
+            expiring_rests.append({
+                "tenant_id": s.get("tenant_id"),
+                "restaurant_name": r.get("name", "Store"),
+                "owner_name": r.get("owner_name", "Owner"),
+                "phone": r.get("phone", ""),
+                "plan_name": s.get("plan_name", "Plan"),
+                "ends_at": s.get("ends_at"),
+            })
+
+        # Lifetime Revenue from payment_orders
+        payments = await db.payment_orders.find({"status": "paid"}, {"_id": 0, "amount": 1, "created_at": 1, "payment_method": 1}).to_list(5000)
+        total_rev = sum(float(p.get("amount") or 0) for p in payments)
+        if total_rev == 0 and active_subs:
+            total_rev = sum(float(s.get("price") or 0) for s in active_subs)
+
+        return {
+            "mrr": round(mrr, 2),
+            "arr": round(mrr * 12, 2),
+            "total_revenue": round(total_rev, 2),
+            "total_stores": total_rests,
+            "active_stores": active_rests,
+            "suspended_stores": suspended_rests,
+            "active_subscribers": len(active_subs),
+            "plan_distribution": [{"name": k, "count": v} for k, v in plan_counts.items()],
+            "expiring_soon_count": len(expiring_rests),
+            "expiring_stores": expiring_rests[:10],
+            "generated_at": now_iso,
+        }
+    except Exception as e:
+        logger.error(f"Error in admin_business_summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api.get("/admin/reports/export")
+async def admin_export_business_report(user: dict = Depends(require_roles("super_admin"))):
+    try:
+        rests = await db.restaurants.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+        lines = [
+            "Restaurant ID,Restaurant Name,Owner Name,Phone,Address,GST,Status,Current Plan,Subscription Status,Plan Price,Validity Ends At,Registered At"
+        ]
+        for r in rests:
+            sub = await db.subscriptions.find_one({"tenant_id": r["id"]}, {"_id": 0}, sort=[("created_at", -1)]) or {}
+            status_str = "ACTIVE" if r.get("is_active", True) else "SUSPENDED"
+            plan_str = sub.get("plan_name", "None")
+            sub_status = sub.get("status", "expired")
+            price_str = str(sub.get("price", 0))
+            ends_str = str(sub.get("ends_at", "N/A"))
+            created_str = str(r.get("created_at", "N/A"))
+
+            def clean_csv(val):
+                s = str(val or "").replace('"', '""').replace("\n", " ").replace(",", " ")
+                return f'"{s}"'
+
+            row = [
+                clean_csv(r.get("id")),
+                clean_csv(r.get("name")),
+                clean_csv(r.get("owner_name")),
+                clean_csv(r.get("phone")),
+                clean_csv(r.get("address")),
+                clean_csv(r.get("gst")),
+                status_str,
+                clean_csv(plan_str),
+                sub_status,
+                price_str,
+                ends_str,
+                created_str,
+            ]
+            lines.append(",".join(row))
+
+        csv_data = "\n".join(lines)
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=ezbill_business_report_{int(datetime.now().timestamp())}.csv"}
+        )
+    except Exception as e:
+        logger.error(f"Error in admin_export_business_report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api.get("/admin/system-health")
@@ -4437,7 +4843,11 @@ async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None)
         table_id = ""
         table_num = ""
         if table_label:
-            table = await db.tables.find_one({"tenant_id": tenant_id, "$or": [{"id": table_label}, {"label": table_label}]})
+            table = await db.tables.find_one({
+                "tenant_id": tenant_id,
+                "is_deleted": {"$ne": True},
+                "$or": [{"id": table_label}, {"label": table_label}, {"custom_qr": table_label}]
+            })
             if table:
                 table_id = table.get("id", "")
                 table_num = table.get("label", "")

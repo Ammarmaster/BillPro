@@ -438,7 +438,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
               const cSettings = await getPrinterSettings("cashier");
               const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
               const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
-              const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
+              const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
               if (shouldPrint) {
                 await printKitchenKOT(data.order);
               }

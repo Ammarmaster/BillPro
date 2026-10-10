@@ -84,6 +84,11 @@ function AdminConsole() {
   const [healthData, setHealthData] = useState<any>(null);
   const [healthLoading, setHealthLoading] = useState(false);
 
+  // Business Analytics & Report Modal State
+  const [reportModal, setReportModal] = useState(false);
+  const [reportData, setReportData] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+
   const load = useCallback(async () => {
     setErr(null);
     try {
@@ -202,6 +207,26 @@ function AdminConsole() {
     } finally {
       setHealthLoading(false);
     }
+  };
+
+  const openReportModal = async () => {
+    setReportLoading(true);
+    setReportModal(true);
+    try {
+      const res = await api.adminBusinessSummary();
+      setReportData(res);
+    } catch (e: any) {
+      setReportData({ error: e.message });
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    const url = api.adminExportBusinessReportUrl();
+    Linking.openURL(url).catch(() => {
+      Alert.alert("Export Error", "Could not open CSV download link.");
+    });
   };
 
   const sendGlobalBroadcast = async () => {
@@ -355,8 +380,58 @@ function AdminConsole() {
               </View>
             </LinearGradient>
 
-            {/* Platform Scale 6-Card Metrics Grid */}
+            {/* Enterprise Platform Metrics Grid */}
             <View style={styles.metricsGrid}>
+              <Pressable
+                style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={() => router.push("/(app)/admin-payments")}
+                testID="admin-metric-payments"
+              >
+                <View style={[styles.metricIconBox, { backgroundColor: "rgba(16, 185, 129, 0.12)" }]}>
+                  <Ionicons name="card" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>
+                    {formatAmount(summary?.total_revenue_collected || 0)}
+                  </Text>
+                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Payments & Txns</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={theme.onSurfaceTertiary} />
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.metricCard,
+                  {
+                    backgroundColor: theme.surfaceSecondary,
+                    borderColor: (summary?.expiring_soon_count || 0) > 0 ? "rgba(245, 158, 11, 0.4)" : theme.border,
+                  }
+                ]}
+                onPress={() => router.push("/(app)/admin-restaurants")}
+                testID="admin-metric-expiring"
+              >
+                <View style={[
+                  styles.metricIconBox,
+                  { backgroundColor: (summary?.expiring_soon_count || 0) > 0 ? "rgba(245, 158, 11, 0.15)" : "rgba(99, 91, 255, 0.12)" }
+                ]}>
+                  <Ionicons
+                    name="time"
+                    size={20}
+                    color={(summary?.expiring_soon_count || 0) > 0 ? "#F59E0B" : "#635BFF"}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[
+                    styles.metricValText,
+                    { color: (summary?.expiring_soon_count || 0) > 0 ? "#F59E0B" : theme.onSurface }
+                  ]}>
+                    {summary?.expiring_soon_count || 0}
+                  </Text>
+                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Expiring ≤7 Days</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={theme.onSurfaceTertiary} />
+              </Pressable>
+
               <Pressable
                 style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
                 onPress={() => router.push("/(app)/admin-restaurants")}
@@ -369,6 +444,7 @@ function AdminConsole() {
                   <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_restaurants ?? animatedRests ?? 0}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Stores ({summary?.active_subscriptions || 0} active)</Text>
                 </View>
+                <Ionicons name="chevron-forward" size={14} color={theme.onSurfaceTertiary} />
               </Pressable>
 
               <Pressable
@@ -383,53 +459,34 @@ function AdminConsole() {
                   <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_users ?? animatedUsers ?? 0}</Text>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Users ({summary?.total_owners || 0} owners)</Text>
                 </View>
+                <Ionicons name="chevron-forward" size={14} color={theme.onSurfaceTertiary} />
               </Pressable>
-
-              <View style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(16, 185, 129, 0.12)" }]}>
-                  <Ionicons name="receipt" size={20} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_bills || 0}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Bills Settled</Text>
-                </View>
-              </View>
-
-              <View style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(245, 158, 11, 0.12)" }]}>
-                  <Ionicons name="cart" size={20} color="#F59E0B" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_orders || 0}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Orders Placed</Text>
-                </View>
-              </View>
-
-              <View style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(236, 72, 153, 0.12)" }]}>
-                  <Ionicons name="fast-food" size={20} color="#EC4899" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_menu_items || 0}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Menu Items</Text>
-                </View>
-              </View>
-
-              <View style={[styles.metricCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                <View style={[styles.metricIconBox, { backgroundColor: "rgba(139, 92, 246, 0.12)" }]}>
-                  <Ionicons name="grid" size={20} color="#8B5CF6" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>{summary?.total_tables || 0}</Text>
-                  <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Live Tables</Text>
-                </View>
-              </View>
             </View>
 
             {/* Quick Action Navigation Dock */}
-            <View style={styles.quickNavDock}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.sm, marginBottom: spacing.md }}>
               <Pressable
-                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
+                onPress={() => router.push("/(app)/admin-payments")}
+              >
+                <View style={[styles.dockIconBg, { backgroundColor: "#10B98118" }]}>
+                  <Ionicons name="cash" size={18} color="#10B981" />
+                </View>
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Payments</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
+                onPress={openReportModal}
+              >
+                <View style={[styles.dockIconBg, { backgroundColor: "#3B82F618" }]}>
+                  <Ionicons name="document-text" size={18} color="#3B82F6" />
+                </View>
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Reports</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
                 onPress={() => {
                   setGrantTargetRest(restaurants[0] || null);
                   setGrantMsg(null);
@@ -444,7 +501,7 @@ function AdminConsole() {
               </Pressable>
 
               <Pressable
-                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
                 onPress={() => {
                   setBroadcastSuccess(null);
                   setErr(null);
@@ -458,7 +515,7 @@ function AdminConsole() {
               </Pressable>
 
               <Pressable
-                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
                 onPress={openDiagnostics}
               >
                 <View style={[styles.dockIconBg, { backgroundColor: "#10B98118" }]}>
@@ -468,7 +525,7 @@ function AdminConsole() {
               </Pressable>
 
               <Pressable
-                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
                 onPress={() => router.push("/(app)/admin-restaurants")}
               >
                 <View style={[styles.dockIconBg, { backgroundColor: "#3B82F618" }]}>
@@ -478,7 +535,7 @@ function AdminConsole() {
               </Pressable>
 
               <Pressable
-                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
                 onPress={() => router.push("/(app)/admin-users")}
               >
                 <View style={[styles.dockIconBg, { backgroundColor: "#F59E0B18" }]}>
@@ -488,7 +545,7 @@ function AdminConsole() {
               </Pressable>
 
               <Pressable
-                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
                 onPress={() => router.push("/(app)/admin-plans")}
               >
                 <View style={[styles.dockIconBg, { backgroundColor: "#8B5CF618" }]}>
@@ -496,7 +553,7 @@ function AdminConsole() {
                 </View>
                 <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Plans</Text>
               </Pressable>
-            </View>
+            </ScrollView>
 
             {/* Live Platform Activity Feed Ticker */}
             {!!summary?.recent_activity?.length && (
@@ -1024,6 +1081,131 @@ function AdminConsole() {
           </View>
         </View>
       </Modal>
+
+      {/* SUPER ADMIN BUSINESS REPORT & EXPORT MODAL */}
+      <Modal transparent visible={reportModal} animationType={isDesktop ? "fade" : "slide"} onRequestClose={() => setReportModal(false)}>
+        <View style={[styles.modalBg, isDesktop && styles.desktopModalBg]}>
+          <View style={[styles.modalCard, isDesktop && styles.desktopModalCard, { paddingBottom: insets.bottom + spacing.xl, backgroundColor: theme.surfaceSecondary }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={[styles.grantModalIconBox, { backgroundColor: "#3B82F6" }]}>
+                  <Ionicons name="document-text" size={18} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitle, { color: theme.onSurface, marginBottom: 0 }]}>Business & Revenue Report</Text>
+                  <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "500" }}>Live platform financial & SaaS metrics</Text>
+                </View>
+              </View>
+              <Pressable onPress={() => setReportModal(false)} hitSlop={12}>
+                <Ionicons name="close-circle" size={28} color={theme.onSurfaceSecondary} />
+              </Pressable>
+            </View>
+
+            {reportLoading ? (
+              <View style={{ padding: spacing.xxl, alignItems: "center" }}>
+                <ActivityIndicator color="#3B82F6" size="large" />
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 8 }}>Compiling platform business report...</Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+                {/* 4 Financial KPI Summary Cards */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md }}>
+                  <View style={{ flex: 1, minWidth: 120, backgroundColor: theme.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ color: theme.onSurfaceSecondary, fontSize: 11, fontWeight: "700" }}>TOTAL COLLECTED</Text>
+                    <Text style={{ color: "#10B981", fontSize: 18, fontWeight: "900", marginTop: 2 }}>
+                      {formatAmount(reportData?.total_revenue || summary?.total_revenue_collected || 0, true)}
+                    </Text>
+                  </View>
+
+                  <View style={{ flex: 1, minWidth: 120, backgroundColor: theme.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ color: theme.onSurfaceSecondary, fontSize: 11, fontWeight: "700" }}>MRR / MONTHLY</Text>
+                    <Text style={{ color: "#635BFF", fontSize: 18, fontWeight: "900", marginTop: 2 }}>
+                      {formatAmount(reportData?.mrr || summary?.mrr || 0, true)}
+                    </Text>
+                  </View>
+
+                  <View style={{ flex: 1, minWidth: 120, backgroundColor: theme.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ color: theme.onSurfaceSecondary, fontSize: 11, fontWeight: "700" }}>ACTIVE STORES</Text>
+                    <Text style={{ color: theme.onSurface, fontSize: 18, fontWeight: "900", marginTop: 2 }}>
+                      {reportData?.active_subscriptions || summary?.active_subscriptions || 0}
+                    </Text>
+                  </View>
+
+                  <View style={{ flex: 1, minWidth: 120, backgroundColor: theme.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: (reportData?.expiring_soon_count || summary?.expiring_soon_count || 0) > 0 ? "rgba(245, 158, 11, 0.4)" : theme.border }}>
+                    <Text style={{ color: (reportData?.expiring_soon_count || summary?.expiring_soon_count || 0) > 0 ? "#F59E0B" : theme.onSurfaceSecondary, fontSize: 11, fontWeight: "700" }}>EXPIRING SOON</Text>
+                    <Text style={{ color: (reportData?.expiring_soon_count || summary?.expiring_soon_count || 0) > 0 ? "#F59E0B" : theme.onSurface, fontSize: 18, fontWeight: "900", marginTop: 2 }}>
+                      {reportData?.expiring_soon_count || summary?.expiring_soon_count || 0}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Plan Distribution Breakdown */}
+                {reportData?.plan_distribution && Object.keys(reportData.plan_distribution).length > 0 && (
+                  <View style={{ backgroundColor: theme.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: theme.border, marginBottom: spacing.md }}>
+                    <Text style={{ color: theme.onSurface, fontSize: 13, fontWeight: "800", marginBottom: 8 }}>
+                      Subscription Plan Breakdown
+                    </Text>
+                    <View style={{ gap: 6 }}>
+                      {Object.entries(reportData.plan_distribution).map(([pName, count]: [string, any]) => (
+                        <View key={pName} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "600" }}>{pName}</Text>
+                          <View style={{ backgroundColor: "rgba(99, 91, 255, 0.15)", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill }}>
+                            <Text style={{ color: "#635BFF", fontSize: 11, fontWeight: "800" }}>{count} stores</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Expiring Soon Stores Preview */}
+                {!!reportData?.expiring_stores?.length && (
+                  <View style={{ backgroundColor: theme.surfaceTertiary, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)", marginBottom: spacing.md }}>
+                    <Text style={{ color: "#F59E0B", fontSize: 13, fontWeight: "800", marginBottom: 8 }}>
+                      Licenses Expiring in ≤ 7 Days ({reportData.expiring_stores.length})
+                    </Text>
+                    <View style={{ gap: 8 }}>
+                      {reportData.expiring_stores.map((es: any) => (
+                        <View key={es.id} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 6 }}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={{ color: theme.onSurface, fontSize: 13, fontWeight: "700" }}>{es.name}</Text>
+                            <Text style={{ color: theme.onSurfaceSecondary, fontSize: 11 }}>{es.owner_name} {es.phone ? `· ${es.phone}` : ""}</Text>
+                          </View>
+                          {!!es.phone && (
+                            <Pressable
+                              style={{ backgroundColor: "#10B981", paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm, flexDirection: "row", alignItems: "center", gap: 4 }}
+                              onPress={() => handleCall(es.phone)}
+                            >
+                              <Ionicons name="call" size={11} color="#FFFFFF" />
+                              <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "800" }}>Call</Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Direct CSV Export Button */}
+                <Pressable
+                  style={[styles.executeGrantBtn, { marginTop: spacing.sm }]}
+                  onPress={handleExportCSV}
+                >
+                  <LinearGradient
+                    colors={["#3B82F6", "#1D4ED8"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.executeGrantGrad}
+                  >
+                    <Ionicons name="download" size={16} color="#FFFFFF" />
+                    <Text style={styles.executeGrantText}>Download Full CSV Business Report</Text>
+                  </LinearGradient>
+                </Pressable>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
       </View>
     </View>
   );
@@ -1072,7 +1254,7 @@ function OwnerDashboard() {
         const cSettings = await getPrinterSettings("cashier");
         const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
         const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
-        const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.auto_print : false);
+        const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
         if (shouldPrint) {
           await printKitchenKOT(confirmedOrder);
         }
