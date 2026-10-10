@@ -480,17 +480,6 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     }
 
     if (isGet) {
-      if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
-        if (path === "/dashboard/summary") {
-          return computeLocalSummary();
-        }
-        if (path === "/orders" || path === "/bills" || path === "/tables" || path === "/categories" || path === "/menu-items") {
-          const localList = memoryCache[path];
-          if (Array.isArray(localList) && localList.length > 0) {
-            return localList;
-          }
-        }
-      }
       if (path === "/dashboard/summary" && data && typeof data === "object") {
         data.__cache_date = getTodayDateString();
       }
@@ -542,7 +531,17 @@ export const api = {
     return req("/restaurant");
   },
   saveRestaurant: async (payload: any) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/restaurant");
+      const res = await req("/restaurant", { method: "POST", body: JSON.stringify(payload) });
+      if (res) {
+        memoryCache["/restaurant"] = res;
+        cacheTimestamps["/restaurant"] = Date.now();
+        setDiskCache("disk_cache_/restaurant", JSON.stringify(res)).catch(() => {});
+        notifyCacheUpdate("/restaurant", res);
+      }
+      return res;
+    } catch (netErr: any) {
       const existing = memoryCache["/restaurant"] || {};
       const updated = { ...existing, ...payload, updated_at: new Date().toISOString() };
       memoryCache["/restaurant"] = updated;
@@ -552,24 +551,26 @@ export const api = {
       await enqueueSyncAction("SAVE_RESTAURANT", payload);
       return updated;
     }
-    clearCachePrefix("/restaurant");
-    const res = await req("/restaurant", { method: "POST", body: JSON.stringify(payload) });
-    if (res) {
-      memoryCache["/restaurant"] = res;
-      cacheTimestamps["/restaurant"] = Date.now();
-      setDiskCache("disk_cache_/restaurant", JSON.stringify(res)).catch(() => {});
-      notifyCacheUpdate("/restaurant", res);
-    }
-    return res;
   },
   listCategories: async () => {
-    if (api.isLocalProcessingMode && api.isLocalProcessingMode() && memoryCache["/categories"]) {
-      return memoryCache["/categories"];
+    try {
+      const res = await req("/categories");
+      return res;
+    } catch (netErr) {
+      return memoryCache["/categories"] || [];
     }
-    return req("/categories");
   },
   createCategory: async (payload: any) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/categories");
+      const res = await req("/categories", { method: "POST", body: JSON.stringify(payload) });
+      const list = memoryCache["/categories"] || [];
+      const updated = [...list.filter((c: any) => c.id !== res.id), res];
+      memoryCache["/categories"] = updated;
+      setDiskCache("disk_cache_/categories", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/categories", updated);
+      return res;
+    } catch (netErr: any) {
       const localId = "cat_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const newCat = { id: localId, name: payload.name, sort_order: payload.sort_order ?? 0 };
       const list = memoryCache["/categories"] || [];
@@ -580,11 +581,18 @@ export const api = {
       await enqueueSyncAction("CREATE_CATEGORY", payload, localId);
       return newCat;
     }
-    clearCachePrefix("/categories");
-    return req("/categories", { method: "POST", body: JSON.stringify(payload) });
   },
   deleteCategory: async (id: string) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/categories");
+      const res = await req(`/categories/${id}`, { method: "DELETE" });
+      const list = memoryCache["/categories"] || [];
+      const updated = list.filter((c: any) => c.id !== id);
+      memoryCache["/categories"] = updated;
+      setDiskCache("disk_cache_/categories", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/categories", updated);
+      return res;
+    } catch (netErr: any) {
       const list = memoryCache["/categories"] || [];
       const updated = list.filter((c: any) => c.id !== id);
       memoryCache["/categories"] = updated;
@@ -593,17 +601,26 @@ export const api = {
       await enqueueSyncAction("DELETE_CATEGORY", { id });
       return { ok: true };
     }
-    clearCachePrefix("/categories");
-    return req(`/categories/${id}`, { method: "DELETE" });
   },
   listMenu: async () => {
-    if (api.isLocalProcessingMode && api.isLocalProcessingMode() && memoryCache["/menu-items"]) {
-      return memoryCache["/menu-items"];
+    try {
+      const res = await req("/menu-items");
+      return res;
+    } catch (netErr) {
+      return memoryCache["/menu-items"] || [];
     }
-    return req("/menu-items");
   },
   createMenuItem: async (payload: any) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/menu-items");
+      const res = await req("/menu-items", { method: "POST", body: JSON.stringify(payload) });
+      const list = memoryCache["/menu-items"] || [];
+      const updated = [...list.filter((m: any) => m.id !== res.id), res];
+      memoryCache["/menu-items"] = updated;
+      setDiskCache("disk_cache_/menu-items", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/menu-items", updated);
+      return res;
+    } catch (netErr: any) {
       const localId = "item_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const newItem = { id: localId, is_active: true, ...payload };
       const list = memoryCache["/menu-items"] || [];
@@ -614,11 +631,18 @@ export const api = {
       await enqueueSyncAction("CREATE_MENU_ITEM", payload, localId);
       return newItem;
     }
-    clearCachePrefix("/menu-items");
-    return req("/menu-items", { method: "POST", body: JSON.stringify(payload) });
   },
   updateMenuItem: async (id: string, payload: any) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/menu-items");
+      const res = await req(`/menu-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      const list = memoryCache["/menu-items"] || [];
+      const updated = list.map((m: any) => m.id === id ? { ...m, ...res } : m);
+      memoryCache["/menu-items"] = updated;
+      setDiskCache("disk_cache_/menu-items", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/menu-items", updated);
+      return res;
+    } catch (netErr: any) {
       const list = memoryCache["/menu-items"] || [];
       let updatedItem: any = null;
       const updated = list.map((m: any) => {
@@ -634,11 +658,18 @@ export const api = {
       await enqueueSyncAction("UPDATE_MENU_ITEM", { id, ...payload });
       return updatedItem || { id, ...payload };
     }
-    clearCachePrefix("/menu-items");
-    return req(`/menu-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
   deleteMenuItem: async (id: string) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/menu-items");
+      const res = await req(`/menu-items/${id}`, { method: "DELETE" });
+      const list = memoryCache["/menu-items"] || [];
+      const updated = list.filter((m: any) => m.id !== id);
+      memoryCache["/menu-items"] = updated;
+      setDiskCache("disk_cache_/menu-items", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/menu-items", updated);
+      return res;
+    } catch (netErr: any) {
       const list = memoryCache["/menu-items"] || [];
       const updated = list.filter((m: any) => m.id !== id);
       memoryCache["/menu-items"] = updated;
@@ -647,8 +678,6 @@ export const api = {
       await enqueueSyncAction("DELETE_MENU_ITEM", { id });
       return { ok: true };
     }
-    clearCachePrefix("/menu-items");
-    return req(`/menu-items/${id}`, { method: "DELETE" });
   },
   importMenuJson: async (payload: { tenant_id?: string; replace_existing?: boolean; data?: any; raw_json?: string }) => {
     clearCachePrefix("/menu-items");
@@ -656,13 +685,24 @@ export const api = {
     return req("/menu/import-json", { method: "POST", body: JSON.stringify(payload) });
   },
   listTables: async () => {
-    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+    try {
+      const res = await req("/tables");
+      return res;
+    } catch (netErr) {
       return memoryCache["/tables"] || [];
     }
-    return req("/tables");
   },
   createTable: async (payload: any) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/tables");
+      const res = await req("/tables", { method: "POST", body: JSON.stringify(payload) });
+      const list = memoryCache["/tables"] || [];
+      const updated = [...list.filter((t: any) => t.id !== res.id), res];
+      memoryCache["/tables"] = updated;
+      setDiskCache("disk_cache_/tables", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/tables", updated);
+      return res;
+    } catch (netErr: any) {
       const localId = "tbl_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const newTable = { id: localId, label: payload.label, seats: payload.seats ?? 4, status: "vacant" };
       const list = memoryCache["/tables"] || [];
@@ -673,11 +713,18 @@ export const api = {
       await enqueueSyncAction("CREATE_TABLE", payload, localId);
       return newTable;
     }
-    clearCachePrefix("/tables");
-    return req("/tables", { method: "POST", body: JSON.stringify(payload) });
   },
   deleteTable: async (id: string) => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/tables");
+      const res = await req(`/tables/${id}`, { method: "DELETE" });
+      const list = memoryCache["/tables"] || [];
+      const updated = list.filter((t: any) => t.id !== id);
+      memoryCache["/tables"] = updated;
+      setDiskCache("disk_cache_/tables", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/tables", updated);
+      return res;
+    } catch (netErr: any) {
       const list = memoryCache["/tables"] || [];
       const updated = list.filter((t: any) => t.id !== id);
       memoryCache["/tables"] = updated;
@@ -686,11 +733,18 @@ export const api = {
       await enqueueSyncAction("DELETE_TABLE", { id });
       return { ok: true };
     }
-    clearCachePrefix("/tables");
-    return req(`/tables/${id}`, { method: "DELETE" });
   },
   updateTable: async (id: string, payload: any) => {
-    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+    try {
+      clearCachePrefix("/tables");
+      const res = await req(`/tables/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+      const list = memoryCache["/tables"] || [];
+      const updated = list.map((t: any) => t.id === id ? { ...t, ...res } : t);
+      memoryCache["/tables"] = updated;
+      setDiskCache("disk_cache_/tables", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/tables", updated);
+      return res;
+    } catch (netErr: any) {
       const list = memoryCache["/tables"] || [];
       const updated = list.map((t: any) => t.id === id ? { ...t, ...payload } : t);
       memoryCache["/tables"] = updated;
@@ -699,8 +753,6 @@ export const api = {
       await enqueueSyncAction("UPDATE_TABLE", { id, ...payload });
       return updated.find((t: any) => t.id === id);
     }
-    clearCachePrefix("/tables");
-    return req(`/tables/${id}`, { method: "PUT", body: JSON.stringify(payload) });
   },
   listWaiters: () => req("/staff/waiters"),
   createWaiter: (payload: any) => {
@@ -713,94 +765,17 @@ export const api = {
   },
   
   isLocalProcessingMode: () => {
-    const sub = memoryCache["/subscriptions/mine"];
-    if (sub) {
-      if (sub.is_local_mode || sub.limits?.is_local_mode) return true;
-      const price = Number(sub.price || 0);
-      if (price === 299 || price === 2999) return true;
-      const pName = String(sub.plan_name || sub.plan_id || "").toLowerCase();
-      if (pName.includes("starter") || pName.includes("basic") || pName.includes("299")) return true;
-    }
-    try {
-      if (Platform.OS === "web" && typeof window !== "undefined") {
-        const cachedSub = window.localStorage.getItem("cached_sub") || window.localStorage.getItem("disk_cache_/subscriptions/mine");
-        if (cachedSub) {
-          const s = JSON.parse(cachedSub);
-          if (s.is_local_mode || s.limits?.is_local_mode) return true;
-          const p = Number(s.price || 0);
-          if (p === 299 || p === 2999) return true;
-          const n = String(s.plan_name || s.plan_id || "").toLowerCase();
-          if (n.includes("starter") || n.includes("basic") || n.includes("299")) return true;
-        }
-        const userStr = window.localStorage.getItem("lumina_user");
-        if (userStr) {
-          const u = JSON.parse(userStr);
-          const p = Number(u.subscription?.price || u.price || 0);
-          if (p === 299 || p === 2999) return true;
-          const n = String(u.subscription?.plan_name || u.plan_id || "").toLowerCase();
-          if (n.includes("starter") || n.includes("basic") || n.includes("299")) return true;
-        }
-      }
-    } catch {}
     return false;
   },
 
   createOrder: async (payload: any) => {
-    const isLocal = api.isLocalProcessingMode();
-    if (isLocal) {
-      const localId = "ord_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-      const nowIso = new Date().toISOString();
-      const items = payload.items || [];
-      const computedSubtotal = payload.subtotal !== undefined
-        ? Number(payload.subtotal)
-        : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-
-      const localOrder = {
-        id: localId,
-        ...payload,
-        items,
-        subtotal: computedSubtotal,
-        status: payload.status || "placed",
-        created_at: nowIso,
-        updated_at: nowIso,
-      };
-
-      // 1. Instant local cache update - Purge any temp- orders from the list
-      const list = memoryCache["/orders"] || [];
-      const cleanedList = list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== localId);
-      memoryCache["/orders"] = [localOrder, ...cleanedList];
-      setDiskCache("disk_cache_/orders", JSON.stringify(memoryCache["/orders"])).catch(() => {});
-      notifyCacheUpdate("/orders", memoryCache["/orders"]);
-
-      // 2. Instant table occupied status
-      if (payload.table_number) {
-        const tList = memoryCache["/tables"] || [];
-        const updatedTables = tList.map((t: any) => 
-          isSameTable(t.label, payload.table_number)
-            ? { ...t, status: "occupied" }
-            : t
-        );
-        memoryCache["/tables"] = updatedTables;
-        setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
-        notifyCacheUpdate("/tables", updatedTables);
-      }
-
-      // 3. Instant dashboard summary bump
-      const summary = computeLocalSummary();
-      notifyCacheUpdate("/dashboard/summary", summary);
-
-      // 4. Enqueue into persistent offline sync queue
-      await enqueueSyncAction("CREATE_ORDER", { ...payload, subtotal: computedSubtotal }, localId);
-
-      return localOrder;
-    }
-
     try {
       const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
       const list = memoryCache["/orders"] || [];
       memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id && !String(o.id).startsWith("temp-"))];
       clearCachePrefix("/tables");
       clearCachePrefix("/dashboard/summary");
+      notifyCacheUpdate("/orders", memoryCache["/orders"]);
       return res;
     } catch (netErr: any) {
       console.warn("[api.createOrder] Server request failed, activating offline local persistence:", netErr.message);
@@ -848,27 +823,35 @@ export const api = {
   },
   updateOrder: async (id: string, payload: any) => {
     const resolvedId = tempIdMap[id] || id;
-    const isLocal = api.isLocalProcessingMode();
-    if (isLocal) {
+    try {
+      const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
       const list = memoryCache["/orders"] || [];
-      const updated = list
-        .filter((o: any) => !String(o.id).startsWith("temp-") || o.id === resolvedId || o.id === id)
-        .map((o: any) => {
-          if (o.id === resolvedId || o.id === id) {
-            const items = payload.items || o.items || [];
-            const computedSubtotal = payload.subtotal !== undefined
-              ? Number(payload.subtotal)
-              : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-            return {
-              ...o,
-              ...payload,
-              items,
-              subtotal: computedSubtotal,
-              updated_at: new Date().toISOString()
-            };
-          }
-          return o;
-        });
+      const updated = list.map((o: any) => (o.id === resolvedId || o.id === id) ? res : o);
+      memoryCache["/orders"] = updated;
+      setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/orders", updated);
+      clearCachePrefix("/tables");
+      clearCachePrefix("/dashboard/summary");
+      return res;
+    } catch (netErr: any) {
+      console.warn("[api.updateOrder] Server update failed, falling back to local edit & sync:", netErr.message);
+      const list = memoryCache["/orders"] || [];
+      const updated = list.map((o: any) => {
+        if (o.id === resolvedId || o.id === id) {
+          const items = payload.items || o.items || [];
+          const computedSubtotal = payload.subtotal !== undefined
+            ? Number(payload.subtotal)
+            : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+          return {
+            ...o,
+            ...payload,
+            items,
+            subtotal: computedSubtotal,
+            updated_at: new Date().toISOString()
+          };
+        }
+        return o;
+      });
       memoryCache["/orders"] = updated;
       setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
       notifyCacheUpdate("/orders", updated);
@@ -877,49 +860,26 @@ export const api = {
       notifyCacheUpdate("/dashboard/summary", summary);
 
       await enqueueSyncAction("UPDATE_ORDER", { id: resolvedId, ...payload });
-
-      return updated.find((o: any) => o.id === resolvedId || o.id === id) || { id: resolvedId, ...payload };
-    }
-
-    try {
-      const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
-      const list = memoryCache["/orders"] || [];
-      memoryCache["/orders"] = list.map((o: any) => o.id === resolvedId ? res : o);
-      clearCachePrefix("/tables");
-      clearCachePrefix("/dashboard/summary");
-      return res;
-    } catch (netErr: any) {
-      console.warn("[api.updateOrder] Server update failed, falling back to local edit & sync:", netErr.message);
-      const list = memoryCache["/orders"] || [];
-      const updated = list.map((o: any) => (o.id === resolvedId || o.id === id) ? { ...o, ...payload, updated_at: new Date().toISOString() } : o);
-      memoryCache["/orders"] = updated;
-      setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
-      notifyCacheUpdate("/orders", updated);
-      await enqueueSyncAction("UPDATE_ORDER", { id: resolvedId, ...payload });
       return updated.find((o: any) => o.id === resolvedId || o.id === id) || { id: resolvedId, ...payload };
     }
   },
   listOrders: async (status?: string) => {
-    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+    try {
+      const res = await req(`/orders${status ? `?status_filter=${status}` : ""}`);
+      return res;
+    } catch (netErr) {
       const list = (memoryCache["/orders"] || []).filter((o: any) => o && !String(o.id).startsWith("temp-"));
       if (status) {
         return list.filter((o: any) => o.status === status);
       }
       return list;
     }
-    return req(`/orders${status ? `?status_filter=${status}` : ""}`);
   },
   updateOrderStatus: async (id: string, status: string) => {
     const resolvedId = tempIdMap[id] || id;
-    const isLocal = api.isLocalProcessingMode();
-    if (isLocal) {
-      api.updateOrderStatusInCache(resolvedId, status);
-      await enqueueSyncAction("UPDATE_ORDER_STATUS", { id: resolvedId, status });
-      return { id: resolvedId, status };
-    }
-
     try {
       const res = await req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      api.updateOrderStatusInCache(resolvedId, status);
       clearCachePrefix("/dashboard/summary");
       return res;
     } catch (netErr: any) {
@@ -930,7 +890,6 @@ export const api = {
   },
   
   createBill: async (payload: any) => {
-    const isLocal = api.isLocalProcessingMode();
     const handleLocalBill = async () => {
       const localId = "bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const nowIso = new Date().toISOString();
@@ -1021,15 +980,12 @@ export const api = {
       return localBill;
     };
 
-    if (isLocal) {
-      return handleLocalBill();
-    }
-
     try {
       const res = await req("/bills", { method: "POST", body: JSON.stringify(payload) });
       const list = memoryCache["/bills"] || [];
       memoryCache["/bills"] = [res, ...list.filter((b: any) => b.id !== res.id)];
       clearCachePrefix("/dashboard/summary");
+      notifyCacheUpdate("/bills", memoryCache["/bills"]);
       return res;
     } catch (netErr: any) {
       console.warn("[api.createBill] Server bill creation failed, creating local bill:", netErr.message);
@@ -1040,7 +996,6 @@ export const api = {
     const passedObj = typeof idOrBill === "object" && idOrBill !== null ? idOrBill : null;
     const rawId = passedObj ? (passedObj.id || passedObj.order_id || "") : String(idOrBill || "");
     let resolvedId = tempIdMap[rawId] || rawId;
-    const isLocal = api.isLocalProcessingMode();
 
     const handleLocalMarkPaid = async () => {
       const bList = (memoryCache["/bills"] || []).filter((b: any) => !String(b.id).startsWith("temp-") || b.id === rawId || b.id === resolvedId);
@@ -1173,27 +1128,44 @@ export const api = {
       return targetBill || { id: resolvedId, status: "paid", payment_method: paymentMethod };
     };
 
-    if (isLocal) {
-      return handleLocalMarkPaid();
-    }
-
     try {
       const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
       const bList = memoryCache["/bills"] || [];
-      memoryCache["/bills"] = bList.map((b: any) => (b.id === resolvedId || b.id === rawId) ? { ...b, ...res, status: "paid" } : b);
+      const foundInBills = bList.some((b: any) => b.id === resolvedId || b.id === rawId || b.id === res.id);
+      const updatedBills = foundInBills
+        ? bList.map((b: any) => (b.id === resolvedId || b.id === rawId || b.id === res.id) ? { ...b, ...res, status: "paid" } : b)
+        : [res, ...bList];
+      memoryCache["/bills"] = updatedBills;
+      setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
+      notifyCacheUpdate("/bills", updatedBills);
       
       const oList = memoryCache["/orders"] || [];
-      memoryCache["/orders"] = oList.map((o: any) => {
-        if (o.id === res.order_id || (res.order_ids && res.order_ids.includes(o.id))) {
+      const targetOids = res.order_ids || (res.order_id ? [res.order_id] : [resolvedId]);
+      const updatedOrders = oList.map((o: any) => {
+        if (targetOids.includes(o.id) || o.id === resolvedId || o.id === rawId) {
           return { ...o, status: "paid" };
         }
         return o;
       });
+      memoryCache["/orders"] = updatedOrders;
+      setDiskCache("disk_cache_/orders", JSON.stringify(updatedOrders)).catch(() => {});
+      notifyCacheUpdate("/orders", updatedOrders);
+
+      if (res.table_number && res.table_number !== "Takeaway" && res.table_status === "AVAILABLE") {
+        const tList = memoryCache["/tables"] || [];
+        const updatedTables = tList.map((t: any) =>
+          isSameTable(t.label, res.table_number) ? { ...t, status: "available" } : t
+        );
+        memoryCache["/tables"] = updatedTables;
+        setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+        notifyCacheUpdate("/tables", updatedTables);
+      }
       
       clearCachePrefix("/dashboard");
       clearCachePrefix("/tables");
       clearCachePrefix("/bills");
       api.dashboardSummary().catch(() => {});
+      api.listBills().catch(() => {});
       return res;
     } catch (netErr: any) {
       console.warn("[api.markBillPaid] Server pay request failed, marking paid offline locally:", netErr.message);
@@ -1201,8 +1173,6 @@ export const api = {
     }
   },
   settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number) => {
-    const isLocal = api.isLocalProcessingMode();
-
     const handleLocalSettle = async () => {
       const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
       const cleanOrderIds = (orderIds || []).filter((id: string) => id && !String(id).startsWith("temp-"));
@@ -1297,10 +1267,6 @@ export const api = {
       return { ok: true, table_number: tableNumber, status: "settled" };
     };
 
-    if (isLocal) {
-      return handleLocalSettle();
-    }
-
     try {
       const res = await req("/bills/settle-table", {
         method: "POST",
@@ -1312,17 +1278,40 @@ export const api = {
         })
       });
       const oList = memoryCache["/orders"] || [];
-      memoryCache["/orders"] = oList.map((o: any) => {
-        if ((orderIds && orderIds.includes(o.id)) || (!orderIds && String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase())) {
+      const updatedOrders = oList.map((o: any) => {
+        if ((orderIds && orderIds.includes(o.id)) || (!orderIds && isSameTable(o.table_number, tableNumber))) {
           return { ...o, status: "paid" };
         }
         return o;
       });
+      memoryCache["/orders"] = updatedOrders;
+      setDiskCache("disk_cache_/orders", JSON.stringify(updatedOrders)).catch(() => {});
+      notifyCacheUpdate("/orders", updatedOrders);
+
+      const bList = memoryCache["/bills"] || [];
+      const updatedBills = bList.map((b: any) => {
+        if (isSameTable(b.table_number, tableNumber) || (orderIds && (orderIds.includes(b.order_id) || (b.order_ids && b.order_ids.some((id: string) => orderIds.includes(id)))))) {
+          return { ...b, status: "paid", payment_method: paymentMethod, paid_at: new Date().toISOString() };
+        }
+        return b;
+      });
+      memoryCache["/bills"] = updatedBills;
+      setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
+      notifyCacheUpdate("/bills", updatedBills);
+
+      const tList = memoryCache["/tables"] || [];
+      const updatedTables = tList.map((t: any) =>
+        isSameTable(t.label, tableNumber) ? { ...t, status: "available" } : t
+      );
+      memoryCache["/tables"] = updatedTables;
+      setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+      notifyCacheUpdate("/tables", updatedTables);
 
       clearCachePrefix("/dashboard");
       clearCachePrefix("/tables");
       clearCachePrefix("/bills");
       api.dashboardSummary().catch(() => {});
+      api.listBills().catch(() => {});
       return res;
     } catch (netErr: any) {
       console.warn("[api.settleTable] Server settle request failed, settling table locally offline:", netErr.message);
@@ -1330,18 +1319,22 @@ export const api = {
     }
   },
   listBills: async () => {
-    if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
+    try {
+      const res = await req("/bills");
+      return res;
+    } catch (netErr) {
       return (memoryCache["/bills"] || []).filter((b: any) => b && !String(b.id).startsWith("temp-"));
     }
-    return req("/bills");
   },
   dashboardSummary: async () => {
-    if (api.isLocalProcessingMode()) {
+    try {
+      const res = await req("/dashboard/summary");
+      return res;
+    } catch (netErr) {
       const summary = computeLocalSummary();
       notifyCacheUpdate("/dashboard/summary", summary);
       return summary;
     }
-    return req("/dashboard/summary");
   },
   getFeedback: () => req("/dashboard/feedback"),
   // Super admin
@@ -1570,7 +1563,11 @@ export const api = {
   updateCachedOrder: (id: string, realOrder: any) => {
     if (!realOrder || !realOrder.id) return;
     const list = memoryCache["/orders"] || [];
-    const updated = [realOrder, ...list.filter((o: any) => o.id !== id && o.id !== realOrder.id && !String(o.id).startsWith("temp-"))];
+    const existing = list.find((o: any) => o.id === id || o.id === realOrder.id);
+    const finalOrder = (existing && existing.status === "paid" && realOrder.status !== "paid")
+      ? { ...realOrder, status: "paid" }
+      : realOrder;
+    const updated = [finalOrder, ...list.filter((o: any) => o.id !== id && o.id !== realOrder.id && !String(o.id).startsWith("temp-"))];
     memoryCache["/orders"] = updated;
     setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
     notifyCacheUpdate("/orders", updated);
@@ -1578,7 +1575,11 @@ export const api = {
   updateCachedBill: (id: string, realBill: any) => {
     if (!realBill || !realBill.id) return;
     const list = memoryCache["/bills"] || [];
-    const updated = [realBill, ...list.filter((b: any) => b.id !== id && b.id !== realBill.id && !String(b.id).startsWith("temp-"))];
+    const existing = list.find((b: any) => b.id === id || b.id === realBill.id);
+    const finalBill = (existing && existing.status === "paid" && realBill.status !== "paid")
+      ? { ...realBill, status: "paid", payment_method: existing.payment_method || realBill.payment_method }
+      : realBill;
+    const updated = [finalBill, ...list.filter((b: any) => b.id !== id && b.id !== realBill.id && !String(b.id).startsWith("temp-"))];
     memoryCache["/bills"] = updated;
     setDiskCache("disk_cache_/bills", JSON.stringify(updated)).catch(() => {});
     notifyCacheUpdate("/bills", updated);

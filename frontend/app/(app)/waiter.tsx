@@ -233,8 +233,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const matchingOrders = ordersList.filter((o: any) => {
     if (!o) return false;
     if (String(o.id).startsWith("temp-")) {
-      const hasRealOrder = ordersList.some((ro: any) => ro && !String(ro.id).startsWith("temp-") && isSameTable(ro.table_number, tblLabel));
-      if (hasRealOrder) return false;
+      const isSuperseded = ordersList.some((ro: any) => ro && !String(ro.id).startsWith("temp-") && (ro.id === o.id || (ro.session_id && ro.session_id === o.session_id)));
+      if (isSuperseded) return false;
     }
     if (!isSameTable(o.table_number, tblLabel)) return false;
     if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
@@ -424,8 +424,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
     ? orders.filter((o: any) => {
         if (!o) return false;
         if (String(o.id).startsWith("temp-")) {
-          const hasRealOrder = orders.some((ro: any) => ro && !String(ro.id).startsWith("temp-") && isSameTable(ro.table_number, selectedTableObj.label));
-          if (hasRealOrder) return false;
+          const isSuperseded = orders.some((ro: any) => ro && !String(ro.id).startsWith("temp-") && (ro.id === o.id || (ro.session_id && ro.session_id === o.session_id)));
+          if (isSuperseded) return false;
         }
         if (!isSameTable(o.table_number, selectedTableObj.label)) return false;
         if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS

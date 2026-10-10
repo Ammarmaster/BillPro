@@ -24,6 +24,7 @@ export default function BillsHistory() {
 
   const [activeFilter, setActiveFilter] = useState<"today" | "all">(() => params.filter === "today" ? "today" : "all");
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
+  const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selBill, setSelBill] = useState<any>(null);
@@ -40,6 +41,9 @@ export default function BillsHistory() {
       if (path === "/bills" && data) {
         setBills(data);
       }
+      if (path === "/orders" && data) {
+        setOrders(data);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -55,6 +59,9 @@ export default function BillsHistory() {
         api.listBills().then(fresh => {
           if (fresh) setBills(fresh);
         }).catch(() => {});
+        api.listOrders().then(freshO => {
+          if (freshO) setOrders(freshO);
+        }).catch(() => {});
       }
     });
   }, [subscribe]);
@@ -62,8 +69,12 @@ export default function BillsHistory() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const data = await api.listBills();
+      const [data, oData] = await Promise.all([
+        api.listBills().catch(() => []),
+        api.listOrders().catch(() => [])
+      ]);
       if (data) setBills(data);
+      if (oData) setOrders(oData);
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -73,12 +84,15 @@ export default function BillsHistory() {
 
   const formatTimestamp = (ts: string) => formatDateTime(ts);
 
-  const isPaidStatus = (status?: string) => String(status || "").toLowerCase() === "paid";
+  const isPaidStatus = (status?: string) => {
+    const s = String(status || "").toLowerCase().trim();
+    return s === "paid" || s === "completed" || s === "settled" || s === "served";
+  };
 
   const todayPaidBills = useMemo(() => {
     const seenOrderIds = new Set<string>();
     const rawPaid = bills.filter(b => isPaidStatus(b.status) && (b.is_today === true || isTodayBusinessDay(b.paid_at || b.created_at)));
-    const deduped: typeof bills = [];
+    const deduped: any[] = [];
     for (const b of rawPaid) {
       const oids: string[] = b.order_ids || (b.order_id ? [b.order_id] : []);
       if (oids.length > 0 && oids.every(id => seenOrderIds.has(id))) {
@@ -87,13 +101,52 @@ export default function BillsHistory() {
       oids.forEach(id => seenOrderIds.add(id));
       deduped.push(b);
     }
-    return deduped;
-  }, [bills]);
+
+    // Unify any paid orders today that don't have a separate bill document
+    const unbilledPaidOrders = orders.filter((o: any) =>
+      isPaidStatus(o.status) &&
+      isTodayBusinessDay(o.paid_at || o.updated_at || o.created_at) &&
+      !seenOrderIds.has(o.id)
+    );
+
+    for (const o of unbilledPaidOrders) {
+      seenOrderIds.add(o.id);
+      const items = o.items || [];
+      const subtotal = Number(o.subtotal || 0) || items.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+      const total = Number(o.total || 0) || subtotal;
+      const billNumber = o.bill_number || (o.order_number ? `EZ-${new Date().getFullYear()}-${o.order_number}` : `EZ-${new Date().getFullYear()}-${String(o.id).slice(-4)}`);
+      deduped.push({
+        id: o.id || `bill_${o.id}`,
+        bill_number: billNumber,
+        order_id: o.id,
+        order_ids: [o.id],
+        table_number: o.table_number || "Takeaway",
+        customer_name: o.customer_name || "Guest",
+        items,
+        subtotal,
+        total,
+        status: "paid",
+        payment_method: o.payment_method || "CASH",
+        created_at: o.created_at || new Date().toISOString(),
+        paid_at: o.paid_at || o.updated_at || o.created_at || new Date().toISOString(),
+        is_today: true
+      });
+    }
+
+    // Sort newest first
+    return deduped.sort((a, b) => new Date(b.paid_at || b.created_at).getTime() - new Date(a.paid_at || a.created_at).getTime());
+  }, [bills, orders]);
+
+  const allBillsList = useMemo(() => {
+    const existingIds = new Set(bills.map(b => b.id || b.order_id));
+    const extra = todayPaidBills.filter(b => !existingIds.has(b.id) && !existingIds.has(b.order_id));
+    return [...extra, ...bills];
+  }, [bills, todayPaidBills]);
 
   const filteredBills = useMemo(() => {
-    if (activeFilter === "all") return bills;
+    if (activeFilter === "all") return allBillsList;
     return todayPaidBills;
-  }, [bills, activeFilter, todayPaidBills]);
+  }, [allBillsList, activeFilter, todayPaidBills]);
 
   const todayTotal = useMemo(() => {
     return todayPaidBills.reduce((sum, b) => {
@@ -148,7 +201,7 @@ export default function BillsHistory() {
             }}
           >
             <Text style={[styles.filterTabText, activeFilter === "all" ? styles.filterTabTextActive : { color: theme.onSurfaceSecondary }]}>
-              All Bills ({bills.length})
+              All Bills ({allBillsList.length})
             </Text>
           </Pressable>
         </View>

@@ -502,10 +502,14 @@ async function markMidnightSyncComplete() {
   } catch {}
 }
 
+import { AppState } from "react-native";
+
 /**
  * Starts the background sync listener for:
- * 1. Network connectivity ("online" event / periodic check)
- * 2. 12:00 AM Midnight sync
+ * 1. Immediate automatic sync on internet reconnect (Web & Native)
+ * 2. Automatic sync on app focus / foreground resume
+ * 3. Fast background periodic flush (every 5 seconds when pending queue exists)
+ * 4. 12:00 AM Midnight sync
  */
 export function startOfflineSyncRunner(
   reqFn: (path: string, opts?: RequestInit, auth?: boolean) => Promise<any>,
@@ -515,15 +519,15 @@ export function startOfflineSyncRunner(
 ) {
   const triggerSync = async () => {
     try {
-      if (!isLocalModeFn || !isLocalModeFn()) return;
-      if (syncQueue.length === 0) return;
+      if (syncQueue.length === 0 || isSyncing) return;
       await processSyncQueue(reqFn, idMap, updateCacheFn);
     } catch {}
   };
 
   const triggerMidnightSync = async () => {
     try {
-      if (!isLocalModeFn || !isLocalModeFn()) return;
+      const isLocal = isLocalModeFn && isLocalModeFn();
+      if (!isLocal) return;
       const shouldSync = await shouldRunMidnightSync();
       if (shouldSync) {
         console.log("[MidnightSync] Running scheduled 12:00 AM cloud synchronization...");
@@ -535,29 +539,52 @@ export function startOfflineSyncRunner(
     } catch {}
   };
 
-  // 1. Web network reconnection listener: triggers all-at-once batch sync
+  // 1. Web network reconnection & tab focus listeners: automatic instant silent sync
   if (Platform.OS === "web" && typeof window !== "undefined") {
     try {
       window.addEventListener("online", () => {
-        console.log("[OfflineSync] Network reconnected — uploading all offline data to cloud at once.");
+        console.log("[OfflineSync] Network reconnected — automatically uploading all offline data...");
+        triggerSync().catch(() => {});
+      });
+      window.addEventListener("focus", () => {
         triggerSync().catch(() => {});
       });
     } catch {}
   }
 
-  // 2. Periodic check for 12:00 AM Midnight scheduled cloud sync
-  const interval = setInterval(() => {
+  // 2. React Native AppState listener (Mobile): sync on foreground resume
+  let appStateSub: any;
+  try {
+    appStateSub = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        triggerSync().catch(() => {});
+      }
+    });
+  } catch {}
+
+  // 3. Fast periodic auto-sync runner (every 5 seconds if pending items exist)
+  const syncInterval = setInterval(() => {
+    if (syncQueue.length > 0 && !isSyncing) {
+      triggerSync().catch(() => {});
+    }
+  }, 5000);
+
+  // 4. Periodic check for 12:00 AM Midnight scheduled cloud sync
+  const midnightInterval = setInterval(() => {
     triggerMidnightSync().catch(() => {});
   }, 60000);
 
-  // Check midnight sync on startup
+  // Immediate startup sync check
   setTimeout(() => {
+    triggerSync().catch(() => {});
     triggerMidnightSync().catch(() => {});
-  }, 3000);
+  }, 1500);
 
   return () => {
     try {
-      clearInterval(interval);
+      clearInterval(syncInterval);
+      clearInterval(midnightInterval);
+      if (appStateSub?.remove) appStateSub.remove();
     } catch {}
   };
 }

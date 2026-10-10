@@ -3,6 +3,7 @@ import * as Sharing from "expo-sharing";
 import { Platform, Alert, PermissionsAndroid } from "react-native";
 import { storage } from "@/src/utils/storage";
 import * as Haptics from "expo-haptics";
+import { api } from "./api";
 
 let ThermalPrinterModule: any = null;
 try {
@@ -448,6 +449,33 @@ export function printViaIframe(html: string) {
   }
 }
 
+export function getRestaurantSnapshot(data?: any): any {
+  if (data?.restaurant_snapshot && (data.restaurant_snapshot.name || data.restaurant_snapshot.address)) {
+    return data.restaurant_snapshot;
+  }
+  const fromApi = api.getCachedRestaurant();
+  if (fromApi && (fromApi.name || fromApi.address)) {
+    return fromApi;
+  }
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try {
+      const diskR = window.localStorage.getItem("disk_cache_/restaurant");
+      if (diskR) {
+        const parsed = JSON.parse(diskR);
+        if (parsed && (parsed.name || parsed.address)) return parsed;
+      }
+      const userStr = window.localStorage.getItem("lumina_user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u?.restaurant_profile && (u.restaurant_profile.name || u.restaurant_profile.address)) {
+          return u.restaurant_profile;
+        }
+      }
+    } catch {}
+  }
+  return data?.restaurant_snapshot || fromApi || {};
+}
+
 export function getBillLogo(snapshot?: any, width: number = 80): string | null {
   return null;
 }
@@ -520,8 +548,8 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     // ==========================================
     // CUSTOMER BILL RECEIPT — COMPACT & ELEGANT
     // ==========================================
-    const r = data.restaurant_snapshot || {};
-    const restaurantName = (r.name || "RESTAURANT").toUpperCase();
+    const r = getRestaurantSnapshot(data);
+    const restaurantName = (r.name || "Master Chef").toUpperCase();
     lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
 
     if (r.address) {
@@ -544,8 +572,10 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
       }
     }
 
-    const phone = r.phone || r.phone2 || "";
-    const gst = r.gst || "";
+    const phone1 = (r.phone || "").trim();
+    const phone2 = (r.phone2 || "").trim();
+    const phone = phone1 ? (phone2 && phone2 !== phone1 ? `${phone1} / ${phone2}` : phone1) : phone2;
+    const gst = r.gst || r.gst_number || r.gstin || "";
     if (phone && gst && (phone.length + gst.length + 14 <= maxChars)) {
       lines.push(`[C]Ph: ${phone} | GST: ${gst}\n`);
     } else {
@@ -1041,7 +1071,7 @@ export function kotHtml(order: any): string {
 }
 
 export function billHtml(bill: any): string {
-  const r = bill.restaurant_snapshot || {};
+  const r = getRestaurantSnapshot(bill);
   const customLogo = getBillLogo(r);
   
   const items = (bill.items || []).map(
@@ -1064,8 +1094,13 @@ export function billHtml(bill: any): string {
 
   const totalVal = Number(bill.total || bill.subtotal || 0);
   const upiId = r.upi_id || r.upi || "8152075375-2@ybl";
-  const merchant = r.merchant_name || r.name || "Restaurant";
+  const merchant = r.merchant_name || r.name || "Master Chef";
   const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalVal.toFixed(2)}&cu=INR`;
+
+  const phone1 = (r.phone || "").trim();
+  const phone2 = (r.phone2 || "").trim();
+  const phone = phone1 ? (phone2 && phone2 !== phone1 ? `${phone1} / ${phone2}` : phone1) : phone2;
+  const gst = r.gst || r.gst_number || r.gstin || "";
 
   return `
     <!DOCTYPE html>
@@ -1089,9 +1124,9 @@ export function billHtml(bill: any): string {
       .footer { text-align: center; margin-top: 5px; font-size: 10px; color: #666; font-weight: 600; }
     </style></head><body>
       ${logoBlock}
-      <h1>${escapeHtml(r.name || "RESTAURANT")}</h1>
+      <h1>${escapeHtml(r.name || "Master Chef")}</h1>
       ${r.address ? `<p class="sub">${escapeHtml(r.address)}</p>` : ""}
-      ${r.phone ? `<p class="sub">Ph: ${escapeHtml(r.phone)}${r.phone2 && r.phone2 !== r.phone ? ` / ${escapeHtml(r.phone2)}` : ""}${r.gst ? ` | GST: ${escapeHtml(r.gst)}` : ""}</p>` : (r.gst ? `<p class="sub">GSTIN: ${escapeHtml(r.gst)}</p>` : "")}
+      ${phone ? `<p class="sub">Ph: ${escapeHtml(phone)}${gst ? ` | GST: ${escapeHtml(gst)}` : ""}</p>` : (gst ? `<p class="sub">GSTIN: ${escapeHtml(gst)}</p>` : "")}
       <hr />
       
       <div class="meta">
@@ -1231,7 +1266,7 @@ export async function clearDefaultPrinter(): Promise<void> {
 }
 
 export function closingReportHtml(session: any, restaurant?: any): string {
-  const r = restaurant || session.restaurant_snapshot || {};
+  const r = getRestaurantSnapshot(restaurant || session);
   const dateObj = new Date(session.closed_at || session.opened_at || Date.now());
   const dateStr = dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const openTime = session.opened_at ? new Date(session.opened_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : "-";
@@ -1251,6 +1286,11 @@ export function closingReportHtml(session: any, restaurant?: any): string {
     { label: "₹10",  count: denoms["10"] || 0,  val: (denoms["10"] || 0) * 10 },
     { label: "Coins", count: "-", val: denoms["coins"] || 0 },
   ].filter(d => d.val > 0);
+
+  const phone1 = (r.phone || "").trim();
+  const phone2 = (r.phone2 || "").trim();
+  const phone = phone1 ? (phone2 && phone2 !== phone1 ? `${phone1} / ${phone2}` : phone1) : phone2;
+  const gst = r.gst || r.gst_number || r.gstin || "";
 
   return `
     <!DOCTYPE html>
@@ -1276,9 +1316,9 @@ export function closingReportHtml(session: any, restaurant?: any): string {
       .footer { text-align: center; margin-top: 8px; font-size: 10px; color: #666; font-weight: 600; }
       .sign-line { margin-top: 25px; border-top: 1px solid #888; width: 140px; text-align: center; font-size: 10px; color: #444; }
     </style></head><body>
-      <h1>${escapeHtml(r.name || "RESTAURANT")}</h1>
+      <h1>${escapeHtml(r.name || "Master Chef")}</h1>
       ${r.address ? `<p class="sub">${escapeHtml(r.address)}</p>` : ""}
-      ${r.phone ? `<p class="sub">Ph: ${escapeHtml(r.phone)}${r.gst ? ` | GST: ${escapeHtml(r.gst)}` : ""}</p>` : ""}
+      ${phone ? `<p class="sub">Ph: ${escapeHtml(phone)}${gst ? ` | GST: ${escapeHtml(gst)}` : ""}</p>` : (gst ? `<p class="sub">GSTIN: ${escapeHtml(gst)}</p>` : "")}
       <hr />
       <h2>END-OF-DAY CLOSING REPORT</h2>
       <div class="meta">
@@ -1362,8 +1402,9 @@ export async function formatClosingReceipt(session: any, width: number = 80): Pr
   const divider = "-".repeat(maxChars);
   const lines: string[] = [];
 
-  const r = session.restaurant_snapshot || {};
-  lines.push(`[C]<b><font size='big'>${(r.name || "RESTAURANT").toUpperCase()}</font></b>\n`);
+  const r = getRestaurantSnapshot(session);
+  const restaurantName = (r.name || "Master Chef").toUpperCase();
+  lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
   lines.push(`[C]<b>CLOSING SHIFT REPORT</b>\n`);
   lines.push(`[C]${divider}\n`);
 

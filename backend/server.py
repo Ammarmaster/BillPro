@@ -713,6 +713,7 @@ class OrderIn(BaseModel):
     notes: str = ""
     session_id: Optional[str] = None
     customer_name: Optional[str] = "Guest 1"
+    status: Optional[str] = "placed"
 
 
 class PublicOrderIn(BaseModel):
@@ -1936,6 +1937,98 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                     await db.orders.update_many({"table_number": tbl, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
                     await db.bills.update_many({"table_number": tbl, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
                 synced_count += 1
+
+            elif a_type == "OPEN_CASH_SESSION":
+                sid = local_id if (local_id and not local_id.startswith("temp-")) else str(uuid.uuid4())
+                bus_date = p.get("business_date") or get_business_day_string()
+                doc = {
+                    "id": sid,
+                    "tenant_id": tid,
+                    "cashier_id": user["id"],
+                    "cashier_name": user.get("full_name") or user.get("email") or "Cashier",
+                    "business_date": bus_date,
+                    "opened_at": p.get("opened_at") or now,
+                    "closed_at": None,
+                    "opening_float": float(p.get("opening_float", 0.0)),
+                    "status": "open",
+                    "notes": p.get("notes", ""),
+                    "created_at": p.get("created_at") or now,
+                    "updated_at": now,
+                }
+                existing = await db.cash_sessions.find_one({"id": sid, "tenant_id": tid})
+                if existing:
+                    await db.cash_sessions.update_one({"id": sid, "tenant_id": tid}, {"$set": doc})
+                else:
+                    await db.cash_sessions.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = sid
+                synced_count += 1
+
+            elif a_type == "RECORD_CASH_MOVEMENT":
+                mid = local_id if (local_id and not local_id.startswith("temp-")) else str(uuid.uuid4())
+                sess_id = id_map.get(p.get("session_id"), p.get("session_id"))
+                if not sess_id:
+                    active_sess = await db.cash_sessions.find_one({"tenant_id": tid, "status": "open"})
+                    if active_sess:
+                        sess_id = active_sess["id"]
+                doc = {
+                    "id": mid,
+                    "tenant_id": tid,
+                    "session_id": sess_id or "",
+                    "type": p.get("type", "cash_in"),
+                    "amount": float(p.get("amount", 0)),
+                    "reason": p.get("reason", ""),
+                    "reference": p.get("reference", ""),
+                    "staff_id": user["id"],
+                    "staff_name": user.get("full_name") or "Staff",
+                    "created_at": p.get("created_at") or now,
+                }
+                await db.cash_movements.insert_one(doc)
+                if local_id:
+                    id_map[local_id] = mid
+                synced_count += 1
+
+            elif a_type == "CLOSE_CASH_SESSION":
+                sess_id = id_map.get(p.get("session_id"), p.get("session_id"))
+                query = {"id": sess_id, "tenant_id": tid} if sess_id else {"tenant_id": tid, "status": "open"}
+                session = await db.cash_sessions.find_one(query)
+                if session:
+                    metrics = await calculate_session_metrics(tid, session)
+                    counted_cash = float(p.get("counted_cash", 0))
+                    expected_cash = float(metrics["expected_cash"])
+                    cash_diff = round(counted_cash - expected_cash, 2)
+                    actual_upi = float(p.get("actual_upi")) if p.get("actual_upi") is not None else metrics["expected_upi"]
+                    actual_card = float(p.get("actual_card")) if p.get("actual_card") is not None else metrics["expected_card"]
+                    actual_other = float(p.get("actual_other")) if p.get("actual_other") is not None else metrics["expected_other"]
+                    
+                    update_fields = {
+                        "status": "closed",
+                        "closed_at": p.get("closed_at") or now,
+                        "closed_by": user.get("full_name") or user.get("email") or "Cashier",
+                        "closed_by_id": user["id"],
+                        "counted_cash": counted_cash,
+                        "expected_cash": expected_cash,
+                        "cash_difference": cash_diff,
+                        "denominations": p.get("denominations", {}),
+                        "actual_upi": actual_upi,
+                        "expected_upi": metrics["expected_upi"],
+                        "upi_difference": round(actual_upi - metrics["expected_upi"], 2),
+                        "actual_card": actual_card,
+                        "expected_card": metrics["expected_card"],
+                        "card_difference": round(actual_card - metrics["expected_card"], 2),
+                        "actual_other": actual_other,
+                        "expected_other": metrics["expected_other"],
+                        "other_difference": round(actual_other - metrics["expected_other"], 2),
+                        "gross_sales": metrics["gross_sales"],
+                        "net_sales": metrics["net_sales"],
+                        "tax_collected": metrics["tax_collected"],
+                        "discount_given": metrics["discount_given"],
+                        "discrepancy_reason": p.get("discrepancy_reason", ""),
+                        "closing_notes": p.get("closing_notes", ""),
+                        "updated_at": now,
+                    }
+                    await db.cash_sessions.update_one({"id": session["id"], "tenant_id": tid}, {"$set": update_fields})
+                synced_count += 1
                 
         except Exception as e:
             logger.warning(f"Batch sync item error for {a_type}: {e}")
@@ -2038,6 +2131,7 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
     subtotal = sum(i.price * i.quantity for i in payload.items)
     cust_name = (payload.customer_name or "Guest 1").strip()
     sess_id = payload.session_id or str(uuid.uuid4())
+    order_status = payload.status or "placed"
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -2047,29 +2141,30 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
         "items": [i.dict() for i in payload.items],
         "notes": payload.notes,
         "subtotal": subtotal,
-        "status": "placed",
+        "status": order_status,
         "order_source": "waiter",
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
-    order_payload = {
-        "event": "order.created",
-        "order_id": doc["id"],
-        "table_number": doc.get("table_number", "-"),
-        "customer_name": cust_name,
-        "session_id": sess_id,
-        "order_source": "waiter",
-        "order": doc
-    }
-    await notify_tenant(
-        tid,
-        "kitchen",
-        "New KOT Placed",
-        f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
-        order_payload
-    )
+    if order_status == "placed":
+        order_payload = {
+            "event": "order.created",
+            "order_id": doc["id"],
+            "table_number": doc.get("table_number", "-"),
+            "customer_name": cust_name,
+            "session_id": sess_id,
+            "order_source": "waiter",
+            "order": doc
+        }
+        await notify_tenant(
+            tid,
+            "kitchen",
+            "New KOT Placed",
+            f"New order placed for Table {doc.get('table_number', '-')} ({cust_name})",
+            order_payload
+        )
     return doc
 
 
@@ -3293,9 +3388,12 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
             "tenant_id": tid
         })
         if not existing_b:
+            import random
             bill_id = str(uuid.uuid4())
+            bill_num = f"EZ-{datetime.now().year}-{random.randint(1000, 9999)}"
             bill_doc = {
                 "id": bill_id,
+                "bill_number": bill_num,
                 "tenant_id": tid,
                 "order_id": o["id"],
                 "order_ids": [o["id"]],
@@ -3518,7 +3616,7 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
     seen_oids = set()
     deduped_bills = []
     for b in bills:
-        b["is_today"] = is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))
+        b["is_today"] = is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"))
         oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
         if oids and oids.issubset(seen_oids):
             continue
@@ -3529,6 +3627,36 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
                 continue
             seen_oids.add(b["id"])
         deduped_bills.append(b)
+
+    # Also fetch any paid orders for this tenant to ensure 100% complete bills history
+    unbilled_paid_orders = await db.orders.find({
+        "tenant_id": tid,
+        "status": "paid"
+    }, {"_id": 0}).to_list(1000)
+
+    for o in unbilled_paid_orders:
+        oid = o.get("id")
+        if oid and oid not in seen_oids:
+            seen_oids.add(oid)
+            sub = float(o.get("subtotal", 0.0)) or sum(float(it.get("price", 0.0)) * int(it.get("quantity", 1)) for it in (o.get("items") or []))
+            is_tod = is_timestamp_in_current_business_day(o.get("paid_at") or o.get("updated_at") or o.get("created_at"))
+            synthesized_bill = {
+                "id": f"bill_{oid}",
+                "bill_number": f"EZ-{datetime.now().year}-{str(oid)[-4:] if len(str(oid))>=4 else '1001'}",
+                "order_id": oid,
+                "order_ids": [oid],
+                "table_number": o.get("table_number", "Takeaway"),
+                "customer_name": o.get("customer_name", "Guest"),
+                "items": o.get("items", []),
+                "subtotal": sub,
+                "total": sub,
+                "status": "paid",
+                "payment_method": o.get("payment_method", "CASH"),
+                "created_at": o.get("created_at", datetime.now(timezone.utc).isoformat()),
+                "paid_at": o.get("paid_at") or o.get("updated_at") or o.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                "is_today": is_tod
+            }
+            deduped_bills.append(synthesized_bill)
 
     if filter == "today":
         return [b for b in deduped_bills if b.get("is_today") and str(b.get("status", "")).lower() == "paid"]
@@ -5111,69 +5239,6 @@ async def _ensure_active_subscription(tid: str, user: dict = None):
             status_code=402,
             detail="Subscription expired. Please renew your EzBill subscription to continue using POS billing and orders."
         )
-
-
-# ---------- BATCH SYNC ----------
-class BatchAction(BaseModel):
-    path: str
-    method: str
-    body: Optional[dict] = None
-    tempId: Optional[str] = None
-    operationId: str
-
-class BatchSyncIn(BaseModel):
-    actions: List[BatchAction]
-
-from httpx import AsyncClient
-
-@api.post("/sync/batch")
-async def batch_sync(payload: BatchSyncIn, request: Request, user: dict = Depends(get_current_user)):
-    results = []
-    id_mapping = {}
-    
-    headers = {"Authorization": request.headers.get("Authorization", "")}
-    
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        for action in payload.actions:
-            resolved_path = action.path
-            for temp_id, real_id in id_mapping.items():
-                resolved_path = resolved_path.replace(temp_id, real_id)
-            
-            body = action.body or {}
-            if body:
-                body_str = json.dumps(body)
-                for temp_id, real_id in id_mapping.items():
-                    body_str = body_str.replace(temp_id, real_id)
-                body = json.loads(body_str)
-                
-            headers["X-Operation-ID"] = action.operationId
-            
-            if action.method.upper() == "POST":
-                res = await ac.post(f"/api{resolved_path}", json=body, headers=headers)
-            elif action.method.upper() == "PATCH":
-                res = await ac.patch(f"/api{resolved_path}", json=body, headers=headers)
-            elif action.method.upper() == "DELETE":
-                res = await ac.delete(f"/api{resolved_path}", headers=headers)
-            else:
-                res = await ac.request(action.method, f"/api{resolved_path}", json=body, headers=headers)
-                
-            status_code = res.status_code
-            try:
-                res_data = res.json()
-            except Exception:
-                res_data = res.text
-                
-            if 200 <= status_code < 300 and action.tempId and isinstance(res_data, dict) and "id" in res_data:
-                id_mapping[action.tempId] = res_data["id"]
-                
-            results.append({
-                "operationId": action.operationId,
-                "status": status_code,
-                "data": res_data,
-                "tempId": action.tempId
-            })
-            
-    return {"results": results, "id_mapping": id_mapping}
 
 
 # ---------- RAZORPAY CHECKOUT ----------

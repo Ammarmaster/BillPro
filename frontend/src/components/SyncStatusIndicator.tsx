@@ -41,6 +41,13 @@ export default function SyncStatusIndicator({ compact = false }: { compact?: boo
     return () => unsubscribe();
   }, [pendingCount]);
 
+  // Automatic sync when online and pending items exist
+  useEffect(() => {
+    if (isOnline && pendingCount > 0 && !isSyncing) {
+      api.syncOfflineQueue().catch(() => {});
+    }
+  }, [isOnline, pendingCount, isSyncing]);
+
   const handleManualSync = async () => {
     if (isSyncing) return;
     try {
