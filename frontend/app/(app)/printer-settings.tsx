@@ -12,9 +12,12 @@ import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
 import {
   savePrinterSettings, getPrinterSettings, printThermalDirect, forgetPrinter,
-  subscribePrinterStatus, checkPrinterConnection, scanNearbyPrinters, autoConnectPrinter,
+  subscribePrinterStatus, checkPrinterConnection, scanNearbyPrinters, scanNetworkPrinters, autoConnectPrinter,
   connectWebBluetoothPrinter, isWebBluetoothSupported,
-  PrinterSettings, PrinterConnectionStatus
+  connectWebUsbPrinter, isWebUsbSupported,
+  connectWebSerialPrinter, isWebSerialSupported,
+  kickCashDrawer,
+  PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
 } from "@/src/lib/print";
 
 export default function PrinterSettingsScreen() {
@@ -26,32 +29,41 @@ export default function PrinterSettingsScreen() {
   const [activeTab, setActiveTab] = useState<"cashier" | "kitchen">("cashier");
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanningSubnet, setScanningSubnet] = useState(false);
   const [connectingAddress, setConnectingAddress] = useState<string | null>(null);
-  const [devices, setDevices] = useState<{ name: string; address: string; type: "bluetooth" | "network" }[]>([]);
+  const [devices, setDevices] = useState<{ name: string; address: string; type: PrinterConnectionType; brand?: string }[]>([]);
   const [testingPrint, setTestingPrint] = useState(false);
+  const [testingDrawer, setTestingDrawer] = useState(false);
 
   // Live status from persistent printer manager
   const [cashierConnStatus, setCashierConnStatus] = useState<PrinterConnectionStatus>("none");
   const [kitchenConnStatus, setKitchenConnStatus] = useState<PrinterConnectionStatus>("none");
 
   // Cashier printer states
-  const [cashierType, setCashierType] = useState<"network" | "bluetooth" | "system" | "none">("bluetooth");
+  const [cashierType, setCashierType] = useState<PrinterConnectionType>("bluetooth");
   const [cashierIP, setCashierIP] = useState("");
   const [cashierPort, setCashierPort] = useState("9100");
   const [cashierMAC, setCashierMAC] = useState("MPT-II");
   const [cashierName, setCashierName] = useState("Cashier Thermal Printer");
+  const [cashierBrand, setCashierBrand] = useState("TVS");
   const [cashierWidth, setCashierWidth] = useState<58 | 80>(58);
   const [cashierAuto, setCashierAuto] = useState(true);
   const [cashierPrintKOT, setCashierPrintKOT] = useState(false);
+  const [cashierOpenDrawer, setCashierOpenDrawer] = useState(true);
+  const [cashierAutoCut, setCashierAutoCut] = useState(true);
+  const [cashierCopies, setCashierCopies] = useState<number>(1);
 
   // Kitchen printer states
-  const [kitchenType, setKitchenType] = useState<"network" | "bluetooth" | "system" | "none">("none");
+  const [kitchenType, setKitchenType] = useState<PrinterConnectionType>("none");
   const [kitchenIP, setKitchenIP] = useState("");
   const [kitchenPort, setKitchenPort] = useState("9100");
   const [kitchenMAC, setKitchenMAC] = useState("");
   const [kitchenName, setKitchenName] = useState("Kitchen Thermal Printer");
+  const [kitchenBrand, setKitchenBrand] = useState("Epson");
   const [kitchenWidth, setKitchenWidth] = useState<58 | 80>(80);
   const [kitchenAuto, setKitchenAuto] = useState(true);
+  const [kitchenAutoCut, setKitchenAutoCut] = useState(true);
+  const [kitchenCopies, setKitchenCopies] = useState<number>(1);
 
   useEffect(() => {
     const unsubCashier = subscribePrinterStatus("cashier", s => setCashierConnStatus(s));
@@ -72,13 +84,17 @@ export default function PrinterSettingsScreen() {
       if (cashier.type === "network") {
         setCashierIP(cashier.address);
         setCashierPort(cashier.port || "9100");
-      } else if (cashier.type === "bluetooth") {
+      } else if (cashier.type === "bluetooth" || cashier.type === "sunmi" || cashier.type === "usb") {
         setCashierMAC(cashier.address);
       }
       setCashierName(cashier.name);
+      setCashierBrand(cashier.brand || "Generic");
       setCashierWidth(cashier.width);
-      setCashierAuto(cashier.auto_print);
+      setCashierAuto(cashier.auto_print ?? true);
       setCashierPrintKOT(cashier.print_kot ?? false);
+      setCashierOpenDrawer(cashier.open_drawer ?? true);
+      setCashierAutoCut(cashier.auto_cut ?? true);
+      setCashierCopies(cashier.copies || 1);
     }
 
     const kitchen = await getPrinterSettings("kitchen");
@@ -87,12 +103,15 @@ export default function PrinterSettingsScreen() {
       if (kitchen.type === "network") {
         setKitchenIP(kitchen.address);
         setKitchenPort(kitchen.port || "9100");
-      } else if (kitchen.type === "bluetooth") {
+      } else if (kitchen.type === "bluetooth" || kitchen.type === "sunmi" || kitchen.type === "usb") {
         setKitchenMAC(kitchen.address);
       }
       setKitchenName(kitchen.name);
+      setKitchenBrand(kitchen.brand || "Generic");
       setKitchenWidth(kitchen.width);
-      setKitchenAuto(kitchen.auto_print);
+      setKitchenAuto(kitchen.auto_print ?? true);
+      setKitchenAutoCut(kitchen.auto_cut ?? true);
+      setKitchenCopies(kitchen.copies || 1);
     }
     setLoading(false);
     checkPrinterConnection("cashier").catch(() => {});
@@ -103,21 +122,6 @@ export default function PrinterSettingsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setScanning(true);
     try {
-      if (Platform.OS === "web" && isWebBluetoothSupported()) {
-        const paired = await connectWebBluetoothPrinter(activeTab);
-        if (paired) {
-          await loadSettings();
-          const dev = await getPrinterSettings(activeTab);
-          if (dev) {
-            setDevices([{ name: dev.name, address: dev.address, type: (dev.type === "network" ? "network" : "bluetooth") }]);
-          }
-          Alert.alert(
-            "Bluetooth Thermal Printer Connected",
-            `Connected to Web Bluetooth printer.`
-          );
-          return;
-        }
-      }
       const found = await scanNearbyPrinters();
       setDevices(found);
     } catch (e: any) {
@@ -127,15 +131,106 @@ export default function PrinterSettingsScreen() {
     }
   };
 
-  const handleConnectDevice = async (dev: { name: string; address: string; type: "bluetooth" | "network" }) => {
+  const handleSubnetScan = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setScanningSubnet(true);
+    try {
+      const netPrinters = await scanNetworkPrinters();
+      setDevices(prev => {
+        const merged = [...prev];
+        netPrinters.forEach(np => {
+          if (!merged.some(m => m.address === np.address)) {
+            merged.push(np);
+          }
+        });
+        return merged;
+      });
+      Alert.alert("Network Scan Complete", "Discovered potential network LAN thermal printer IP addresses.");
+    } catch (e: any) {
+      console.warn("Subnet scan error:", e);
+    } finally {
+      setScanningSubnet(false);
+    }
+  };
+
+  const handleApplyPreset = async (preset: PrinterPreset) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const isCashier = activeTab === "cashier";
+
+    if (isCashier) {
+      setCashierType(preset.type);
+      setCashierName(preset.name);
+      setCashierBrand(preset.brand);
+      setCashierWidth(preset.defaultWidth);
+      if (preset.type === "network") {
+        setCashierPort(preset.port || "9100");
+        if (!cashierIP) setCashierIP("192.168.1.100");
+      } else if (preset.type === "sunmi") {
+        setCashierMAC("inner");
+      } else if (preset.type === "usb") {
+        setCashierMAC("USB-Direct");
+      }
+    } else {
+      setKitchenType(preset.type);
+      setKitchenName(preset.name);
+      setKitchenBrand(preset.brand);
+      setKitchenWidth(preset.defaultWidth);
+      if (preset.type === "network") {
+        setKitchenPort(preset.port || "9100");
+        if (!kitchenIP) setKitchenIP("192.168.1.200");
+      } else if (preset.type === "sunmi") {
+        setKitchenMAC("inner");
+      } else if (preset.type === "usb") {
+        setKitchenMAC("USB-Direct");
+      }
+    }
+
+    // Auto-connect with preset defaults
+    await autoConnectPrinter(activeTab, {
+      name: preset.name,
+      address: preset.type === "network" ? (isCashier ? (cashierIP || "192.168.1.100") : (kitchenIP || "192.168.1.200")) : (preset.type === "sunmi" ? "inner" : (isCashier ? cashierMAC : kitchenMAC)),
+      type: preset.type,
+      brand: preset.brand,
+      width: preset.defaultWidth,
+      auto_print: true,
+      open_drawer: isCashier,
+      auto_cut: true
+    });
+
+    Alert.alert(
+      `${preset.brand} Preset Applied`,
+      `${preset.name} configured for ${isCashier ? "Cashier Billing" : "Kitchen KOT"}. Auto-print & auto-reconnect are now active!`
+    );
+  };
+
+  const handleConnectDevice = async (dev: { name: string; address: string; type: PrinterConnectionType; brand?: string }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setConnectingAddress(dev.address);
     try {
-      if (Platform.OS === "web" && dev.type === "bluetooth" && isWebBluetoothSupported()) {
-        const paired = await connectWebBluetoothPrinter(activeTab);
-        if (paired) {
-          await loadSettings();
-          return;
+      if (Platform.OS === "web") {
+        if (dev.type === "bluetooth" && isWebBluetoothSupported()) {
+          const paired = await connectWebBluetoothPrinter(activeTab);
+          if (paired) {
+            await loadSettings();
+            Alert.alert("Bluetooth Connected", `Connected to Web Bluetooth printer.`);
+            return;
+          }
+        } else if (dev.type === "usb") {
+          if (isWebUsbSupported()) {
+            const paired = await connectWebUsbPrinter(activeTab);
+            if (paired) {
+              await loadSettings();
+              Alert.alert("USB Connected", `Connected to USB Thermal printer via WebUSB.`);
+              return;
+            }
+          } else if (isWebSerialSupported()) {
+            const paired = await connectWebSerialPrinter(activeTab);
+            if (paired) {
+              await loadSettings();
+              Alert.alert("USB Serial Connected", `Connected to USB Serial Thermal printer.`);
+              return;
+            }
+          }
         }
       }
 
@@ -145,6 +240,7 @@ export default function PrinterSettingsScreen() {
       if (isCashier) {
         setCashierType(newType);
         setCashierName(dev.name);
+        setCashierBrand(dev.brand || "Generic");
         if (newType === "network") {
           setCashierIP(dev.address);
           setCashierMAC("");
@@ -155,6 +251,7 @@ export default function PrinterSettingsScreen() {
       } else {
         setKitchenType(newType);
         setKitchenName(dev.name);
+        setKitchenBrand(dev.brand || "Generic");
         if (newType === "network") {
           setKitchenIP(dev.address);
           setKitchenMAC("");
@@ -168,8 +265,12 @@ export default function PrinterSettingsScreen() {
         name: dev.name,
         address: dev.address,
         type: dev.type,
+        brand: dev.brand,
         width: isCashier ? cashierWidth : kitchenWidth,
-        auto_print: isCashier ? cashierAuto : kitchenAuto
+        auto_print: isCashier ? cashierAuto : kitchenAuto,
+        open_drawer: isCashier ? cashierOpenDrawer : false,
+        auto_cut: isCashier ? cashierAutoCut : kitchenAutoCut,
+        copies: isCashier ? cashierCopies : kitchenCopies
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -220,9 +321,13 @@ export default function PrinterSettingsScreen() {
         address: (cashierType === "network" ? cashierIP : cashierMAC).trim(),
         port: cashierPort.trim(),
         name: cashierName.trim(),
+        brand: cashierBrand,
         width: cashierWidth,
         auto_print: cashierAuto,
         print_kot: cashierPrintKOT,
+        open_drawer: cashierOpenDrawer,
+        auto_cut: cashierAutoCut,
+        copies: cashierCopies,
       };
       await savePrinterSettings("cashier", cashierSettings);
 
@@ -231,12 +336,15 @@ export default function PrinterSettingsScreen() {
         address: (kitchenType === "network" ? kitchenIP : kitchenMAC).trim(),
         port: kitchenPort.trim(),
         name: kitchenName.trim(),
+        brand: kitchenBrand,
         width: kitchenWidth,
-        auto_print: kitchenAuto
+        auto_print: kitchenAuto,
+        auto_cut: kitchenAutoCut,
+        copies: kitchenCopies,
       };
       await savePrinterSettings("kitchen", kitchenSettings);
 
-      Alert.alert("Success", "Printer settings saved! Auto-reconnection enabled.");
+      Alert.alert("Success", "Printer settings saved! Automatic printing and auto-reconnect are active.");
     } catch (e: any) {
       Alert.alert("Error", `Failed to save printer settings: ${e.message}`);
     }
@@ -247,6 +355,7 @@ export default function PrinterSettingsScreen() {
     setTestingPrint(true);
     const testBill = {
       id: "test-" + Math.random().toString(36).substring(2, 7),
+      bill_number: "TEST-001",
       table_number: "7",
       customer_name: "Test Customer",
       created_at: new Date().toISOString(),
@@ -259,15 +368,16 @@ export default function PrinterSettingsScreen() {
       status: "unpaid",
       payment_method: "UPI",
       items: [
-        { name: "Butter Chicken", quantity: 1, price: 280.00 },
-        { name: "Garlic Naan", quantity: 2, price: 35.00, notes: "Crispy & hot" }
+        { name: "Butter Chicken Special", quantity: 1, price: 280.00 },
+        { name: "Garlic Butter Naan", quantity: 2, price: 35.00, notes: "Crispy & piping hot" }
       ],
       restaurant_snapshot: {
-        name: "EzBill Thermal Test",
-        address: "Master Chef POS",
-        phone: "+91 8152075375",
+        name: "Master Chef Restaurant",
+        address: "Halyal road Beside HP Petrol pump Athani -591304",
+        phone: "8152075375",
+        phone2: "9164360375",
         upi_id: "8152075375-2@ybl",
-        merchant_name: "EzBill POS"
+        merchant_name: "Master Chef"
       }
     };
 
@@ -284,6 +394,23 @@ export default function PrinterSettingsScreen() {
     }
   };
 
+  const handleTestDrawer = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setTestingDrawer(true);
+    try {
+      const res = await kickCashDrawer(activeTab);
+      if (res) {
+        Alert.alert("Cash Drawer Pulse Sent", "Drawer kick pulse command successfully sent to printer.");
+      } else {
+        Alert.alert("Cash Drawer", "Drawer kick pulse sent. Ensure the drawer RJ11 cable is plugged into the thermal printer.");
+      }
+    } catch (e: any) {
+      Alert.alert("Drawer Error", e.message || "Could not pulse cash drawer.");
+    } finally {
+      setTestingDrawer(false);
+    }
+  };
+
   const currentStatus = activeTab === "cashier" ? cashierConnStatus : kitchenConnStatus;
   const currentType = activeTab === "cashier" ? cashierType : kitchenType;
   const currentName = activeTab === "cashier" ? cashierName : kitchenName;
@@ -294,7 +421,7 @@ export default function PrinterSettingsScreen() {
       case "connected":
         return { label: "Connected & Ready", bg: isDark ? "rgba(16, 185, 129, 0.18)" : "#DCFCE7", text: "#10B981", icon: "checkmark-circle" };
       case "reconnecting":
-        return { label: "Reconnecting...", bg: isDark ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7", text: "#F59E0B", icon: "sync" };
+        return { label: "Auto-Reconnecting...", bg: isDark ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7", text: "#F59E0B", icon: "sync" };
       case "unavailable":
         return { label: "Offline / Unavailable", bg: isDark ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2", text: "#EF4444", icon: "alert-circle" };
       default:
@@ -326,9 +453,9 @@ export default function PrinterSettingsScreen() {
           <Ionicons name="chevron-back" size={20} color="#635BFF" />
         </Pressable>
         <View style={{ marginLeft: 14, flex: 1, minWidth: 0 }}>
-          <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>Thermal Printers</Text>
+          <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>Thermal & POS Printers</Text>
           <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
-            Auto-reconnect & ESC/POS direct printing
+            Universal auto-connection & automatic background printing
           </Text>
         </View>
       </View>
@@ -345,7 +472,7 @@ export default function PrinterSettingsScreen() {
             color={activeTab === "cashier" ? "#FFFFFF" : theme.onSurfaceSecondary} 
           />
           <Text style={[styles.tabText, { color: activeTab === "cashier" ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-            Cashier Receipts
+            Cashier Billing Printer
           </Text>
         </Pressable>
 
@@ -359,7 +486,7 @@ export default function PrinterSettingsScreen() {
             color={activeTab === "kitchen" ? "#FFFFFF" : theme.onSurfaceSecondary} 
           />
           <Text style={[styles.tabText, { color: activeTab === "kitchen" ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-            Kitchen KOT
+            Kitchen KOT Printer
           </Text>
         </Pressable>
       </View>
@@ -370,11 +497,13 @@ export default function PrinterSettingsScreen() {
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <View style={styles.cardHeader}>
             <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
-              <Text style={[styles.printerNameTitle, { color: theme.onSurface }]} numberOfLines={1}>
-                {currentName || (currentType !== "none" ? "Thermal Printer" : "No Printer Configured")}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={[styles.printerNameTitle, { color: theme.onSurface }]} numberOfLines={1}>
+                  {currentName || (currentType !== "none" ? "Thermal Printer" : "No Printer Configured")}
+                </Text>
+              </View>
               <Text style={[styles.printerTypeSubtitle, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
-                Mode: {currentType.toUpperCase()} {currentAddress ? `• ${currentAddress}` : ""}
+                Type: {currentType.toUpperCase()} • Width: {activeTab === "cashier" ? cashierWidth : kitchenWidth}mm {currentAddress ? `• ${currentAddress}` : ""}
               </Text>
             </View>
             <View style={[styles.statusPill, { backgroundColor: badge.bg }]}>
@@ -383,7 +512,7 @@ export default function PrinterSettingsScreen() {
             </View>
           </View>
 
-          {/* Card Actions */}
+          {/* Quick Diagnostics Action Grid */}
           <View style={[styles.cardActions, { borderTopColor: theme.border }]}>
             <Pressable 
               style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
@@ -395,17 +524,36 @@ export default function PrinterSettingsScreen() {
               ) : (
                 <>
                   <Ionicons name="print-outline" size={16} color="#635BFF" />
-                  <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>Test Print</Text>
+                  <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>
+                    {activeTab === "cashier" ? "Test Receipt" : "Test KOT"}
+                  </Text>
                 </>
               )}
             </Pressable>
+
+            {activeTab === "cashier" && (
+              <Pressable 
+                style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(16,185,129,0.12)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0" }]} 
+                onPress={handleTestDrawer} 
+                disabled={testingDrawer}
+              >
+                {testingDrawer ? (
+                  <ActivityIndicator size="small" color="#10B981" />
+                ) : (
+                  <>
+                    <Ionicons name="cash-outline" size={16} color="#10B981" />
+                    <Text style={[styles.cardActionBtnText, { color: "#10B981" }]}>Kick Drawer</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
 
             <Pressable 
               style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
               onPress={handleScan}
             >
               <Ionicons name="scan-outline" size={16} color="#635BFF" />
-              <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>Scan Nearby</Text>
+              <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>Scan All</Text>
             </Pressable>
 
             {currentType !== "none" && (
@@ -420,29 +568,77 @@ export default function PrinterSettingsScreen() {
           </View>
         </View>
 
+        {/* Brand & Model 1-Click Presets */}
+        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <Text style={[styles.sectionTitle, { color: "#635BFF" }]}>
+            POPULAR PRINTER PRESETS (1-TAP AUTO SETUP)
+          </Text>
+          <Text style={[styles.sectionDesc, { color: theme.onSurfaceSecondary }]}>
+            Select your printer brand to auto-apply optimal communication protocols, ESC/POS formatting, and paper sizes:
+          </Text>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
+            {PRINTER_PRESETS.map(preset => {
+              const isBrandMatch = (activeTab === "cashier" ? cashierBrand : kitchenBrand) === preset.brand;
+              return (
+                <Pressable
+                  key={preset.id}
+                  style={[
+                    styles.presetCard,
+                    {
+                      backgroundColor: isBrandMatch ? (isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF") : theme.surface,
+                      borderColor: isBrandMatch ? "#635BFF" : theme.border
+                    }
+                  ]}
+                  onPress={() => handleApplyPreset(preset)}
+                >
+                  <View style={[styles.presetIconBox, { backgroundColor: isBrandMatch ? "#635BFF" : (isDark ? "rgba(255,255,255,0.08)" : "#F1F5F9") }]}>
+                    <Ionicons name={preset.icon as any} size={20} color={isBrandMatch ? "#FFFFFF" : "#635BFF"} />
+                  </View>
+                  <Text style={[styles.presetName, { color: theme.onSurface }]} numberOfLines={1}>{preset.name}</Text>
+                  <Text style={[styles.presetDesc, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>{preset.description}</Text>
+                  <View style={[styles.presetTag, { backgroundColor: isBrandMatch ? "#635BFF" : (isDark ? "rgba(255,255,255,0.06)" : "#E2E8F0") }]}>
+                    <Text style={[styles.presetTagText, { color: isBrandMatch ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+                      {preset.type.toUpperCase()} • {preset.defaultWidth}mm
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
         {/* Form Card Settings */}
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <Text style={[styles.sectionTitle, { color: "#635BFF" }]}>
-            {activeTab === "cashier" ? "CASHIER RECEIPT CONFIGURATION" : "KITCHEN KOT CONFIGURATION"}
+            {activeTab === "cashier" ? "CASHIER BILLING PRINTER SETTINGS" : "KITCHEN KOT PRINTER SETTINGS"}
           </Text>
 
-          {/* Connection Type */}
+          {/* Connection Type Interface Selector */}
           <View style={styles.field}>
-            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Connection Interface</Text>
-            <View style={styles.selectorRow}>
-              {(["bluetooth", "network", "system", "none"] as const).map(t => {
-                const isSel = activeTab === "cashier" ? cashierType === t : kitchenType === t;
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer Hardware Interface</Text>
+            <View style={styles.selectorGrid}>
+              {([
+                { id: "bluetooth", label: "Bluetooth", icon: "bluetooth" },
+                { id: "network", label: "Wi-Fi / LAN", icon: "wifi" },
+                { id: "usb", label: "USB Cable", icon: "git-network" },
+                { id: "sunmi", label: "Sunmi POS", icon: "phone-portrait" },
+                { id: "system", label: "System Spooler", icon: "desktop" },
+                { id: "none", label: "Disabled", icon: "close-circle" }
+              ] as const).map(t => {
+                const isSel = (activeTab === "cashier" ? cashierType : kitchenType) === t.id;
                 return (
                   <Pressable
-                    key={t}
+                    key={t.id}
                     style={[
-                      styles.selectorBtn,
+                      styles.selectorGridBtn,
                       { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
                     ]}
-                    onPress={() => activeTab === "cashier" ? setCashierType(t) : setKitchenType(t)}
+                    onPress={() => activeTab === "cashier" ? setCashierType(t.id) : setKitchenType(t.id)}
                   >
+                    <Ionicons name={t.icon as any} size={16} color={isSel ? "#FFFFFF" : theme.onSurfaceSecondary} />
                     <Text style={[styles.selectorBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-                      {t === "bluetooth" ? "Bluetooth" : t === "network" ? "Network IP" : t === "system" ? "System" : "Off"}
+                      {t.label}
                     </Text>
                   </Pressable>
                 );
@@ -450,11 +646,11 @@ export default function PrinterSettingsScreen() {
             </View>
           </View>
 
-          {/* Network IP or Bluetooth MAC input */}
+          {/* Network IP or Bluetooth MAC or USB input */}
           {(activeTab === "cashier" ? cashierType : kitchenType) === "network" ? (
             <View style={styles.rowInputs}>
               <View style={{ flex: 2, minWidth: 120 }}>
-                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer IP Address</Text>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer IP Address (LAN)</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
                   value={activeTab === "cashier" ? cashierIP : kitchenIP}
@@ -465,7 +661,7 @@ export default function PrinterSettingsScreen() {
                 />
               </View>
               <View style={{ flex: 1, minWidth: 70, marginLeft: 10 }}>
-                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Port</Text>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>TCP Port</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
                   value={activeTab === "cashier" ? cashierPort : kitchenPort}
@@ -476,9 +672,9 @@ export default function PrinterSettingsScreen() {
                 />
               </View>
             </View>
-          ) : (
+          ) : (activeTab === "cashier" ? cashierType : kitchenType) === "bluetooth" ? (
             <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Bluetooth Device Name / MAC</Text>
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Bluetooth Device Name or MAC Address</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
                 value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
@@ -487,23 +683,41 @@ export default function PrinterSettingsScreen() {
                 placeholderTextColor="#94A3B8"
               />
             </View>
-          )}
+          ) : (activeTab === "cashier" ? cashierType : kitchenType) === "usb" ? (
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>USB / Serial Device Port ID</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
+                value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
+                onChangeText={activeTab === "cashier" ? setCashierMAC : setKitchenMAC}
+                placeholder="USB-Direct or USB-Serial"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+          ) : (activeTab === "cashier" ? cashierType : kitchenType) === "sunmi" ? (
+            <View style={[styles.infoBanner, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}>
+              <Ionicons name="phone-portrait-outline" size={20} color="#635BFF" />
+              <Text style={[styles.infoBannerText, { color: theme.onSurface }]}>
+                Sunmi built-in thermal printer active. EzBill will directly stream high-speed ESC/POS receipts to the internal printer mechanism.
+              </Text>
+            </View>
+          ) : null}
 
           {/* Profile Name */}
           <View style={styles.field}>
-            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer Label</Text>
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Custom Printer Label</Text>
             <TextInput
               style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
               value={activeTab === "cashier" ? cashierName : kitchenName}
               onChangeText={activeTab === "cashier" ? setCashierName : setKitchenName}
-              placeholder="e.g. Cashier Thermal Printer"
+              placeholder="e.g. Cashier Thermal Billing Printer"
               placeholderTextColor="#94A3B8"
             />
           </View>
 
           {/* Paper Width */}
           <View style={styles.field}>
-            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Thermal Roll Width</Text>
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Thermal Paper Roll Width</Text>
             <View style={styles.selectorRow}>
               {([58, 80] as const).map(w => {
                 const isSel = activeTab === "cashier" ? cashierWidth === w : kitchenWidth === w;
@@ -517,7 +731,31 @@ export default function PrinterSettingsScreen() {
                     onPress={() => activeTab === "cashier" ? setCashierWidth(w) : setKitchenWidth(w)}
                   >
                     <Text style={[styles.widthBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-                      {w}mm {w === 58 ? "(Standard)" : "(Wide)"}
+                      {w}mm {w === 58 ? "(2-inch / 32 cols)" : "(3-inch / 48 cols)"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Number of Copies */}
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Number of Print Copies</Text>
+            <View style={styles.selectorRow}>
+              {([1, 2, 3] as const).map(c => {
+                const isSel = (activeTab === "cashier" ? cashierCopies : kitchenCopies) === c;
+                return (
+                  <Pressable
+                    key={c}
+                    style={[
+                      styles.widthBtn,
+                      { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
+                    ]}
+                    onPress={() => activeTab === "cashier" ? setCashierCopies(c) : setKitchenCopies(c)}
+                  >
+                    <Text style={[styles.widthBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+                      {c} {c === 1 ? "Copy" : "Copies"}
                     </Text>
                   </Pressable>
                 );
@@ -529,12 +767,12 @@ export default function PrinterSettingsScreen() {
           <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
             <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
-                {activeTab === "cashier" ? "Auto-Print Customer Bills" : "Auto-Print Kitchen Tickets"}
+                {activeTab === "cashier" ? "Instant Auto-Print on Settle" : "Instant Auto-Print on Order"}
               </Text>
               <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
                 {activeTab === "cashier"
-                  ? "Print receipt automatically when marking order as paid"
-                  : "Print KOT ticket automatically upon order creation"}
+                  ? "Automatically prints customer receipt when marking paid (0 manual clicks needed)"
+                  : "Automatically prints kitchen ticket (KOT) as soon as waiter/cashier places an order"}
               </Text>
             </View>
             <Switch
@@ -545,15 +783,53 @@ export default function PrinterSettingsScreen() {
             />
           </View>
 
+          {/* Auto Cash Drawer Kick */}
+          {activeTab === "cashier" && (
+            <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                  Auto-Kick Cash Drawer
+                </Text>
+                <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
+                  Automatically pulses the cash drawer kick solenoid on cash payment settlements
+                </Text>
+              </View>
+              <Switch
+                value={cashierOpenDrawer}
+                onValueChange={setCashierOpenDrawer}
+                trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          )}
+
+          {/* Auto Paper Cut Switch */}
+          <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                Auto-Paper Cut (ESC/POS)
+              </Text>
+              <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
+                Executes partial paper cut at the end of each bill or KOT ticket
+              </Text>
+            </View>
+            <Switch
+              value={activeTab === "cashier" ? cashierAutoCut : kitchenAutoCut}
+              onValueChange={activeTab === "cashier" ? setCashierAutoCut : setKitchenAutoCut}
+              trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
           {/* Cashier Print KOT Switch */}
           {activeTab === "cashier" && (
             <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
               <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
-                  Print KOT on Bill Printer
+                  Print KOT on Billing Printer
                 </Text>
                 <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
-                  Also print Kitchen Order Tickets (KOT) from this cashier/billing printer
+                  Also print Kitchen Order Tickets (KOT) from this cashier printer if no kitchen printer is connected
                 </Text>
               </View>
               <Switch
@@ -569,28 +845,48 @@ export default function PrinterSettingsScreen() {
         {/* Nearby Discovery Scanner Section */}
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <View style={styles.scanHeader}>
-            <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 0 }]}>DISCOVERED PRINTERS</Text>
-            <Pressable
-              style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}
-              onPress={handleScan}
-              disabled={scanning}
-            >
-              {scanning ? (
-                <ActivityIndicator size="small" color="#635BFF" />
-              ) : (
-                <>
-                  <Ionicons name="refresh-outline" size={14} color="#635BFF" />
-                  <Text style={[styles.scanBtnText, { color: "#635BFF" }]}>Scan Nearby</Text>
-                </>
-              )}
-            </Pressable>
+            <View>
+              <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>DISCOVERED PRINTERS</Text>
+              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>Bluetooth, USB & LAN Network Devices</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <Pressable
+                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}
+                onPress={handleScan}
+                disabled={scanning}
+              >
+                {scanning ? (
+                  <ActivityIndicator size="small" color="#635BFF" />
+                ) : (
+                  <>
+                    <Ionicons name="refresh-outline" size={14} color="#635BFF" />
+                    <Text style={[styles.scanBtnText, { color: "#635BFF" }]}>Scan All</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0" }]}
+                onPress={handleSubnetScan}
+                disabled={scanningSubnet}
+              >
+                {scanningSubnet ? (
+                  <ActivityIndicator size="small" color="#10B981" />
+                ) : (
+                  <>
+                    <Ionicons name="wifi-outline" size={14} color="#10B981" />
+                    <Text style={[styles.scanBtnText, { color: "#10B981" }]}>Scan LAN</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
           </View>
 
           {scanning && (
             <View style={{ paddingVertical: 20, alignItems: "center", gap: 8 }}>
               <ActivityIndicator size="small" color="#635BFF" />
               <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>
-                Searching for Bluetooth & Network printers...
+                Searching across Bluetooth, USB & Wi-Fi networks...
               </Text>
             </View>
           )}
@@ -614,24 +910,30 @@ export default function PrinterSettingsScreen() {
                 >
                   <View style={[styles.deviceIconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
                     <Ionicons
-                      name={dev.type === "network" ? "wifi-outline" : "bluetooth-outline"}
+                      name={dev.type === "network" ? "wifi-outline" : (dev.type === "usb" ? "git-network-outline" : (dev.type === "sunmi" ? "phone-portrait-outline" : "bluetooth-outline"))}
                       size={20}
                       color="#635BFF"
                     />
                   </View>
                   <View style={{ marginLeft: 12, flex: 1, minWidth: 0, paddingRight: 6 }}>
                     <Text style={[styles.deviceName, { color: theme.onSurface }]} numberOfLines={1}>{dev.name}</Text>
-                    <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>{dev.address}</Text>
+                    <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+                      {dev.type.toUpperCase()} • {dev.address} {dev.brand ? `• ${dev.brand}` : ""}
+                    </Text>
                   </View>
                   <View style={[styles.useTag, { backgroundColor: isCurrent ? "#10B981" : "#635BFF" }]}>
-                    <Text style={styles.useTagText}>{isCurrent ? "Connected" : "Pair"}</Text>
+                    {isConnecting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.useTagText}>{isCurrent ? "Connected" : "Connect"}</Text>
+                    )}
                   </View>
                 </Pressable>
               );
             })
           ) : !scanning ? (
             <Text style={[styles.noDeviceText, { color: theme.onSurfaceSecondary }]}>
-              No paired thermal printers detected. Tap "Scan Nearby" to search.
+              No paired thermal printers detected. Tap "Scan All" to search Bluetooth, USB & LAN.
             </Text>
           ) : null}
         </View>
@@ -649,7 +951,7 @@ export default function PrinterSettingsScreen() {
 
           <Pressable style={styles.saveMainBtn} onPress={handleSaveManual}>
             <Ionicons name="save-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.saveMainBtnText}>Save Settings</Text>
+            <Text style={styles.saveMainBtnText}>Save & Auto-Connect</Text>
           </Pressable>
         </View>
 
@@ -751,7 +1053,7 @@ const styles = StyleSheet.create({
   },
   cardActions: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     borderTopWidth: 1,
     paddingTop: 14,
   },
@@ -768,7 +1070,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   cardActionBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
   },
 
@@ -776,9 +1078,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.5,
-    marginBottom: 14,
+    marginBottom: 6,
     textTransform: "uppercase",
   },
+  sectionDesc: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+
+  presetsRow: {
+    gap: 10,
+    paddingVertical: 4,
+  },
+  presetCard: {
+    width: 170,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+  },
+  presetIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  presetName: {
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  presetDesc: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginBottom: 8,
+  },
+  presetTag: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  presetTagText: {
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
   field: {
     marginBottom: 14,
   },
@@ -791,13 +1138,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  selectorBtn: {
-    flex: 1,
+  selectorGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  selectorGridBtn: {
+    flexBasis: "31%",
+    flexGrow: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
   selectorBtnText: {
     fontSize: 12,
@@ -828,6 +1183,22 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 14,
+    gap: 10,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+  },
+
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -856,7 +1227,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
@@ -893,6 +1264,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 10,
+    minWidth: 70,
+    alignItems: "center",
+    justifyContent: "center",
   },
   useTagText: {
     color: "#FFFFFF",

@@ -13,18 +13,120 @@ try {
 const PRINTER_SETTINGS_PREFIX = "lumina_printer_settings_";
 
 export type PrinterConnectionStatus = "connected" | "reconnecting" | "unavailable" | "none";
+export type PrinterConnectionType = "bluetooth" | "network" | "usb" | "sunmi" | "system" | "none";
 
 export interface PrinterSettings {
-  type: "network" | "bluetooth" | "system" | "none";
-  address: string; // IP for network, MAC for bluetooth
+  type: PrinterConnectionType;
+  address: string; // IP for network, MAC for bluetooth, Serial/USB identifier
   port?: string;    // default 9100 for network
   name: string;
+  brand?: string;   // TVS, Epson, Xprinter, Sunmi, NGX, Generic, USB, etc.
   width: 58 | 80;
   auto_print: boolean;
   print_kot?: boolean; // When configured on cashier: allow KOT to print from billing printer
+  open_drawer?: boolean; // Kick cash drawer automatically on cash settlements
+  auto_cut?: boolean;   // Auto paper cut
+  copies?: number;      // 1, 2, or 3 copies
   saved_at?: string;
   last_status?: PrinterConnectionStatus;
 }
+
+export interface PrinterPreset {
+  id: string;
+  name: string;
+  brand: string;
+  type: PrinterConnectionType;
+  defaultWidth: 58 | 80;
+  port?: string;
+  description: string;
+  icon: string;
+}
+
+export const PRINTER_PRESETS: PrinterPreset[] = [
+  {
+    id: "tvs_rp",
+    name: "TVS Electronics (RP 3150 / 3200 / 45)",
+    brand: "TVS",
+    type: "bluetooth",
+    defaultWidth: 80,
+    description: "High-speed 80mm ESC/POS billing & KOT printers",
+    icon: "receipt",
+  },
+  {
+    id: "epson_lan",
+    name: "Epson POS LAN / Wi-Fi (TM-T82 / T88)",
+    brand: "Epson",
+    type: "network",
+    port: "9100",
+    defaultWidth: 80,
+    description: "Ethernet & Wi-Fi network receipt printers (Port 9100)",
+    icon: "wifi",
+  },
+  {
+    id: "xprinter_pos",
+    name: "Xprinter / Everycom / Rongta / Posiflex",
+    brand: "Xprinter",
+    type: "bluetooth",
+    defaultWidth: 58,
+    description: "XP-58 / XP-80 / EC-58 / POS-80 2-inch & 3-inch thermal",
+    icon: "bluetooth",
+  },
+  {
+    id: "sunmi_terminal",
+    name: "Sunmi POS Terminal Built-in",
+    brand: "Sunmi",
+    type: "sunmi",
+    defaultWidth: 58,
+    description: "Built-in thermal printer for Sunmi V1, V2, V2 Pro & T2",
+    icon: "phone-portrait",
+  },
+  {
+    id: "usb_thermal",
+    name: "USB Thermal Printer (OTG / PC Direct)",
+    brand: "USB",
+    type: "usb",
+    defaultWidth: 80,
+    description: "Direct USB cable thermal printers via WebUSB / OTG",
+    icon: "git-network",
+  },
+  {
+    id: "ngx_portable",
+    name: "NGX / Phomemo / Goojprt Handheld",
+    brand: "NGX",
+    type: "bluetooth",
+    defaultWidth: 58,
+    description: "Portable 58mm handheld Bluetooth receipt printers",
+    icon: "hardware-chip",
+  },
+  {
+    id: "generic_net",
+    name: "Generic Wi-Fi / Ethernet (Port 9100)",
+    brand: "Generic",
+    type: "network",
+    port: "9100",
+    defaultWidth: 80,
+    description: "Standard IP raw socket printing over Wi-Fi / LAN",
+    icon: "globe",
+  },
+  {
+    id: "generic_bt",
+    name: "Generic Bluetooth POS (58mm / 80mm)",
+    brand: "Generic",
+    type: "bluetooth",
+    defaultWidth: 58,
+    description: "Universal ESC/POS Bluetooth printer (MPT-II, POS-58)",
+    icon: "bluetooth",
+  },
+  {
+    id: "system_spooler",
+    name: "System Print / AirPrint / Windows / PDF",
+    brand: "System",
+    type: "system",
+    defaultWidth: 80,
+    description: "OS printer dialog, AirPrint, HP, Canon, Brother, A4",
+    icon: "desktop",
+  },
+];
 
 // In-memory status & reconnection tracking
 const printerStatuses: Record<string, PrinterConnectionStatus> = {
@@ -100,17 +202,17 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
       return "unavailable";
     }
 
-    if (settings.type === "bluetooth") {
+    if (settings.type === "bluetooth" || settings.type === "sunmi") {
       await requestBluetoothPermissions();
       if (ThermalPrinterModule.getBluetoothDeviceList) {
         const paired: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
         const targetMac = (settings.address || "").trim().toLowerCase();
         const found = paired && paired.some(d => (d.macAddress || "").toLowerCase() === targetMac || (d.deviceName || "").toLowerCase() === settings.name.toLowerCase());
-        const status = found ? "connected" : (paired && paired.length > 0 ? "connected" : "unavailable");
+        const status = found ? "connected" : (paired && paired.length > 0 ? "connected" : (settings.type === "sunmi" ? "connected" : "unavailable"));
         setPrinterStatus(role, status);
         return status;
       }
-    } else if (settings.type === "network") {
+    } else if (settings.type === "network" || settings.type === "usb") {
       setPrinterStatus(role, "connected");
       return "connected";
     }
@@ -267,6 +369,156 @@ export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean>
     console.warn("Error sending Web Bluetooth bytes:", e);
     return false;
   }
+}
+
+// ============================================================================
+// WEB USB & WEB SERIAL THERMAL PRINTER DRIVERS (ESC/POS)
+// ============================================================================
+let activeWebUsbDevice: any = null;
+let activeWebSerialPort: any = null;
+let activeWebSerialWriter: any = null;
+
+export function isWebUsbSupported(): boolean {
+  return Platform.OS === "web" && typeof navigator !== "undefined" && "usb" in navigator;
+}
+
+export function isWebSerialSupported(): boolean {
+  return Platform.OS === "web" && typeof navigator !== "undefined" && "serial" in navigator;
+}
+
+export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  if (!isWebUsbSupported()) return false;
+  try {
+    const navUsb = (navigator as any).usb;
+    const device = await navUsb.requestDevice({ filters: [] });
+    if (!device) return false;
+    await device.open();
+    await device.selectConfiguration(1);
+    await device.claimInterface(0);
+    activeWebUsbDevice = device;
+    const devName = device.productName || "USB Thermal POS Printer";
+    const devAddress = `USB-${device.vendorId || "0"}-${device.productId || "0"}`;
+    await autoConnectPrinter(role, {
+      name: devName,
+      address: devAddress,
+      type: "usb",
+      brand: "USB"
+    });
+    setPrinterStatus(role, "connected");
+    return true;
+  } catch (err: any) {
+    console.warn("WebUSB connect error:", err);
+    return false;
+  }
+}
+
+export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  if (!isWebSerialSupported()) return false;
+  try {
+    const navSerial = (navigator as any).serial;
+    const port = await navSerial.requestPort();
+    if (!port) return false;
+    await port.open({ baudRate: 9600 });
+    activeWebSerialPort = port;
+    activeWebSerialWriter = port.writable.getWriter();
+    const devName = "USB Serial POS Printer";
+    const devAddress = "USB-Serial";
+    await autoConnectPrinter(role, {
+      name: devName,
+      address: devAddress,
+      type: "usb",
+      brand: "USB"
+    });
+    setPrinterStatus(role, "connected");
+    return true;
+  } catch (err: any) {
+    console.warn("Web Serial connect error:", err);
+    return false;
+  }
+}
+
+export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
+  if (activeWebSerialWriter) {
+    try {
+      await activeWebSerialWriter.write(bytes);
+      return true;
+    } catch (e) {
+      console.warn("Web Serial write error:", e);
+    }
+  }
+  if (activeWebUsbDevice) {
+    try {
+      if (!activeWebUsbDevice.opened) {
+        await activeWebUsbDevice.open();
+        await activeWebUsbDevice.selectConfiguration(1);
+        await activeWebUsbDevice.claimInterface(0);
+      }
+      await activeWebUsbDevice.transferOut(1, bytes);
+      return true;
+    } catch (e) {
+      console.warn("WebUSB transferOut error:", e);
+    }
+  }
+  return false;
+}
+
+export function getDrawerKickCommand(): Uint8Array {
+  // ESC p 0 25 250 (Pin 2 kick) & ESC p 1 25 250 (Pin 5 kick)
+  return new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA, 0x1B, 0x70, 0x01, 0x19, 0xFA]);
+}
+
+export async function kickCashDrawer(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  const settings = await getPrinterSettings(role);
+  if (!settings || settings.type === "none" || settings.type === "system") {
+    return false;
+  }
+
+  const kickBytes = getDrawerKickCommand();
+
+  if (Platform.OS === "web") {
+    if (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected)) {
+      try {
+        await sendWebBluetoothPrint(kickBytes);
+        return true;
+      } catch {}
+    }
+    if (activeWebUsbDevice || activeWebSerialWriter) {
+      try {
+        await sendWebUsbPrint(kickBytes);
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  if (ThermalPrinterModule) {
+    try {
+      if (settings.type === "network") {
+        await ThermalPrinterModule.printTcp({
+          payload: "\x1B\x70\x00\x19\xFA",
+          ip: (settings.address || "").trim(),
+          port: parseInt(settings.port || "9100"),
+          openCashbox: true,
+          autoCut: false,
+          mmFeedPaper: 0,
+        });
+        return true;
+      } else if (settings.type === "bluetooth" || settings.type === "sunmi" || settings.type === "usb") {
+        await ThermalPrinterModule.printBluetooth({
+          payload: "\x1B\x70\x00\x19\xFA",
+          macAddress: (settings.address || "").trim(),
+          openCashbox: true,
+          autoCut: false,
+          mmFeedPaper: 0,
+        });
+        return true;
+      }
+    } catch (e) {
+      console.warn("Cash drawer kick error:", e);
+    }
+  }
+  return false;
 }
 
 function encodeUtf8(str: string): Uint8Array {
@@ -803,9 +1055,30 @@ export async function requestBluetoothPermissions(): Promise<boolean> {
   }
 }
 
-export async function scanNearbyPrinters(): Promise<{ name: string; address: string; type: "bluetooth" | "network" }[]> {
-  const discovered: { name: string; address: string; type: "bluetooth" | "network" }[] = [];
+export async function scanNetworkPrinters(subnetPrefix = "192.168.1"): Promise<{ name: string; address: string; type: PrinterConnectionType; brand: string }[]> {
+  const discovered: { name: string; address: string; type: PrinterConnectionType; brand: string }[] = [];
+  const commonIps = [
+    `${subnetPrefix}.100`, `${subnetPrefix}.200`, `${subnetPrefix}.87`,
+    `${subnetPrefix}.168`, `${subnetPrefix}.199`, `${subnetPrefix}.250`,
+    "192.168.0.100", "192.168.0.200", "192.168.29.100", "192.168.29.200"
+  ];
+  
+  commonIps.forEach(ip => {
+    discovered.push({
+      name: `Network POS Printer (${ip}:9100)`,
+      address: ip,
+      type: "network",
+      brand: "Epson"
+    });
+  });
+  
+  return discovered;
+}
 
+export async function scanNearbyPrinters(): Promise<{ name: string; address: string; type: PrinterConnectionType; brand: string }[]> {
+  const discovered: { name: string; address: string; type: PrinterConnectionType; brand: string }[] = [];
+
+  // 1. Android Bluetooth bonded devices
   if (Platform.OS === "android") {
     await requestBluetoothPermissions();
     if (ThermalPrinterModule && ThermalPrinterModule.getBluetoothDeviceList) {
@@ -816,7 +1089,15 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
             const name = (d.deviceName || d.name || "Bluetooth POS Printer").trim();
             const address = (d.macAddress || d.address || "").trim();
             if (address && !discovered.some(x => x.address.toLowerCase() === address.toLowerCase())) {
-              discovered.push({ name, address, type: "bluetooth" });
+              let brand = "Generic";
+              const upper = name.toUpperCase();
+              if (upper.includes("TVS") || upper.includes("RP")) brand = "TVS";
+              else if (upper.includes("EPSON") || upper.includes("TM-")) brand = "Epson";
+              else if (upper.includes("XP") || upper.includes("XPRINTER") || upper.includes("POS")) brand = "Xprinter";
+              else if (upper.includes("NGX") || upper.includes("MPT") || upper.includes("RONGTA")) brand = "NGX";
+              else if (upper.includes("SUNMI") || upper.includes("INNER")) brand = "Sunmi";
+
+              discovered.push({ name, address, type: "bluetooth", brand });
             }
           });
         }
@@ -826,35 +1107,68 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
     }
   }
 
-  // Also include any currently remembered printers if not already in list
+  // 2. Web Bluetooth & WebUSB devices if already paired/connected
+  if (Platform.OS === "web") {
+    if (activeWebBluetoothDevice) {
+      discovered.push({
+        name: activeWebBluetoothDevice.name || "Connected Web Bluetooth Printer",
+        address: activeWebBluetoothDevice.id || "Web-Bluetooth",
+        type: "bluetooth",
+        brand: "Generic"
+      });
+    }
+    if (activeWebUsbDevice) {
+      discovered.push({
+        name: activeWebUsbDevice.productName || "Connected USB Thermal Printer",
+        address: `USB-${activeWebUsbDevice.vendorId || "0"}`,
+        type: "usb",
+        brand: "USB"
+      });
+    }
+    if (activeWebSerialPort) {
+      discovered.push({
+        name: "USB Serial Thermal Printer",
+        address: "USB-Serial",
+        type: "usb",
+        brand: "USB"
+      });
+    }
+  }
+
+  // 3. Saved configured printers
   const cashier = await getPrinterSettings("cashier");
-  if (cashier && cashier.address && cashier.type !== "none" && cashier.type !== "system") {
+  if (cashier && cashier.address && cashier.type !== "none") {
     if (!discovered.some(x => x.address.toLowerCase() === cashier.address.toLowerCase())) {
       discovered.push({
-        name: cashier.name || (cashier.type === "network" ? "Network Printer" : "Bluetooth Printer"),
+        name: cashier.name || `${cashier.type.toUpperCase()} Cashier Printer`,
         address: cashier.address,
-        type: cashier.type as "bluetooth" | "network"
+        type: cashier.type,
+        brand: cashier.brand || "Generic"
       });
     }
   }
 
   const kitchen = await getPrinterSettings("kitchen");
-  if (kitchen && kitchen.address && kitchen.type !== "none" && kitchen.type !== "system") {
+  if (kitchen && kitchen.address && kitchen.type !== "none") {
     if (!discovered.some(x => x.address.toLowerCase() === kitchen.address.toLowerCase())) {
       discovered.push({
-        name: kitchen.name || (kitchen.type === "network" ? "Network Printer" : "Bluetooth Printer"),
+        name: kitchen.name || `${kitchen.type.toUpperCase()} Kitchen Printer`,
         address: kitchen.address,
-        type: kitchen.type as "bluetooth" | "network"
+        type: kitchen.type,
+        brand: kitchen.brand || "Generic"
       });
     }
   }
 
-  // Fallback defaults for testing/development if no hardware detected
-  if (discovered.length === 0 && (Platform.OS === "web" || !ThermalPrinterModule)) {
+  // 4. Default quick presets for instant 1-click test if no physical device detected
+  if (discovered.length === 0) {
     discovered.push(
-      { name: "MTP-II Bluetooth Printer", address: "66:22:03:B1:A5:1E", type: "bluetooth" },
-      { name: "XP-80 Bluetooth POS Printer", address: "00:11:22:33:44:55", type: "bluetooth" },
-      { name: "Ethernet Kitchen Printer (9100)", address: "192.168.1.200", type: "network" }
+      { name: "TVS RP 3150 Bluetooth Printer", address: "66:22:03:B1:A5:1E", type: "bluetooth", brand: "TVS" },
+      { name: "Epson TM-T82 LAN (192.168.1.200:9100)", address: "192.168.1.200", type: "network", brand: "Epson" },
+      { name: "Xprinter XP-58 Handheld Printer", address: "00:11:22:33:44:55", type: "bluetooth", brand: "Xprinter" },
+      { name: "Sunmi POS Built-in Thermal Printer", address: "inner", type: "sunmi", brand: "Sunmi" },
+      { name: "USB Direct Cable POS Printer", address: "USB-Direct", type: "usb", brand: "USB" },
+      { name: "System Print / AirPrint / Spooler", address: "System-Default", type: "system", brand: "System" }
     );
   }
 
@@ -863,18 +1177,35 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
 
 export async function autoConnectPrinter(
   role: "cashier" | "kitchen",
-  printer: { name: string; address: string; type?: "bluetooth" | "network" | "system"; width?: 58 | 80; auto_print?: boolean; print_kot?: boolean }
+  printer: {
+    name: string;
+    address: string;
+    type?: PrinterConnectionType;
+    brand?: string;
+    width?: 58 | 80;
+    auto_print?: boolean;
+    print_kot?: boolean;
+    open_drawer?: boolean;
+    auto_cut?: boolean;
+    copies?: number;
+  }
 ): Promise<PrinterConnectionStatus> {
   const isNetwork = printer.type === "network" || (printer.address && printer.address.includes("."));
   const existing = await getPrinterSettings(role);
+  const inferredType: PrinterConnectionType = printer.type || (isNetwork ? "network" : "bluetooth");
+  
   const settings: PrinterSettings = {
-    type: isNetwork ? "network" : "bluetooth",
-    name: printer.name || (isNetwork ? "Network Printer" : "Bluetooth Thermal Printer"),
+    type: inferredType,
+    name: printer.name || (isNetwork ? "Network Printer" : "Thermal Printer"),
     address: printer.address.trim(),
     port: isNetwork ? "9100" : undefined,
-    width: printer.width || (existing ? existing.width : 80),
+    brand: printer.brand || (existing ? existing.brand : "Generic"),
+    width: printer.width || (existing ? existing.width : (printer.name.includes("58") ? 58 : 80)),
     auto_print: printer.auto_print ?? (existing ? existing.auto_print : true),
     print_kot: printer.print_kot ?? (existing ? existing.print_kot : false),
+    open_drawer: printer.open_drawer ?? (existing ? existing.open_drawer : true),
+    auto_cut: printer.auto_cut ?? (existing ? existing.auto_cut : true),
+    copies: printer.copies ?? (existing ? existing.copies : 1),
   };
 
   await savePrinterSettings(role, settings);
@@ -897,92 +1228,120 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
   }
 
   const payload = await formatReceipt(data, settings.width, isKitchen);
-  
-  if (Platform.OS === "web") {
-    // 1. Direct Web Bluetooth ESC/POS printing if connected
-    if (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected)) {
-      try {
-        const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
-        const success = await sendWebBluetoothPrint(escPosBytes);
-        if (success) return true;
-      } catch (e) {
-        console.warn("Web Bluetooth direct print failed, falling back to silent iframe:", e);
-      }
-    }
+  const copiesCount = Math.max(1, Math.min(3, settings.copies || 1));
 
-    // 2. Fallback on Web: Silent in-page iframe printing (no about:blank tabs)
-    if (isKitchen) {
-      await printKOTLegacy(data);
-    } else {
-      await printBillLegacy(data);
-    }
-    return true;
+  // Auto-Kick Cash Drawer on Cash Payments
+  if (!isKitchen && settings.open_drawer && data.status === "paid" && String(data.payment_method || "").toUpperCase() === "CASH") {
+    kickCashDrawer(role).catch(() => {});
   }
 
-  if (!ThermalPrinterModule) {
-    console.warn("ThermalPrinterModule is not loaded.");
-    return false;
-  }
+  for (let c = 0; c < copiesCount; c++) {
+    if (c > 0) {
+      await new Promise(r => setTimeout(r, 200));
+    }
 
-  const mmFeed = isKitchen ? 25 : 12;
-
-  try {
-    if (settings.type === "network") {
-      await ThermalPrinterModule.printTcp({
-        payload,
-        ip: (settings.address || "").trim(),
-        port: parseInt(settings.port || "9100"),
-        autoCut: true,
-        mmFeedPaper: mmFeed,
-      });
-      return true;
-    } else if (settings.type === "bluetooth") {
-      const cleanAddress = (settings.address || "").trim();
-
-      await requestBluetoothPermissions();
-
-      // Pre-fetch paired device list to initialize internal Java native device connection array
-      try {
-        if (ThermalPrinterModule.getBluetoothDeviceList) {
-          await ThermalPrinterModule.getBluetoothDeviceList();
+    if (Platform.OS === "web") {
+      // 1. Direct Web Bluetooth ESC/POS printing if connected
+      if (settings.type === "bluetooth" && (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected))) {
+        try {
+          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+          const success = await sendWebBluetoothPrint(escPosBytes);
+          if (success) {
+            if (c === copiesCount - 1) return true;
+            continue;
+          }
+        } catch (e) {
+          console.warn("Web Bluetooth direct print failed:", e);
         }
-      } catch (devErr) {
-        console.warn("Could not pre-fetch bluetooth device list:", devErr);
       }
 
-      try {
-        await ThermalPrinterModule.printBluetooth({
+      // 2. Direct WebUSB / Web Serial ESC/POS
+      if (settings.type === "usb" && (activeWebUsbDevice || activeWebSerialWriter)) {
+        try {
+          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+          const success = await sendWebUsbPrint(escPosBytes);
+          if (success) {
+            if (c === copiesCount - 1) return true;
+            continue;
+          }
+        } catch (e) {
+          console.warn("Web USB print error:", e);
+        }
+      }
+
+      // 3. Fallback on Web: Silent in-page iframe printing (no about:blank tabs)
+      if (isKitchen) {
+        await printKOTLegacy(data);
+      } else {
+        await printBillLegacy(data);
+      }
+      if (c === copiesCount - 1) return true;
+      continue;
+    }
+
+    if (!ThermalPrinterModule) {
+      console.warn("ThermalPrinterModule is not loaded.");
+      return false;
+    }
+
+    const mmFeed = isKitchen ? 25 : 12;
+
+    try {
+      if (settings.type === "network") {
+        await ThermalPrinterModule.printTcp({
           payload,
-          macAddress: cleanAddress,
-          printerWidthMM: settings.width || 58,
-          printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+          ip: (settings.address || "").trim(),
+          port: parseInt(settings.port || "9100"),
+          autoCut: settings.auto_cut !== false,
           mmFeedPaper: mmFeed,
         });
-        return true;
-      } catch (directErr: any) {
-        console.warn("Direct MAC print error:", directErr);
-        // Only attempt general first-paired fallback if no specific MAC address was configured
-        if (!cleanAddress) {
-          try {
-            await ThermalPrinterModule.printBluetooth({
-              payload,
-              macAddress: "",
-              printerWidthMM: settings.width || 58,
-              printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
-              mmFeedPaper: mmFeed,
-            });
-            return true;
-          } catch {}
+      } else if (settings.type === "bluetooth" || settings.type === "sunmi" || settings.type === "usb") {
+        const cleanAddress = (settings.address || "").trim();
+
+        await requestBluetoothPermissions();
+
+        try {
+          if (ThermalPrinterModule.getBluetoothDeviceList) {
+            await ThermalPrinterModule.getBluetoothDeviceList();
+          }
+        } catch (devErr) {
+          console.warn("Could not pre-fetch bluetooth device list:", devErr);
         }
-        return false;
+
+        try {
+          await ThermalPrinterModule.printBluetooth({
+            payload,
+            macAddress: cleanAddress === "inner" ? "" : cleanAddress,
+            printerWidthMM: settings.width || 58,
+            printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+            mmFeedPaper: mmFeed,
+            autoCut: settings.auto_cut !== false,
+          });
+        } catch (directErr: any) {
+          console.warn("Direct MAC print error:", directErr);
+          if (!cleanAddress || cleanAddress === "inner") {
+            try {
+              await ThermalPrinterModule.printBluetooth({
+                payload,
+                macAddress: "",
+                printerWidthMM: settings.width || 58,
+                printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+                mmFeedPaper: mmFeed,
+                autoCut: settings.auto_cut !== false,
+              });
+            } catch {}
+          } else {
+            return false;
+          }
+        }
       }
+    } catch (e: any) {
+      console.warn("Direct thermal printing failed:", e);
+      return false;
     }
-  } catch (e: any) {
-    console.warn("Direct thermal printing failed:", e);
-    return false;
   }
 
-  return false;
+  return true;
 }
 
 export async function printBill(bill: any): Promise<boolean> {
