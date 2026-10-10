@@ -16,7 +16,10 @@ export type SyncActionType =
   | "UPDATE_ORDER_STATUS"
   | "CREATE_BILL"
   | "MARK_BILL_PAID"
-  | "SETTLE_TABLE";
+  | "SETTLE_TABLE"
+  | "OPEN_CASH_SESSION"
+  | "RECORD_CASH_MOVEMENT"
+  | "CLOSE_CASH_SESSION";
 
 export interface SyncAction {
   id: string;
@@ -372,6 +375,44 @@ export async function processSyncQueue(
                 total: payload.total,
               }),
             });
+            break;
+          }
+
+          case "OPEN_CASH_SESSION": {
+            res = await reqFn("/cash-sessions/open", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            if (res && res.id && action.localId) {
+              idMap[action.localId] = res.id;
+              if (updateCacheFn) updateCacheFn("OPEN_CASH_SESSION", action.localId, res);
+            }
+            break;
+          }
+
+          case "RECORD_CASH_MOVEMENT": {
+            const mappedSessionId = payload.session_id
+              ? idMap[payload.session_id] || payload.session_id
+              : undefined;
+            res = await reqFn("/cash-sessions/movement", {
+              method: "POST",
+              body: JSON.stringify({
+                ...payload,
+                session_id: mappedSessionId,
+              }),
+            });
+            break;
+          }
+
+          case "CLOSE_CASH_SESSION": {
+            res = await reqFn("/cash-sessions/close", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            if (res && res.id && action.localId) {
+              idMap[action.localId] = res.id;
+              if (updateCacheFn) updateCacheFn("CLOSE_CASH_SESSION", action.localId, res);
+            }
             break;
           }
 

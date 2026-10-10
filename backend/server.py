@@ -12,7 +12,7 @@ import jwt as pyjwt
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 import time
-from typing import List, Optional
+from typing import List, Optional, Any, Dict, Union
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 
@@ -813,6 +813,44 @@ class BillIn(BaseModel):
     gst_enabled: Optional[bool] = None  # override restaurant default
 
 
+# ---------- CASH SESSIONS & CLOSING SCHEMAS ----------
+class OpenCashSessionIn(BaseModel):
+    opening_float: float = 0.0
+    business_date: Optional[str] = None
+    notes: Optional[str] = ""
+
+
+class CashMovementIn(BaseModel):
+    session_id: Optional[str] = None
+    type: str  # "cash_in", "cash_out", "cash_drop"
+    amount: float
+    reason: str
+    reference: Optional[str] = None
+
+
+class CloseCashSessionIn(BaseModel):
+    counted_cash: float
+    denominations: Optional[dict] = None
+    actual_upi: Optional[float] = None
+    actual_card: Optional[float] = None
+    actual_other: Optional[float] = None
+    discrepancy_reason: Optional[str] = None
+    closing_notes: Optional[str] = None
+
+
+class ApproveSessionDiscrepancyIn(BaseModel):
+    notes: Optional[str] = ""
+
+
+class MenuJsonImportIn(BaseModel):
+    tenant_id: Optional[str] = None
+    replace_existing: Optional[bool] = False
+    data: Optional[Any] = None
+    categories: Optional[Any] = None
+    raw_json: Optional[str] = None
+
+
+
 # ---------- auth routes ----------
 @api.get("/")
 async def root():
@@ -1427,6 +1465,213 @@ async def update_menu_item(iid: str, payload: MenuItemUpdate, user: dict = Depen
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Menu item not found")
     return await db.menu_items.find_one({"id": iid}, {"_id": 0})
+
+
+# ---------- BULK JSON MENU IMPORT (SUPER ADMIN & OWNER) ----------
+async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: bool = False) -> dict:
+    import json
+    data = raw_input
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON string syntax: {str(e)}")
+
+    if isinstance(data, dict):
+        if "categories" in data and isinstance(data["categories"], list):
+            data = data["categories"]
+        elif "data" in data and isinstance(data["data"], list):
+            data = data["data"]
+        elif "items" in data and isinstance(data["items"], list):
+            data = [{"category": "Main Menu", "items": data["items"]}]
+        else:
+            cat_list = []
+            for k, v in data.items():
+                if isinstance(v, list):
+                    cat_list.append({"category": str(k), "items": v})
+            if cat_list:
+                data = cat_list
+            else:
+                data = [data]
+
+    if not isinstance(data, list):
+        raise HTTPException(status_code=400, detail="Menu JSON must be an array of categories or dish items.")
+
+    # Check if data is flat list of dishes (e.g. [{"name": "Paneer", "price": 200, "category": "Starters"}])
+    is_flat_items = any("price" in x and "items" not in x for x in data if isinstance(x, dict))
+    if is_flat_items:
+        grouped: dict[str, list] = {}
+        for it in data:
+            if not isinstance(it, dict):
+                continue
+            cat_name = str(it.get("category") or it.get("category_name") or "Main Menu").strip()
+            grouped.setdefault(cat_name, []).append(it)
+        data = [{"category": cname, "items": citems} for cname, citems in grouped.items()]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # If replace_existing is True, delete previous categories and items
+    if replace_existing:
+        await db.categories.delete_many({"tenant_id": tid})
+        await db.menu_items.delete_many({"tenant_id": tid})
+
+    # Fetch active categories for tenant
+    existing_cats = await db.categories.find({"tenant_id": tid, "is_deleted": {"$ne": True}}).to_list(500)
+    cat_map: dict[str, dict] = {str(c["name"]).lower().strip(): c for c in existing_cats}
+
+    categories_created = 0
+    categories_reused = 0
+    items_created = 0
+
+    non_veg_keywords = {"chicken", "mutton", "fish", "prawn", "egg", "lamb", "pork", "beef", "seafood", "non-veg", "non veg", "meat"}
+
+    for cat_entry in data:
+        if not isinstance(cat_entry, dict):
+            continue
+        raw_cat_name = str(cat_entry.get("category") or cat_entry.get("name") or cat_entry.get("title") or "General").strip()
+        if not raw_cat_name:
+            raw_cat_name = "General"
+
+        norm_cat_name = raw_cat_name.lower()
+        if norm_cat_name in cat_map:
+            cat_doc = cat_map[norm_cat_name]
+            cid = cat_doc["id"]
+            categories_reused += 1
+        else:
+            cid = str(uuid.uuid4())
+            cat_doc = {
+                "id": cid,
+                "tenant_id": tid,
+                "name": raw_cat_name,
+                "sort_order": len(cat_map),
+                "created_at": now_iso,
+            }
+            await db.categories.insert_one(cat_doc)
+            cat_map[norm_cat_name] = cat_doc
+            categories_created += 1
+
+        items_list = cat_entry.get("items") or cat_entry.get("dishes") or cat_entry.get("menu_items") or []
+        if not isinstance(items_list, list):
+            continue
+
+        for it in items_list:
+            if not isinstance(it, dict):
+                continue
+            item_name = str(it.get("name") or it.get("item_name") or it.get("title") or "").strip()
+            if not item_name:
+                continue
+
+            try:
+                raw_price = it.get("price") or it.get("rate") or it.get("cost") or 0.0
+                item_price = float(raw_price)
+                if item_price < 0:
+                    item_price = 0.0
+            except Exception:
+                item_price = 0.0
+
+            item_desc = str(it.get("description") or it.get("desc") or "").strip()
+
+            # Determine veg / non-veg
+            if "is_veg" in it:
+                is_veg = bool(it["is_veg"])
+            elif "veg" in it:
+                is_veg = bool(it["veg"])
+            elif "type" in it:
+                is_veg = str(it["type"]).lower().strip() == "veg"
+            else:
+                lower_name = item_name.lower()
+                is_veg = not any(w in lower_name for w in non_veg_keywords)
+
+            item_img = it.get("image_url") or it.get("image_base64") or it.get("image") or None
+
+            item_doc = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "category_id": cid,
+                "name": item_name,
+                "price": round(item_price, 2),
+                "description": item_desc,
+                "is_veg": is_veg,
+                "image_url": item_img if isinstance(item_img, str) and item_img.startswith("http") else None,
+                "image_base64": item_img if isinstance(item_img, str) and item_img.startswith("data:") else None,
+                "is_active": True,
+                "created_at": now_iso,
+            }
+            await db.menu_items.insert_one(item_doc)
+            items_created += 1
+
+    # Send real-time notification
+    try:
+        await notify_tenant(
+            tid,
+            "menu",
+            "Menu Catalog Updated",
+            f"Imported {items_created} dishes across {categories_created + categories_reused} categories.",
+            {"items_count": items_created, "tenant_id": tid}
+        )
+    except Exception:
+        pass
+
+    total_cats = await db.categories.count_documents({"tenant_id": tid, "is_deleted": {"$ne": True}})
+    total_items = await db.menu_items.count_documents({"tenant_id": tid, "is_deleted": {"$ne": True}})
+
+    return {
+        "success": True,
+        "message": f"Successfully imported {items_created} menu items across {categories_created + categories_reused} categories.",
+        "categories_created": categories_created,
+        "categories_reused": categories_reused,
+        "items_created": items_created,
+        "total_categories": total_cats,
+        "total_items": total_items,
+    }
+
+
+@api.post("/menu/import-json")
+async def import_menu_json(payload: MenuJsonImportIn, user: dict = Depends(get_current_user)):
+    is_admin = user.get("role") in ("super_admin", "admin_employee")
+    target_tid = payload.tenant_id if (is_admin and payload.tenant_id) else user.get("tenant_id")
+    if not target_tid:
+        raise HTTPException(status_code=400, detail="Target restaurant tenant_id is required.")
+
+    input_data = payload.raw_json or payload.data or payload.categories
+    if input_data is None:
+        raise HTTPException(status_code=400, detail="JSON menu payload or raw_json string is required.")
+
+    return await _process_json_menu_import(target_tid, input_data, replace_existing=bool(payload.replace_existing))
+
+
+@api.get("/admin/restaurants/{target_tid}/menu")
+async def admin_get_restaurant_menu(target_tid: str, user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    cats = await db.categories.find({"tenant_id": target_tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("sort_order", 1).to_list(500)
+    items = await db.menu_items.find({"tenant_id": target_tid, "is_deleted": {"$ne": True}}, {"_id": 0}).to_list(2000)
+    return {
+        "categories": cats,
+        "items": items,
+        "total_categories": len(cats),
+        "total_items": len(items),
+    }
+
+
+@api.post("/admin/restaurants/{target_tid}/menu/import-json")
+async def admin_import_restaurant_menu_json(target_tid: str, payload: MenuJsonImportIn, user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    rest = await db.restaurants.find_one({"id": target_tid})
+    if not rest:
+        raise HTTPException(status_code=404, detail="Restaurant not found.")
+
+    input_data = payload.raw_json or payload.data or payload.categories
+    if input_data is None:
+        raise HTTPException(status_code=400, detail="JSON menu payload or raw_json string is required.")
+
+    return await _process_json_menu_import(target_tid, input_data, replace_existing=bool(payload.replace_existing))
+
+
+@api.delete("/admin/restaurants/{target_tid}/menu")
+async def admin_clear_restaurant_menu(target_tid: str, user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.categories.update_many({"tenant_id": target_tid}, {"$set": {"deleted_at": now_iso, "is_deleted": True}})
+    await db.menu_items.update_many({"tenant_id": target_tid}, {"$set": {"deleted_at": now_iso, "is_deleted": True}})
+    return {"success": True, "message": f"Menu cleared for restaurant {target_tid}."}
+
 
 
 # ---------- tables ----------
@@ -3288,6 +3533,401 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
     if filter == "today":
         return [b for b in deduped_bills if b.get("is_today") and str(b.get("status", "")).lower() == "paid"]
     return deduped_bills
+
+
+# ---------- END-OF-DAY CASHIER SESSIONS & RECONCILIATION ----------
+async def calculate_session_metrics(tid: str, session_doc: dict) -> dict:
+    session_id = session_doc["id"]
+    opened_at = session_doc.get("opened_at")
+    closed_at = session_doc.get("closed_at")
+    opening_float = float(session_doc.get("opening_float", 0.0))
+
+    # 1. Fetch cash movements for this session
+    movements = await db.cash_movements.find({
+        "tenant_id": tid,
+        "session_id": session_id
+    }, {"_id": 0}).sort("created_at", 1).to_list(1000)
+    if not movements and session_doc.get("movements"):
+        movements = session_doc.get("movements", [])
+
+    cash_in_total = round(sum(float(m.get("amount", 0.0)) for m in movements if m.get("type") == "cash_in"), 2)
+    cash_out_total = round(sum(float(m.get("amount", 0.0)) for m in movements if m.get("type") == "cash_out"), 2)
+    cash_drop_total = round(sum(float(m.get("amount", 0.0)) for m in movements if m.get("type") == "cash_drop"), 2)
+
+    # 2. Fetch bills in the session window
+    time_filter = {}
+    if opened_at:
+        time_filter["$gte"] = opened_at
+    if closed_at:
+        time_filter["$lte"] = closed_at
+
+    bill_q: dict = {"tenant_id": tid}
+    if time_filter:
+        bill_q["$or"] = [
+            {"paid_at": time_filter},
+            {"created_at": time_filter}
+        ]
+
+    bills = await db.bills.find(bill_q, {"_id": 0}).to_list(10000)
+
+    # Deduplicate bills by order_id or bill id
+    seen_oids = set()
+    deduped_bills = []
+    for b in bills:
+        oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
+        if oids and oids.issubset(seen_oids):
+            continue
+        if oids:
+            seen_oids.update(oids)
+        elif b.get("id"):
+            if b["id"] in seen_oids:
+                continue
+            seen_oids.add(b["id"])
+        deduped_bills.append(b)
+
+    cash_sales = 0.0
+    cash_sales_count = 0
+    upi_sales = 0.0
+    upi_sales_count = 0
+    card_sales = 0.0
+    card_sales_count = 0
+    other_sales = 0.0
+    other_sales_count = 0
+    gross_sales = 0.0
+    tax_collected = 0.0
+    discount_total = 0.0
+    paid_bills_count = 0
+    unpaid_bills_count = 0
+    unpaid_bills_total = 0.0
+
+    upi_aliases = {"upi", "online", "gpay", "phonepe", "paytm", "qr", "razorpay"}
+    card_aliases = {"card", "debit card", "credit card", "pos", "terminal"}
+
+    for b in deduped_bills:
+        b_status = str(b.get("status", "")).lower().strip()
+        b_total = float(b.get("total", 0.0))
+        b_pm = str(b.get("payment_method", "Cash")).lower().strip()
+
+        if b_status in ("paid", "completed", "settled", "served"):
+            paid_bills_count += 1
+            gross_sales += b_total
+            tax_collected += float(b.get("tax", 0.0) or (float(b.get("cgst", 0.0)) + float(b.get("sgst", 0.0))))
+            discount_total += float(b.get("discount", 0.0))
+
+            if b_pm == "split" and b.get("payment_splits"):
+                has_cash = False
+                has_upi = False
+                has_card = False
+                has_other = False
+                for sp in b.get("payment_splits", []):
+                    sp_m = str(sp.get("method", "cash")).lower().strip()
+                    sp_a = float(sp.get("amount", 0.0))
+                    if sp_m == "cash":
+                        cash_sales += sp_a
+                        has_cash = True
+                    elif sp_m in upi_aliases or "upi" in sp_m or "online" in sp_m:
+                        upi_sales += sp_a
+                        has_upi = True
+                    elif sp_m in card_aliases or "card" in sp_m:
+                        card_sales += sp_a
+                        has_card = True
+                    else:
+                        other_sales += sp_a
+                        has_other = True
+                if has_cash: cash_sales_count += 1
+                if has_upi: upi_sales_count += 1
+                if has_card: card_sales_count += 1
+                if has_other: other_sales_count += 1
+            elif b_pm == "cash":
+                cash_sales += b_total
+                cash_sales_count += 1
+            elif b_pm in upi_aliases or "upi" in b_pm or "online" in b_pm:
+                upi_sales += b_total
+                upi_sales_count += 1
+            elif b_pm in card_aliases or "card" in b_pm:
+                card_sales += b_total
+                card_sales_count += 1
+            else:
+                other_sales += b_total
+                other_sales_count += 1
+        elif b_status in ("pending", "unpaid"):
+            unpaid_bills_count += 1
+            unpaid_bills_total += b_total
+
+    cash_refunds = 0.0
+    digital_refunds = 0.0
+
+    cash_sales = round(cash_sales, 2)
+    upi_sales = round(upi_sales, 2)
+    card_sales = round(card_sales, 2)
+    other_sales = round(other_sales, 2)
+    gross_sales = round(gross_sales, 2)
+    net_sales = round(gross_sales - discount_total, 2)
+    tax_collected = round(tax_collected, 2)
+    discount_total = round(discount_total, 2)
+    unpaid_bills_total = round(unpaid_bills_total, 2)
+
+    # Core Accounting Formula:
+    # Expected Drawer Cash = Opening Float + Cash Sales Received + Cash In - Cash Refunds - Cash Out - Cash Drops
+    expected_cash = round(opening_float + cash_sales + cash_in_total - cash_refunds - cash_out_total - cash_drop_total, 2)
+    expected_upi = round(upi_sales - digital_refunds, 2)
+    expected_card = round(card_sales, 2)
+    expected_other = round(other_sales, 2)
+    expected_total_collections = round(expected_cash + expected_upi + expected_card + expected_other, 2)
+
+    return {
+        "opening_float": opening_float,
+        "cash_sales": cash_sales,
+        "total_cash_sales": cash_sales,
+        "cash_sales_count": cash_sales_count,
+        "upi_sales": upi_sales,
+        "total_upi_sales": upi_sales,
+        "upi_sales_count": upi_sales_count,
+        "card_sales": card_sales,
+        "total_card_sales": card_sales,
+        "card_sales_count": card_sales_count,
+        "other_sales": other_sales,
+        "total_other_sales": other_sales,
+        "other_sales_count": other_sales_count,
+        "gross_sales": gross_sales,
+        "net_sales": net_sales,
+        "tax_collected": tax_collected,
+        "total_taxes": tax_collected,
+        "discount_total": discount_total,
+        "total_discounts": discount_total,
+        "cash_in_total": cash_in_total,
+        "cash_in": cash_in_total,
+        "cash_out_total": cash_out_total,
+        "cash_out": cash_out_total,
+        "cash_drop_total": cash_drop_total,
+        "cash_drop": cash_drop_total,
+        "cash_refunds": cash_refunds,
+        "digital_refunds": digital_refunds,
+        "expected_cash": expected_cash,
+        "expected_upi": expected_upi,
+        "expected_card": expected_card,
+        "expected_other": expected_other,
+        "expected_total_collections": expected_total_collections,
+        "paid_bills_count": paid_bills_count,
+        "unpaid_bills_count": unpaid_bills_count,
+        "unpaid_bills_total": unpaid_bills_total,
+        "unpaid_bills_amount": unpaid_bills_total,
+        "movements": movements,
+    }
+
+
+@api.get("/cash-sessions/current")
+async def get_current_cash_session(user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    session = await db.cash_sessions.find_one({"tenant_id": tid, "status": "open"}, {"_id": 0})
+    if not session:
+        return {"has_open_session": False, "active_session": None}
+
+    metrics = await calculate_session_metrics(tid, session)
+    enriched = {**session, **metrics}
+    return {"has_open_session": True, "active_session": sanitize_doc(enriched)}
+
+
+@api.post("/cash-sessions/open")
+async def open_cash_session(payload: OpenCashSessionIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+    tid = await _ensure_tenant(user)
+    await _ensure_active_subscription(tid, user)
+
+    existing = await db.cash_sessions.find_one({"tenant_id": tid, "status": "open"}, {"_id": 0})
+    if existing:
+        metrics = await calculate_session_metrics(tid, existing)
+        return sanitize_doc({**existing, **metrics})
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    bus_date = payload.business_date or get_business_day_string()
+    
+    session_id = str(uuid.uuid4())
+    doc = {
+        "id": session_id,
+        "tenant_id": tid,
+        "cashier_id": user["id"],
+        "cashier_name": user.get("full_name") or user.get("email") or "Cashier",
+        "business_date": bus_date,
+        "opened_at": now_iso,
+        "closed_at": None,
+        "opening_float": float(payload.opening_float or 0.0),
+        "status": "open",
+        "notes": payload.notes or "",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await db.cash_sessions.insert_one(doc)
+    doc.pop("_id", None)
+
+    metrics = await calculate_session_metrics(tid, doc)
+    return sanitize_doc({**doc, **metrics})
+
+
+@api.post("/cash-sessions/movement")
+async def record_cash_movement(payload: CashMovementIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+    tid = await _ensure_tenant(user)
+    session_id = payload.session_id
+
+    if not session_id:
+        active_sess = await db.cash_sessions.find_one({"tenant_id": tid, "status": "open"})
+        if not active_sess:
+            raise HTTPException(status_code=400, detail="No active cash session open. Open a session before recording drawer movements.")
+        session_id = active_sess["id"]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    movement_id = str(uuid.uuid4())
+    doc = {
+        "id": movement_id,
+        "tenant_id": tid,
+        "session_id": session_id,
+        "type": payload.type,  # cash_in, cash_out, cash_drop
+        "amount": float(payload.amount),
+        "reason": payload.reason,
+        "reference": payload.reference or "",
+        "staff_id": user["id"],
+        "staff_name": user.get("full_name") or "Staff",
+        "created_at": now_iso,
+    }
+    await db.cash_movements.insert_one(doc)
+    doc.pop("_id", None)
+
+    return sanitize_doc(doc)
+
+
+@api.post("/cash-sessions/close")
+async def close_cash_session(payload: CloseCashSessionIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+    tid = await _ensure_tenant(user)
+    session = await db.cash_sessions.find_one({"tenant_id": tid, "status": "open"})
+    if not session:
+        raise HTTPException(status_code=400, detail="No active open cash session found to close.")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    metrics = await calculate_session_metrics(tid, session)
+
+    counted_cash = float(payload.counted_cash)
+    expected_cash = float(metrics["expected_cash"])
+    cash_diff = round(counted_cash - expected_cash, 2)
+
+    actual_upi = float(payload.actual_upi) if payload.actual_upi is not None else metrics["expected_upi"]
+    expected_upi = float(metrics["expected_upi"])
+    upi_diff = round(actual_upi - expected_upi, 2)
+
+    actual_card = float(payload.actual_card) if payload.actual_card is not None else metrics["expected_card"]
+    expected_card = float(metrics["expected_card"])
+    card_diff = round(actual_card - expected_card, 2)
+
+    actual_other = float(payload.actual_other) if payload.actual_other is not None else metrics["expected_other"]
+    expected_other = float(metrics["expected_other"])
+    other_diff = round(actual_other - expected_other, 2)
+
+    total_diff = round(cash_diff + upi_diff + card_diff + other_diff, 2)
+    has_discrepancy = abs(total_diff) > 0.01
+
+    if has_discrepancy and not (payload.discrepancy_reason or "").strip():
+        # Require a note for discrepancy if out of balance
+        discrepancy_note = f"Discrepancy of ₹{total_diff:+.2f} recorded at closing."
+    else:
+        discrepancy_note = (payload.discrepancy_reason or "").strip()
+
+    update_fields = {
+        "status": "closed",
+        "closed_at": now_iso,
+        "closed_by": user.get("full_name") or user.get("email") or "Cashier",
+        "closed_by_id": user["id"],
+        "counted_cash": counted_cash,
+        "expected_cash": expected_cash,
+        "cash_difference": cash_diff,
+        "denominations": payload.denominations or {},
+        "actual_upi": actual_upi,
+        "expected_upi": expected_upi,
+        "upi_difference": upi_diff,
+        "actual_card": actual_card,
+        "expected_card": expected_card,
+        "card_difference": card_diff,
+        "actual_other": actual_other,
+        "expected_other": expected_other,
+        "other_difference": other_diff,
+        "total_difference": total_diff,
+        "has_discrepancy": has_discrepancy,
+        "discrepancy_reason": discrepancy_note,
+        "closing_notes": payload.closing_notes or "",
+        "gross_sales": metrics["gross_sales"],
+        "net_sales": metrics["net_sales"],
+        "cash_sales": metrics["cash_sales"],
+        "upi_sales": metrics["upi_sales"],
+        "card_sales": metrics["card_sales"],
+        "other_sales": metrics["other_sales"],
+        "tax_collected": metrics["tax_collected"],
+        "discount_total": metrics["discount_total"],
+        "cash_in_total": metrics["cash_in_total"],
+        "cash_out_total": metrics["cash_out_total"],
+        "cash_drop_total": metrics["cash_drop_total"],
+        "cash_refunds": metrics["cash_refunds"],
+        "digital_refunds": metrics["digital_refunds"],
+        "paid_bills_count": metrics["paid_bills_count"],
+        "unpaid_bills_count": metrics["unpaid_bills_count"],
+        "unpaid_bills_total": metrics["unpaid_bills_total"],
+        "updated_at": now_iso,
+    }
+
+    await db.cash_sessions.update_one({"id": session["id"], "tenant_id": tid}, {"$set": update_fields})
+    closed_session = {**session, **update_fields, "_id": None}
+    closed_session.pop("_id", None)
+
+    # Notify owner & manager of shift closing
+    status_summary = "Balanced" if not has_discrepancy else f"Discrepancy ({total_diff:+.2f})"
+    await notify_tenant(
+        tid,
+        "closing",
+        "End-of-Day Shift Closed",
+        f"Shift closed by {update_fields['closed_by']} — Cash: ₹{counted_cash:.2f} ({status_summary})",
+        {"event": "CASH_SESSION_CLOSED", "session_id": session["id"], "total_difference": total_diff}
+    )
+
+    return sanitize_doc(closed_session)
+
+
+@api.get("/cash-sessions/history")
+async def list_cash_sessions_history(limit: Optional[int] = 50, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    sessions = await db.cash_sessions.find({"tenant_id": tid, "status": "closed"}, {"_id": 0}).sort("closed_at", -1).to_list(limit or 50)
+    return sanitize_doc(sessions)
+
+
+@api.get("/cash-sessions/{session_id}")
+async def get_cash_session_detail(session_id: str, user: dict = Depends(get_current_user)):
+    tid = await _ensure_tenant(user)
+    session = await db.cash_sessions.find_one({"id": session_id, "tenant_id": tid}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Cash session not found")
+
+    movements = await db.cash_movements.find({"session_id": session_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+    session["movements"] = movements
+    return sanitize_doc(session)
+
+
+@api.post("/cash-sessions/{session_id}/approve")
+async def approve_cash_session_discrepancy(session_id: str, payload: ApproveSessionDiscrepancyIn, user: dict = Depends(require_roles("owner", "manager", "super_admin"))):
+    tid = await _ensure_tenant(user)
+    session = await db.cash_sessions.find_one({"id": session_id, "tenant_id": tid})
+    if not session:
+        raise HTTPException(status_code=404, detail="Cash session not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    approver_name = user.get("full_name") or user.get("email") or "Manager"
+    await db.cash_sessions.update_one(
+        {"id": session_id, "tenant_id": tid},
+        {"$set": {
+            "approved_by": approver_name,
+            "approved_by_id": user["id"],
+            "approved_at": now_iso,
+            "approval_notes": payload.notes or "",
+            "updated_at": now_iso,
+        }}
+    )
+
+    updated = await db.cash_sessions.find_one({"id": session_id, "tenant_id": tid}, {"_id": 0})
+    return sanitize_doc(updated)
 
 
 # ---------- notifications ----------

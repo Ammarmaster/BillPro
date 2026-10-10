@@ -14,6 +14,7 @@ import { menuItemImageSource } from "@/src/lib/foodImage";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
+import MenuJsonImportModal from "@/src/components/MenuJsonImportModal";
 
 type Cat = { id: string; name: string; sort_order: number };
 type Item = { id: string; category_id: string; name: string; description: string; price: number; image_base64?: string; image_url?: string; is_active: boolean };
@@ -31,6 +32,8 @@ export default function MenuScreen() {
 
   const [catModal, setCatModal] = useState(false);
   const [catName, setCatName] = useState("");
+
+  const [jsonImportModal, setJsonImportModal] = useState(false);
 
   const [itemModal, setItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
@@ -124,6 +127,10 @@ export default function MenuScreen() {
             <Text style={styles.title} numberOfLines={1}>Menu</Text>
           </View>
           <View style={styles.headerRight}>
+            <Pressable style={styles.iconBtn} onPress={() => setJsonImportModal(true)} testID="menu-json-import-btn">
+              <Ionicons name="code-working" size={15} color={colors.brand} />
+              <Text style={styles.iconBtnText}>JSON Import</Text>
+            </Pressable>
             <Pressable style={styles.iconBtn} onPress={() => setCatModal(true)} testID="menu-add-category-btn">
               <Ionicons name="folder" size={15} color={colors.brand} />
               <Text style={styles.iconBtnText}>Category</Text>
@@ -272,6 +279,13 @@ export default function MenuScreen() {
             </ScrollView>
           </View>
         </Modal>
+
+        {/* JSON Menu Import Modal */}
+        <MenuJsonImportModal
+          visible={jsonImportModal}
+          onClose={() => setJsonImportModal(false)}
+          onSuccess={() => load()}
+        />
       </View>
     </View>
   );

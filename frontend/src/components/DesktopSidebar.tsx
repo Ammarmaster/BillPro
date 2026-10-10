@@ -51,7 +51,8 @@ export default function DesktopSidebar() {
     operationsNav.push(
       { name: "Tables / POS", route: "/(app)/waiter", icon: "tablet-portrait-outline", iconActive: "tablet-portrait" },
       { name: "Takeaway", route: "/(app)/takeaway", icon: "bag-handle-outline", iconActive: "bag-handle" },
-      { name: "Kitchen KDS", route: "/(app)/kitchen", icon: "restaurant-outline", iconActive: "restaurant" }
+      { name: "Kitchen KDS", route: "/(app)/kitchen", icon: "restaurant-outline", iconActive: "restaurant" },
+      { name: "Cash Closing", route: "/(app)/cash-closing", icon: "wallet-outline", iconActive: "wallet" }
     );
   } else {
     // Owner / Manager
@@ -61,7 +62,8 @@ export default function DesktopSidebar() {
       { name: "Takeaway", route: "/(app)/takeaway", icon: "bag-handle-outline", iconActive: "bag-handle" },
       { name: "Kitchen KDS", route: "/(app)/kitchen", icon: "restaurant-outline", iconActive: "restaurant" },
       { name: "Billing Register", route: "/(app)/billing", icon: "receipt-outline", iconActive: "receipt" },
-      { name: "Bills History", route: "/(app)/bills-history", icon: "file-tray-full-outline", iconActive: "file-tray-full" }
+      { name: "Bills History", route: "/(app)/bills-history", icon: "file-tray-full-outline", iconActive: "file-tray-full" },
+      { name: "Cash Closing & EOD", route: "/(app)/cash-closing", icon: "wallet-outline", iconActive: "wallet" }
     );
 
     managementNav.push(

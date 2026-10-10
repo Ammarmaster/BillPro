@@ -14,6 +14,7 @@ import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 import FeatureLockModal from "@/src/components/FeatureLockModal";
+import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
 
 import { safeParseDate } from "@/src/lib/dateUtils";
 
@@ -1463,9 +1464,12 @@ function OwnerDashboard() {
               {user?.full_name || "System Owner"}
             </Text>
           </View>
-          <View style={[styles.roleBadge, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#E0E7FF" }]}>
-            <Ionicons name="shield-checkmark" size={14} color="#635BFF" />
-            <Text style={[styles.roleBadgeText, { color: "#635BFF" }]}>{(user?.role || "OWNER").toUpperCase()}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <SyncStatusIndicator compact />
+            <View style={[styles.roleBadge, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#E0E7FF" }]}>
+              <Ionicons name="shield-checkmark" size={14} color="#635BFF" />
+              <Text style={[styles.roleBadgeText, { color: "#635BFF" }]}>{(user?.role || "OWNER").toUpperCase()}</Text>
+            </View>
           </View>
         </View>
 
@@ -1516,12 +1520,12 @@ function OwnerDashboard() {
               </Pressable>
             </Animated.View>
 
-            {/* Quick Action Shortcuts: Scan Web Order & Printer */}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: spacing.md, marginBottom: spacing.xs }}>
+            {/* Quick Action Shortcuts: Scan Web Order, Cash Closing & Printer */}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: spacing.md, marginBottom: spacing.xs, flexWrap: "wrap" }}>
               <Pressable
                 style={[
                   styles.quickActionShortcut,
-                  { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }
+                  { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE", flex: 1, minWidth: 110 }
                 ]}
                 onPress={() => {
                   if (api.hasFeature("qr_web_menu")) {
@@ -1532,13 +1536,24 @@ function OwnerDashboard() {
                 }}
               >
                 <Ionicons name="qr-code-outline" size={18} color="#635BFF" />
-                <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Web Order</Text>
+                <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Order</Text>
               </Pressable>
 
               <Pressable
                 style={[
                   styles.quickActionShortcut,
-                  { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: isDark ? "#F59E0B" : "#FDE68A" }
+                  { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0", flex: 1, minWidth: 110 }
+                ]}
+                onPress={() => router.push("/(app)/cash-closing")}
+              >
+                <Ionicons name="wallet-outline" size={18} color="#10B981" />
+                <Text style={[styles.quickActionShortcutText, { color: "#10B981" }]}>Cash Closing</Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.quickActionShortcut,
+                  { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: isDark ? "#F59E0B" : "#FDE68A", flex: 0.8, minWidth: 90 }
                 ]}
                 onPress={() => router.push("/(app)/printer-settings")}
               >

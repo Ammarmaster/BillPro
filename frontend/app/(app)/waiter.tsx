@@ -18,6 +18,7 @@ import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { getPrinterSettings, printKitchenKOT } from "@/src/lib/print";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
+import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
 import { isTodayBusinessDay } from "@/src/lib/dateUtils";
 import { useResponsive } from "@/src/hooks/useResponsive";
 type Cat = { id: string; name: string };
@@ -814,6 +815,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
               </Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <SyncStatusIndicator compact />
               <Pressable
                 style={{
                   backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",

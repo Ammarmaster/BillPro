@@ -11,6 +11,7 @@ import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
+import MenuJsonImportModal from "@/src/components/MenuJsonImportModal";
 
 type Sub = { id: string; plan_name: string; price: number; interval: string; status: string; ends_at?: string };
 type Rest = {
@@ -44,6 +45,10 @@ export default function AdminRestaurants() {
   // Custom Feature Overrides State for detail modal
   const [customFeatures, setCustomFeatures] = useState<Record<string, boolean>>({});
   const [customStaffLimit, setCustomStaffLimit] = useState<number>(0);
+
+  // Menu JSON Import Modal
+  const [menuImportModal, setMenuImportModal] = useState(false);
+  const [importTargetRest, setImportTargetRest] = useState<{ id: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -184,6 +189,35 @@ export default function AdminRestaurants() {
     Linking.openURL(`https://wa.me/${finalNum}`).catch(() => {});
   };
 
+  const clearRestaurantMenu = async () => {
+    if (!detail) return;
+    Alert.alert(
+      "Clear Restaurant Menu?",
+      `Are you sure you want to delete all menu items and categories for ${detail.name}? This will leave the menu completely empty.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear Menu",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true); setErr(null); setMsg(null);
+            try {
+              await api.adminClearRestaurantMenu(detail.id);
+              const fresh = await api.adminRestaurantDetail(detail.id);
+              setDetail(fresh);
+              setMsg("All menu items and categories cleared successfully.");
+              await load();
+            } catch (e: any) {
+              setErr(e.message);
+            } finally {
+              setBusy(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const toggleStatus = async () => {
     if (!detail) return;
     setBusy(true); setErr(null); setMsg(null);
@@ -237,9 +271,22 @@ export default function AdminRestaurants() {
             {items.length} registered · {items.filter(i => i.subscription?.status === "active").length} active
           </Text>
         </View>
-        <Pressable onPress={load} hitSlop={12} style={[styles.reloadBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-          <Ionicons name="refresh" size={18} color="#635BFF" />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            onPress={() => {
+              setImportTargetRest(null);
+              setMenuImportModal(true);
+            }}
+            hitSlop={12}
+            style={[styles.headerActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+          >
+            <Ionicons name="code-working" size={16} color="#635BFF" />
+            <Text style={[styles.headerActionBtnText, { color: theme.onSurface }]}>JSON Menu Import</Text>
+          </Pressable>
+          <Pressable onPress={load} hitSlop={12} style={[styles.reloadBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <Ionicons name="refresh" size={18} color="#635BFF" />
+          </Pressable>
+        </View>
       </View>
 
       {/* Search & Filter Section */}
@@ -491,6 +538,53 @@ export default function AdminRestaurants() {
                     <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Orders: <Text style={[styles.detailVal, { color: theme.onSurface }]}>{detail.orders_total}</Text></Text>
                     <Text style={[styles.detailRow, { color: theme.onSurfaceSecondary }]}>Revenue: <Text style={[styles.detailVal, { color: "#10B981", fontWeight: "800" }]}>₹{detail.revenue_total}</Text></Text>
                   </View>
+
+                  {/* Super Admin Direct Menu Actions */}
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border }}>
+                    <Pressable
+                      style={{
+                        flex: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        backgroundColor: "rgba(99, 91, 255, 0.12)",
+                        borderColor: "#635BFF",
+                        borderWidth: 1,
+                        paddingVertical: 7,
+                        borderRadius: radius.md,
+                      }}
+                      onPress={() => {
+                        setImportTargetRest({ id: detail.id, name: detail.name });
+                        setMenuImportModal(true);
+                      }}
+                    >
+                      <Ionicons name="code-working" size={14} color="#635BFF" />
+                      <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "800" }}>
+                        Inject / Import Menu JSON
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 4,
+                        backgroundColor: "rgba(239, 68, 68, 0.1)",
+                        borderColor: "rgba(239, 68, 68, 0.3)",
+                        borderWidth: 1,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderRadius: radius.md,
+                      }}
+                      onPress={clearRestaurantMenu}
+                      disabled={busy}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                      <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "700" }}>Clear Menu</Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 {/* SUBSCRIPTION STATUS & MANAGEMENT */}
@@ -703,6 +797,22 @@ export default function AdminRestaurants() {
           </View>
         </View>
       </Modal>
+
+      {/* Menu JSON Import & Injector Modal */}
+      <MenuJsonImportModal
+        visible={menuImportModal}
+        onClose={() => {
+          setMenuImportModal(false);
+          setImportTargetRest(null);
+        }}
+        onSuccess={() => {
+          load();
+          if (detail) open(detail);
+        }}
+        isAdmin={true}
+        targetTenantId={importTargetRest?.id}
+        targetRestaurantName={importTargetRest?.name}
+      />
       </View>
     </View>
   );
@@ -714,6 +824,8 @@ const styles = StyleSheet.create({
   backBtn: { width: 38, height: 38, borderRadius: 19, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 20, fontWeight: "900" },
   reloadBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  headerActionBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.md, borderWidth: 1 },
+  headerActionBtnText: { fontSize: 12, fontWeight: "800" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
 
   searchBox: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, height: 42, borderRadius: radius.md, borderWidth: 1, gap: 8, marginBottom: spacing.sm },

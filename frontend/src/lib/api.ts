@@ -650,6 +650,11 @@ export const api = {
     clearCachePrefix("/menu-items");
     return req(`/menu-items/${id}`, { method: "DELETE" });
   },
+  importMenuJson: async (payload: { tenant_id?: string; replace_existing?: boolean; data?: any; raw_json?: string }) => {
+    clearCachePrefix("/menu-items");
+    clearCachePrefix("/categories");
+    return req("/menu/import-json", { method: "POST", body: JSON.stringify(payload) });
+  },
   listTables: async () => {
     if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
       return memoryCache["/tables"] || [];
@@ -790,12 +795,56 @@ export const api = {
       return localOrder;
     }
 
-    const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
-    const list = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id && !String(o.id).startsWith("temp-"))];
-    clearCachePrefix("/tables");
-    clearCachePrefix("/dashboard/summary");
-    return res;
+    try {
+      const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
+      const list = memoryCache["/orders"] || [];
+      memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id && !String(o.id).startsWith("temp-"))];
+      clearCachePrefix("/tables");
+      clearCachePrefix("/dashboard/summary");
+      return res;
+    } catch (netErr: any) {
+      console.warn("[api.createOrder] Server request failed, activating offline local persistence:", netErr.message);
+      const localId = "ord_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      const nowIso = new Date().toISOString();
+      const items = payload.items || [];
+      const computedSubtotal = payload.subtotal !== undefined
+        ? Number(payload.subtotal)
+        : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+      const localOrder = {
+        id: localId,
+        ...payload,
+        items,
+        subtotal: computedSubtotal,
+        status: payload.status || "placed",
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      const list = memoryCache["/orders"] || [];
+      const cleanedList = list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== localId);
+      memoryCache["/orders"] = [localOrder, ...cleanedList];
+      setDiskCache("disk_cache_/orders", JSON.stringify(memoryCache["/orders"])).catch(() => {});
+      notifyCacheUpdate("/orders", memoryCache["/orders"]);
+
+      if (payload.table_number) {
+        const tList = memoryCache["/tables"] || [];
+        const updatedTables = tList.map((t: any) => 
+          isSameTable(t.label, payload.table_number)
+            ? { ...t, status: "occupied" }
+            : t
+        );
+        memoryCache["/tables"] = updatedTables;
+        setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+        notifyCacheUpdate("/tables", updatedTables);
+      }
+
+      const summary = computeLocalSummary();
+      notifyCacheUpdate("/dashboard/summary", summary);
+
+      await enqueueSyncAction("CREATE_ORDER", { ...payload, subtotal: computedSubtotal }, localId);
+      return localOrder;
+    }
   },
   updateOrder: async (id: string, payload: any) => {
     const resolvedId = tempIdMap[id] || id;
@@ -832,12 +881,23 @@ export const api = {
       return updated.find((o: any) => o.id === resolvedId || o.id === id) || { id: resolvedId, ...payload };
     }
 
-    const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
-    const list = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = list.map((o: any) => o.id === resolvedId ? res : o);
-    clearCachePrefix("/tables");
-    clearCachePrefix("/dashboard/summary");
-    return res;
+    try {
+      const res = await req(`/orders/${resolvedId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      const list = memoryCache["/orders"] || [];
+      memoryCache["/orders"] = list.map((o: any) => o.id === resolvedId ? res : o);
+      clearCachePrefix("/tables");
+      clearCachePrefix("/dashboard/summary");
+      return res;
+    } catch (netErr: any) {
+      console.warn("[api.updateOrder] Server update failed, falling back to local edit & sync:", netErr.message);
+      const list = memoryCache["/orders"] || [];
+      const updated = list.map((o: any) => (o.id === resolvedId || o.id === id) ? { ...o, ...payload, updated_at: new Date().toISOString() } : o);
+      memoryCache["/orders"] = updated;
+      setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
+      notifyCacheUpdate("/orders", updated);
+      await enqueueSyncAction("UPDATE_ORDER", { id: resolvedId, ...payload });
+      return updated.find((o: any) => o.id === resolvedId || o.id === id) || { id: resolvedId, ...payload };
+    }
   },
   listOrders: async (status?: string) => {
     if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
@@ -858,14 +918,20 @@ export const api = {
       return { id: resolvedId, status };
     }
 
-    const res = await req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
-    clearCachePrefix("/dashboard/summary");
-    return res;
+    try {
+      const res = await req(`/orders/${resolvedId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      clearCachePrefix("/dashboard/summary");
+      return res;
+    } catch (netErr: any) {
+      api.updateOrderStatusInCache(resolvedId, status);
+      await enqueueSyncAction("UPDATE_ORDER_STATUS", { id: resolvedId, status });
+      return { id: resolvedId, status };
+    }
   },
   
   createBill: async (payload: any) => {
     const isLocal = api.isLocalProcessingMode();
-    if (isLocal) {
+    const handleLocalBill = async () => {
       const localId = "bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const nowIso = new Date().toISOString();
 
@@ -876,7 +942,6 @@ export const api = {
 
       const oList = memoryCache["/orders"] || [];
 
-      // If items not provided in payload, look up from cached order(s)
       if (!items || items.length === 0) {
         if (orderIds.length > 0) {
           const matchedOrders = oList.filter((o: any) => orderIds.includes(o.id));
@@ -954,13 +1019,22 @@ export const api = {
       }, localId);
 
       return localBill;
+    };
+
+    if (isLocal) {
+      return handleLocalBill();
     }
 
-    const res = await req("/bills", { method: "POST", body: JSON.stringify(payload) });
-    const list = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = [res, ...list.filter((b: any) => b.id !== res.id)];
-    clearCachePrefix("/dashboard/summary");
-    return res;
+    try {
+      const res = await req("/bills", { method: "POST", body: JSON.stringify(payload) });
+      const list = memoryCache["/bills"] || [];
+      memoryCache["/bills"] = [res, ...list.filter((b: any) => b.id !== res.id)];
+      clearCachePrefix("/dashboard/summary");
+      return res;
+    } catch (netErr: any) {
+      console.warn("[api.createBill] Server bill creation failed, creating local bill:", netErr.message);
+      return handleLocalBill();
+    }
   },
   markBillPaid: async (idOrBill: string | any, paymentMethod = "UPI") => {
     const passedObj = typeof idOrBill === "object" && idOrBill !== null ? idOrBill : null;
@@ -968,7 +1042,7 @@ export const api = {
     let resolvedId = tempIdMap[rawId] || rawId;
     const isLocal = api.isLocalProcessingMode();
 
-    if (isLocal) {
+    const handleLocalMarkPaid = async () => {
       const bList = (memoryCache["/bills"] || []).filter((b: any) => !String(b.id).startsWith("temp-") || b.id === rawId || b.id === resolvedId);
       const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
       let targetBill: any = null;
@@ -988,7 +1062,6 @@ export const api = {
           const subtotal = Number(b.subtotal ?? b.total ?? 0) || Number(passedObj?.subtotal ?? passedObj?.total ?? 0) || items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
           const total = Number(b.total ?? b.subtotal ?? 0) || Number(passedObj?.total ?? passedObj?.subtotal ?? 0) || subtotal;
 
-          // Always ensure a permanent bill_ ID (never keep temp- ID on paid bill)
           const realBillId = (b.id && !String(b.id).startsWith("temp-"))
             ? b.id
             : (passedObj?.id && !String(passedObj.id).startsWith("temp-"))
@@ -1098,35 +1171,42 @@ export const api = {
       });
 
       return targetBill || { id: resolvedId, status: "paid", payment_method: paymentMethod };
+    };
+
+    if (isLocal) {
+      return handleLocalMarkPaid();
     }
 
-    const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
-    const bList = memoryCache["/bills"] || [];
-    memoryCache["/bills"] = bList.map((b: any) => (b.id === resolvedId || b.id === rawId) ? { ...b, ...res, status: "paid" } : b);
-    
-    // Also mark ONLY the target order(s) as paid in the cached orders
-    const oList = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = oList.map((o: any) => {
-      if (o.id === res.order_id || (res.order_ids && res.order_ids.includes(o.id))) {
-        return { ...o, status: "paid" };
-      }
-      return o;
-    });
-    
-    clearCachePrefix("/dashboard");
-    clearCachePrefix("/tables");
-    clearCachePrefix("/bills");
-    api.dashboardSummary().catch(() => {});
-    return res;
+    try {
+      const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
+      const bList = memoryCache["/bills"] || [];
+      memoryCache["/bills"] = bList.map((b: any) => (b.id === resolvedId || b.id === rawId) ? { ...b, ...res, status: "paid" } : b);
+      
+      const oList = memoryCache["/orders"] || [];
+      memoryCache["/orders"] = oList.map((o: any) => {
+        if (o.id === res.order_id || (res.order_ids && res.order_ids.includes(o.id))) {
+          return { ...o, status: "paid" };
+        }
+        return o;
+      });
+      
+      clearCachePrefix("/dashboard");
+      clearCachePrefix("/tables");
+      clearCachePrefix("/bills");
+      api.dashboardSummary().catch(() => {});
+      return res;
+    } catch (netErr: any) {
+      console.warn("[api.markBillPaid] Server pay request failed, marking paid offline locally:", netErr.message);
+      return handleLocalMarkPaid();
+    }
   },
   settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number) => {
     const isLocal = api.isLocalProcessingMode();
 
-    if (isLocal) {
+    const handleLocalSettle = async () => {
       const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
       const cleanOrderIds = (orderIds || []).filter((id: string) => id && !String(id).startsWith("temp-"));
 
-      // 1. Filter ONLY the active (unpaid/uncompleted) orders currently on this table
       const activeTableOrders = oList.filter((o: any) =>
         (cleanOrderIds.length > 0 ? cleanOrderIds.includes(o.id) : isSameTable(o.table_number, tableNumber)) &&
         o.status !== "paid" && o.status !== "completed" && o.status !== "cancelled" && o.status !== "settled"
@@ -1138,7 +1218,6 @@ export const api = {
 
       const targetOrderIds = ordersToSettle.map((o: any) => o.id);
 
-      // 2. Mark ONLY these target orders as paid
       const updatedOrders = oList.map((o: any) => {
         if (targetOrderIds.includes(o.id) || isSameTable(o.table_number, tableNumber)) {
           return { ...o, status: "paid" };
@@ -1149,7 +1228,6 @@ export const api = {
       setDiskCache("disk_cache_/orders", JSON.stringify(updatedOrders)).catch(() => {});
       notifyCacheUpdate("/orders", updatedOrders);
 
-      // 3. Compute accurate items and subtotal from only the orders being settled
       const combinedItems = ordersToSettle.flatMap((o: any) => o.items || []);
       const computedSubtotal = ordersToSettle.reduce((sum: number, o: any) => {
         const sub = Number(o.subtotal || 0) || (o.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
@@ -1157,7 +1235,6 @@ export const api = {
       }, 0);
       const finalTotal = total !== undefined && total > 0 ? total : computedSubtotal;
 
-      // 4. Update or create bill for this settlement
       const bList = (memoryCache["/bills"] || []).filter((b: any) => !String(b.id).startsWith("temp-"));
       let foundMatchingBill = false;
       const updatedBills = bList.map((b: any) => {
@@ -1197,7 +1274,6 @@ export const api = {
       setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
       notifyCacheUpdate("/bills", updatedBills);
 
-      // 5. Update table status to available in cache
       const tList = memoryCache["/tables"] || [];
       const updatedTables = tList.map((t: any) =>
         isSameTable(t.label, tableNumber)
@@ -1208,7 +1284,6 @@ export const api = {
       setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
       notifyCacheUpdate("/tables", updatedTables);
 
-      // 6. Recalculate local dashboard summary
       const summary = computeLocalSummary();
       notifyCacheUpdate("/dashboard/summary", summary);
 
@@ -1220,30 +1295,39 @@ export const api = {
       });
 
       return { ok: true, table_number: tableNumber, status: "settled" };
+    };
+
+    if (isLocal) {
+      return handleLocalSettle();
     }
 
-    const res = await req("/bills/settle-table", {
-      method: "POST",
-      body: JSON.stringify({
-        table_number: tableNumber,
-        payment_method: paymentMethod,
-        order_ids: orderIds,
-        total
-      })
-    });
-    const oList = memoryCache["/orders"] || [];
-    memoryCache["/orders"] = oList.map((o: any) => {
-      if ((orderIds && orderIds.includes(o.id)) || (!orderIds && String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase())) {
-        return { ...o, status: "paid" };
-      }
-      return o;
-    });
+    try {
+      const res = await req("/bills/settle-table", {
+        method: "POST",
+        body: JSON.stringify({
+          table_number: tableNumber,
+          payment_method: paymentMethod,
+          order_ids: orderIds,
+          total
+        })
+      });
+      const oList = memoryCache["/orders"] || [];
+      memoryCache["/orders"] = oList.map((o: any) => {
+        if ((orderIds && orderIds.includes(o.id)) || (!orderIds && String(o.table_number).toLowerCase() === String(tableNumber).toLowerCase())) {
+          return { ...o, status: "paid" };
+        }
+        return o;
+      });
 
-    clearCachePrefix("/dashboard");
-    clearCachePrefix("/tables");
-    clearCachePrefix("/bills");
-    api.dashboardSummary().catch(() => {});
-    return res;
+      clearCachePrefix("/dashboard");
+      clearCachePrefix("/tables");
+      clearCachePrefix("/bills");
+      api.dashboardSummary().catch(() => {});
+      return res;
+    } catch (netErr: any) {
+      console.warn("[api.settleTable] Server settle request failed, settling table locally offline:", netErr.message);
+      return handleLocalSettle();
+    }
   },
   listBills: async () => {
     if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
@@ -1301,7 +1385,11 @@ export const api = {
   adminRefundPayment: (pid: string, payload?: { refund_reason?: string; cancel_subscription?: boolean }) =>
     req(`/admin/payments/${pid}/refund`, { method: "POST", body: JSON.stringify(payload || {}) }),
   adminBusinessSummary: () => req("/admin/reports/business-summary"),
-  adminExportBusinessReportUrl: () => `${API_URL}/api/admin/reports/export`,
+  adminExportBusinessReportUrl: () => `${BASE}/api/admin/reports/export`,
+  adminGetRestaurantMenu: (tid: string) => req(`/admin/restaurants/${tid}/menu`),
+  adminImportRestaurantMenuJson: (tid: string, payload: { replace_existing?: boolean; data?: any; raw_json?: string }) =>
+    req(`/admin/restaurants/${tid}/menu/import-json`, { method: "POST", body: JSON.stringify(payload) }),
+  adminClearRestaurantMenu: (tid: string) => req(`/admin/restaurants/${tid}/menu`, { method: "DELETE" }),
   
   cancelSubscription: async () => {
     const res = await req("/subscriptions/cancel", { method: "POST" });
@@ -1553,6 +1641,167 @@ export const api = {
   notifyCacheUpdate: (path: string, data: any) => {
     notifyCacheUpdate(path, data);
   },
+  // ---------- END-OF-DAY CASHIER SESSIONS & RECONCILIATION ----------
+  getCurrentCashSession: async () => {
+    try {
+      const res = await req("/cash-sessions/current");
+      if (res && res.active_session) {
+        memoryCache["/cash-sessions/current"] = res.active_session;
+        setDiskCache("disk_cache_/cash-sessions/current", JSON.stringify(res.active_session)).catch(() => {});
+        notifyCacheUpdate("/cash-sessions/current", res.active_session);
+      }
+      return res;
+    } catch (netErr: any) {
+      // Offline fallback: compute local session metrics from memoryCache
+      const cached = memoryCache["/cash-sessions/current"];
+      if (cached && cached.status === "open") {
+        return { has_open_session: true, active_session: cached };
+      }
+      return { has_open_session: false, active_session: null };
+    }
+  },
+
+  openCashSession: async (payload: { opening_float: number; business_date?: string; cashier_name?: string; notes?: string }) => {
+    try {
+      const res = await req("/cash-sessions/open", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (res) {
+        memoryCache["/cash-sessions/current"] = res;
+        setDiskCache("disk_cache_/cash-sessions/current", JSON.stringify(res)).catch(() => {});
+        notifyCacheUpdate("/cash-sessions/current", res);
+      }
+      return res;
+    } catch (netErr: any) {
+      // Offline fallback
+      const localId = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      const nowIso = new Date().toISOString();
+      const localSess = {
+        id: localId,
+        opened_at: nowIso,
+        status: "open",
+        cashier_name: payload.cashier_name || "Cashier",
+        opening_float: Number(payload.opening_float || 0),
+        business_date: payload.business_date || getTodayDateString(),
+        notes: payload.notes || "",
+        created_at: nowIso,
+        expected_cash: Number(payload.opening_float || 0),
+        cash_sales: 0,
+        upi_sales: 0,
+        card_sales: 0,
+        other_sales: 0,
+        gross_sales: 0,
+        net_sales: 0,
+        movements: [],
+      };
+      memoryCache["/cash-sessions/current"] = localSess;
+      setDiskCache("disk_cache_/cash-sessions/current", JSON.stringify(localSess)).catch(() => {});
+      notifyCacheUpdate("/cash-sessions/current", localSess);
+
+      await enqueueSyncAction("OPEN_CASH_SESSION", payload, localId);
+      return localSess;
+    }
+  },
+
+  recordCashMovement: async (payload: {
+    type: "cash_in" | "cash_out" | "cash_drop";
+    amount: number;
+    reason: string;
+    reference?: string;
+    session_id?: string;
+  }) => {
+    try {
+      const res = await req("/cash-sessions/movement", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      return res;
+    } catch (netErr: any) {
+      // Offline fallback
+      const localId = "mov_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      const localMov = {
+        id: localId,
+        ...payload,
+        created_at: new Date().toISOString(),
+      };
+      const activeSess = memoryCache["/cash-sessions/current"];
+      if (activeSess) {
+        activeSess.movements = [...(activeSess.movements || []), localMov];
+        if (payload.type === "cash_in") activeSess.cash_in_total = (activeSess.cash_in_total || 0) + Number(payload.amount);
+        if (payload.type === "cash_out") activeSess.cash_out_total = (activeSess.cash_out_total || 0) + Number(payload.amount);
+        if (payload.type === "cash_drop") activeSess.cash_drop_total = (activeSess.cash_drop_total || 0) + Number(payload.amount);
+        activeSess.expected_cash = Number(activeSess.opening_float || 0) + Number(activeSess.cash_sales || 0) + Number(activeSess.cash_in_total || 0) - Number(activeSess.cash_out_total || 0) - Number(activeSess.cash_drop_total || 0);
+        notifyCacheUpdate("/cash-sessions/current", activeSess);
+      }
+      await enqueueSyncAction("RECORD_CASH_MOVEMENT", payload, localId);
+      return localMov;
+    }
+  },
+
+  closeCashSession: async (payload: {
+    counted_cash?: number;
+    actual_cash_counted?: number;
+    denominations?: Record<string, number>;
+    cash_denominations?: Record<string, number>;
+    actual_upi?: number;
+    actual_card?: number;
+    actual_other?: number;
+    reconciled_upi_count?: number;
+    reconciled_upi_total?: number;
+    reconciled_card_count?: number;
+    reconciled_card_total?: number;
+    discrepancy_reason?: string;
+    closing_notes?: string;
+  }) => {
+    const countedCashVal = payload.counted_cash ?? payload.actual_cash_counted ?? 0;
+    const bodyPayload = {
+      ...payload,
+      counted_cash: countedCashVal,
+      actual_upi: payload.actual_upi ?? payload.reconciled_upi_total,
+      actual_card: payload.actual_card ?? payload.reconciled_card_total,
+      denominations: payload.denominations ?? payload.cash_denominations,
+    };
+    try {
+      const res = await req("/cash-sessions/close", {
+        method: "POST",
+        body: JSON.stringify(bodyPayload),
+      });
+      memoryCache["/cash-sessions/current"] = null;
+      delDiskCache("disk_cache_/cash-sessions/current").catch(() => {});
+      notifyCacheUpdate("/cash-sessions/current", null);
+      return res;
+    } catch (netErr: any) {
+      // Offline fallback
+      const activeSess = memoryCache["/cash-sessions/current"] || {};
+      const closedDoc = {
+        ...activeSess,
+        status: "closed",
+        closed_at: new Date().toISOString(),
+        counted_cash: countedCashVal,
+        denominations: bodyPayload.denominations,
+        actual_upi: bodyPayload.actual_upi,
+        actual_card: bodyPayload.actual_card,
+        actual_other: payload.actual_other,
+        discrepancy_reason: payload.discrepancy_reason,
+        closing_notes: payload.closing_notes,
+      };
+      memoryCache["/cash-sessions/current"] = null;
+      delDiskCache("disk_cache_/cash-sessions/current").catch(() => {});
+      notifyCacheUpdate("/cash-sessions/current", null);
+
+      await enqueueSyncAction("CLOSE_CASH_SESSION", bodyPayload, activeSess.id);
+      return closedDoc;
+    }
+  },
+
+  listCashSessionsHistory: (limit = 50) => req(`/cash-sessions/history?limit=${limit}`),
+  getCashSessionDetail: (sessionId: string) => req(`/cash-sessions/${sessionId}`),
+  approveCashSessionDiscrepancy: (sessionId: string, payload: { notes?: string; approval_notes?: string }) => {
+    const bodyPayload = { notes: payload.notes || payload.approval_notes || "" };
+    return req(`/cash-sessions/${sessionId}/approve`, { method: "POST", body: JSON.stringify(bodyPayload) });
+  },
+
   hasFeature: (featureName: string): boolean => {
     const sub = memoryCache["/subscriptions/mine"];
     if (!sub) return true; // Default permissive on boot while caching
@@ -1567,13 +1816,13 @@ export const api = {
       if (plan.includes("growth")) {
         const growthFeatures = [
           "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup",
-          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "advanced_reports", "inventory", "expenses", "ai_menu"
+          "staff_management", "multi_user", "realtime_sync", "notifications", "analytics", "advanced_reports", "inventory", "expenses", "ai_menu", "cash_closing"
         ];
         return growthFeatures.includes(featureName);
       }
       // Starter Tier
       const starterFeatures = [
-        "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup"
+        "billing", "menu_crud", "table_crud", "basic_orders", "thermal_printing", "gst", "cloud_backup", "cash_closing"
       ];
       return starterFeatures.includes(featureName);
     }
@@ -1606,6 +1855,10 @@ function updateCacheFromSync(type: SyncActionType, localId: string | undefined, 
     api.updateCachedOrder(localId, realObj);
   } else if (type === "CREATE_BILL") {
     api.updateCachedBill(localId, realObj);
+  } else if (type === "OPEN_CASH_SESSION") {
+    memoryCache["/cash-sessions/current"] = realObj;
+    setDiskCache("disk_cache_/cash-sessions/current", JSON.stringify(realObj)).catch(() => {});
+    notifyCacheUpdate("/cash-sessions/current", realObj);
   }
 }
 

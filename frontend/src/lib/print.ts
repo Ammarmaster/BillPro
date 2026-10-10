@@ -1229,3 +1229,228 @@ export async function clearDefaultPrinter(): Promise<void> {
     await storage.removeItem("lumina_default_printer_url");
   } catch {}
 }
+
+export function closingReportHtml(session: any, restaurant?: any): string {
+  const r = restaurant || session.restaurant_snapshot || {};
+  const dateObj = new Date(session.closed_at || session.opened_at || Date.now());
+  const dateStr = dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const openTime = session.opened_at ? new Date(session.opened_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : "-";
+  const closeTime = session.closed_at ? new Date(session.closed_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : "In Progress";
+  
+  const expectedCash = Number(session.expected_cash || 0);
+  const countedCash = Number(session.actual_cash_counted || session.counted_cash || 0);
+  const variance = Number(session.discrepancy_amount || (countedCash - expectedCash));
+  const denoms = session.cash_denominations || {};
+
+  const denomRows = [
+    { label: "₹500", count: denoms["500"] || 0, val: (denoms["500"] || 0) * 500 },
+    { label: "₹200", count: denoms["200"] || 0, val: (denoms["200"] || 0) * 200 },
+    { label: "₹100", count: denoms["100"] || 0, val: (denoms["100"] || 0) * 100 },
+    { label: "₹50",  count: denoms["50"] || 0,  val: (denoms["50"] || 0) * 50 },
+    { label: "₹20",  count: denoms["20"] || 0,  val: (denoms["20"] || 0) * 20 },
+    { label: "₹10",  count: denoms["10"] || 0,  val: (denoms["10"] || 0) * 10 },
+    { label: "Coins", count: "-", val: denoms["coins"] || 0 },
+  ].filter(d => d.val > 0);
+
+  return `
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8" />
+    <style>
+      @page { margin: 4mm 4mm 15mm 4mm; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #111; padding: 8px; max-width: 320px; margin: 0 auto; font-size: 12px; line-height: 1.3; }
+      .center { text-align: center; }
+      .l { text-align: left; }
+      .r { text-align: right; }
+      h1 { font-size: 16px; margin: 2px 0; text-transform: uppercase; font-weight: 900; text-align: center; letter-spacing: 0.5px; }
+      h2 { font-size: 13px; margin: 6px 0 2px; text-transform: uppercase; font-weight: 800; text-align: center; color: #333; }
+      p.sub { font-size: 10.5px; color: #444; margin: 1px 0; text-align: center; }
+      hr { border: none; border-top: 1px dashed #555; margin: 6px 0; }
+      .meta { display: flex; justify-content: space-between; font-size: 11px; color: #333; margin: 2px 0; }
+      table { width: 100%; border-collapse: collapse; margin-top: 3px; }
+      th { font-size: 10.5px; font-weight: 800; border-bottom: 1px solid #222; padding: 2px 0; text-transform: uppercase; }
+      td { padding: 3px 0; font-size: 11.5px; }
+      .bold-row td { font-weight: 800; border-top: 1px solid #333; padding: 4px 0; }
+      .variance-balanced { color: #047857; font-weight: 900; }
+      .variance-shortage { color: #B91C1C; font-weight: 900; }
+      .variance-overage { color: #D97706; font-weight: 900; }
+      .footer { text-align: center; margin-top: 8px; font-size: 10px; color: #666; font-weight: 600; }
+      .sign-line { margin-top: 25px; border-top: 1px solid #888; width: 140px; text-align: center; font-size: 10px; color: #444; }
+    </style></head><body>
+      <h1>${escapeHtml(r.name || "RESTAURANT")}</h1>
+      ${r.address ? `<p class="sub">${escapeHtml(r.address)}</p>` : ""}
+      ${r.phone ? `<p class="sub">Ph: ${escapeHtml(r.phone)}${r.gst ? ` | GST: ${escapeHtml(r.gst)}` : ""}</p>` : ""}
+      <hr />
+      <h2>END-OF-DAY CLOSING REPORT</h2>
+      <div class="meta">
+        <span><b>Date:</b> ${escapeHtml(session.business_date || dateStr)}</span>
+        <span><b>Shift ID:</b> #${String(session.id || session._id || "SESSION").slice(-6).toUpperCase()}</span>
+      </div>
+      <div class="meta">
+        <span><b>Cashier:</b> ${escapeHtml(session.cashier_name || "Staff")}</span>
+        <span>${escapeHtml(openTime)} - ${escapeHtml(closeTime)}</span>
+      </div>
+      <hr />
+
+      <div style="font-weight: 800; font-size: 11px; margin-bottom: 2px;">CASH DRAWER RECONCILIATION</div>
+      <table>
+        <tr><td>Opening Float</td><td class="r">${formatCurrency(session.opening_float || 0)}</td></tr>
+        <tr><td>(+) Cash Sales (${session.cash_sales_count || 0} bills)</td><td class="r">${formatCurrency(session.total_cash_sales || 0)}</td></tr>
+        ${Number(session.cash_in || 0) > 0 ? `<tr><td>(+) Cash In (Additions)</td><td class="r">${formatCurrency(session.cash_in)}</td></tr>` : ""}
+        ${Number(session.cash_refunds || 0) > 0 ? `<tr><td>(-) Cash Refunds</td><td class="r">-${formatCurrency(session.cash_refunds)}</td></tr>` : ""}
+        ${Number(session.cash_out || 0) > 0 ? `<tr><td>(-) Cash Out (Payouts)</td><td class="r">-${formatCurrency(session.cash_out)}</td></tr>` : ""}
+        ${Number(session.cash_drop || 0) > 0 ? `<tr><td>(-) Safe Drops</td><td class="r">-${formatCurrency(session.cash_drop)}</td></tr>` : ""}
+        <tr class="bold-row"><td>Expected Drawer Cash</td><td class="r">${formatCurrency(expectedCash)}</td></tr>
+        <tr><td>Counted Cash</td><td class="r"><b>${formatCurrency(countedCash)}</b></td></tr>
+        <tr class="bold-row">
+          <td>Variance (Discrepancy)</td>
+          <td class="r ${variance === 0 ? "variance-balanced" : (variance < 0 ? "variance-shortage" : "variance-overage")}">
+            ${variance === 0 ? "BALANCED (₹0.00)" : (variance < 0 ? `SHORTAGE (-${formatCurrency(Math.abs(variance))})` : `OVERAGE (+${formatCurrency(variance)})`)}
+          </td>
+        </tr>
+      </table>
+      <hr />
+
+      ${denomRows.length > 0 ? `
+        <div style="font-weight: 800; font-size: 11px; margin-bottom: 2px;">DENOMINATION BREAKDOWN</div>
+        <table>
+          ${denomRows.map(d => `<tr><td>${d.label}${d.count !== "-" ? ` x ${d.count}` : ""}</td><td class="r">${formatCurrency(d.val)}</td></tr>`).join("")}
+          <tr class="bold-row"><td>Total Counted</td><td class="r">${formatCurrency(countedCash)}</td></tr>
+        </table>
+        <hr />
+      ` : ""}
+
+      <div style="font-weight: 800; font-size: 11px; margin-bottom: 2px;">COLLECTIONS SUMMARY</div>
+      <table>
+        <tr><td>Cash Total</td><td class="r">${formatCurrency(session.total_cash_sales || 0)}</td></tr>
+        <tr><td>UPI Total (${session.upi_sales_count || 0} bills)</td><td class="r">${formatCurrency(session.total_upi_sales || 0)}</td></tr>
+        <tr><td>Card Total (${session.card_sales_count || 0} bills)</td><td class="r">${formatCurrency(session.total_card_sales || 0)}</td></tr>
+        ${Number(session.total_other_sales || 0) > 0 ? `<tr><td>Other Methods</td><td class="r">${formatCurrency(session.total_other_sales)}</td></tr>` : ""}
+        <tr class="bold-row"><td>Gross Sales</td><td class="r">${formatCurrency(session.gross_sales || 0)}</td></tr>
+        <tr><td>Total Taxes (GST)</td><td class="r">${formatCurrency(session.total_taxes || 0)}</td></tr>
+        <tr><td>Total Discounts</td><td class="r">-${formatCurrency(session.total_discounts || 0)}</td></tr>
+        <tr class="bold-row"><td>Net Revenue</td><td class="r">${formatCurrency(session.net_sales || session.gross_sales || 0)}</td></tr>
+        <tr><td>Settled Bills</td><td class="r">${session.paid_bills_count || 0}</td></tr>
+        ${Number(session.unpaid_bills_count || 0) > 0 ? `<tr><td style="color:#B91C1C;">Open / Unpaid Bills</td><td class="r" style="color:#B91C1C;">${session.unpaid_bills_count} (${formatCurrency(session.unpaid_bills_amount || 0)})</td></tr>` : ""}
+      </table>
+      <hr />
+
+      ${session.discrepancy_reason ? `
+        <div style="font-size: 10.5px; margin: 4px 0;">
+          <b>Discrepancy Note:</b> ${escapeHtml(session.discrepancy_reason)}
+        </div>
+      ` : ""}
+
+      ${session.is_approved ? `
+        <div style="font-size: 10.5px; color: #047857; margin: 4px 0;">
+          <b>Manager Approved:</b> ${escapeHtml(session.approved_by_name || "Manager")} ${session.approval_notes ? `(${escapeHtml(session.approval_notes)})` : ""}
+        </div>
+      ` : ""}
+
+      <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+        <div class="sign-line">Cashier Signature</div>
+        <div class="sign-line">Manager Signature</div>
+      </div>
+
+      <p class="footer">Printed from EzBill POS ERP</p>
+      <div style="height: 25px;"></div>
+    </body></html>
+  `;
+}
+
+export async function formatClosingReceipt(session: any, width: number = 80): Promise<string> {
+  const maxChars = width === 58 ? 32 : 48;
+  const divider = "-".repeat(maxChars);
+  const lines: string[] = [];
+
+  const r = session.restaurant_snapshot || {};
+  lines.push(`[C]<b><font size='big'>${(r.name || "RESTAURANT").toUpperCase()}</font></b>\n`);
+  lines.push(`[C]<b>CLOSING SHIFT REPORT</b>\n`);
+  lines.push(`[C]${divider}\n`);
+
+  lines.push(`[L]Date: ${session.business_date || new Date().toISOString().split("T")[0]}[R]Shift: #${String(session.id || "000").slice(-6).toUpperCase()}\n`);
+  lines.push(`[L]Cashier: ${session.cashier_name || "Staff"}\n`);
+  lines.push(`[C]${divider}\n`);
+
+  const expectedCash = Number(session.expected_cash || 0);
+  const countedCash = Number(session.actual_cash_counted || session.counted_cash || 0);
+  const variance = Number(session.discrepancy_amount || (countedCash - expectedCash));
+
+  lines.push(`[L]Opening Float[R]${formatThermalMoney(session.opening_float || 0)}\n`);
+  lines.push(`[L](+) Cash Sales[R]${formatThermalMoney(session.total_cash_sales || 0)}\n`);
+  if (Number(session.cash_in || 0) > 0) lines.push(`[L](+) Cash In[R]${formatThermalMoney(session.cash_in)}\n`);
+  if (Number(session.cash_refunds || 0) > 0) lines.push(`[L](-) Refunds[R]-${formatThermalMoney(session.cash_refunds)}\n`);
+  if (Number(session.cash_out || 0) > 0) lines.push(`[L](-) Cash Out[R]-${formatThermalMoney(session.cash_out)}\n`);
+  if (Number(session.cash_drop || 0) > 0) lines.push(`[L](-) Safe Drop[R]-${formatThermalMoney(session.cash_drop)}\n`);
+  lines.push(`[C]${divider}\n`);
+
+  lines.push(`[L]<b>Expected Cash</b>[R]<b>Rs.${formatThermalMoney(expectedCash)}</b>\n`);
+  lines.push(`[L]<b>Counted Cash</b>[R]<b>Rs.${formatThermalMoney(countedCash)}</b>\n`);
+  const varText = variance === 0 ? "Rs.0.00 (Balanced)" : (variance < 0 ? `-Rs.${formatThermalMoney(Math.abs(variance))} (Short)` : `+Rs.${formatThermalMoney(variance)} (Over)`);
+  lines.push(`[L]<b>Variance</b>[R]<b>${varText}</b>\n`);
+  lines.push(`[C]${divider}\n`);
+
+  lines.push(`[L]UPI Total[R]Rs.${formatThermalMoney(session.total_upi_sales || 0)}\n`);
+  lines.push(`[L]Card Total[R]Rs.${formatThermalMoney(session.total_card_sales || 0)}\n`);
+  lines.push(`[L]<b>Gross Sales</b>[R]<b>Rs.${formatThermalMoney(session.gross_sales || 0)}</b>\n`);
+  lines.push(`[L]Settled Bills[R]${session.paid_bills_count || 0}\n`);
+  lines.push(`[C]${divider}\n`);
+  lines.push(`[C]End of Day Close · EzBill POS\n`);
+  lines.push(`\n\n\n\n`);
+
+  return lines.join("");
+}
+
+export async function printClosingReport(session: any, restaurant?: any): Promise<boolean> {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  const settings = await getPrinterSettings("cashier");
+  
+  if (settings && settings.type !== "none" && settings.type !== "system") {
+    const payload = await formatClosingReceipt(session, settings.width);
+    if (Platform.OS === "web") {
+      if (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected)) {
+        try {
+          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+          const success = await sendWebBluetoothPrint(escPosBytes);
+          if (success) return true;
+        } catch {}
+      }
+      const html = closingReportHtml(session, restaurant);
+      printViaIframe(html);
+      return true;
+    }
+
+    if (ThermalPrinterModule) {
+      try {
+        if (settings.type === "network") {
+          await ThermalPrinterModule.printTcp({
+            payload,
+            ip: (settings.address || "").trim(),
+            port: parseInt(settings.port || "9100"),
+            autoCut: true,
+            mmFeedPaper: 15,
+          });
+          return true;
+        } else if (settings.type === "bluetooth") {
+          await ThermalPrinterModule.printBluetooth({
+            payload,
+            macAddress: (settings.address || "").trim(),
+            printerWidthMM: settings.width || 58,
+            printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+            mmFeedPaper: 15,
+          });
+          return true;
+        }
+      } catch {}
+    }
+  }
+
+  // Fallback to HTML print dialog / PDF
+  const html = closingReportHtml(session, restaurant);
+  if (Platform.OS === "web") {
+    printViaIframe(html);
+    return true;
+  }
+  await Print.printAsync({ html });
+  return true;
+}
+

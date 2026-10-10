@@ -181,6 +181,19 @@ export default function More() {
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
+            {/* 6.5. Cash Closing & End of Day */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/cash-closing")} testID="manage-cash-closing-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="wallet" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Cash Closing & EOD</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Shift closing, cash counting & daily reconciliation</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
             {/* 7. Printer Settings */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/printer-settings")} testID="manage-printers-btn">
               <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>

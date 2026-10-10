@@ -187,6 +187,7 @@ export default function AppLayout() {
       <Tabs.Screen name="subscribe" options={{ href: null, title: "Subscription" }} />
       <Tabs.Screen name="legal" options={{ href: null, title: "Legal & Support" }} />
       <Tabs.Screen name="printer-settings" options={{ href: null, title: "Printer Settings" }} />
+      <Tabs.Screen name="cash-closing" options={{ href: null, title: "Cash Closing & EOD" }} />
       <Tabs.Screen name="notifications" options={{ href: null, title: "Notifications" }} />
       <Tabs.Screen name="notification-preferences" options={{ href: null, title: "Notification Settings" }} />
       <Tabs.Screen name="menu-ai-import" options={{ href: null, title: "Scan Physical Menu" }} />

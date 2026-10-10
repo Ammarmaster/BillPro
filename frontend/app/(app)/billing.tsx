@@ -13,6 +13,7 @@ import { BillingEngine } from "@/src/lib/billingEngine";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
+import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
 import QRCode from "qrcode";
 
 function base64Encode(str: string): string {
@@ -558,10 +559,13 @@ export default function Billing() {
             <Text style={[styles.title, { color: theme.onSurface }]}>Bill #{billNo}</Text>
             <Text style={[styles.subTitle, { color: theme.onSurfaceSecondary }]}>{tableName} · {dateStr}</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: isPaid ? "#DCFCE7" : "#FEF3C7" }]}>
-            <Text style={[styles.statusBadgeText, { color: isPaid ? "#10B981" : "#F59E0B" }]}>
-              {isPaid ? "PAID" : "OPEN"}
-            </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <SyncStatusIndicator compact />
+            <View style={[styles.statusBadge, { backgroundColor: isPaid ? "#DCFCE7" : "#FEF3C7" }]}>
+              <Text style={[styles.statusBadgeText, { color: isPaid ? "#10B981" : "#F59E0B" }]}>
+                {isPaid ? "PAID" : "OPEN"}
+              </Text>
+            </View>
           </View>
         </View>
 
