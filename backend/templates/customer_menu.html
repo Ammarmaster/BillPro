@@ -514,10 +514,11 @@
       display: flex;
       gap: 16px;
       align-items: center;
+      justify-content: space-between;
+      min-height: 120px;
       transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: var(--card-shadow);
       position: relative;
-      overflow: hidden;
     }
 
     .gourmet-card:hover {
@@ -533,6 +534,7 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      gap: 6px;
     }
 
     .dish-type-indicator {
@@ -595,7 +597,7 @@
       display: flex;
       align-items: baseline;
       gap: 6px;
-      margin-top: 8px;
+      margin-top: 6px;
     }
 
     .gourmet-price {
@@ -606,15 +608,24 @@
       letter-spacing: -0.3px;
     }
 
+    /* Gourmet Right Media Column */
+    .gourmet-media-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      flex-shrink: 0;
+      width: 104px;
+    }
+
     .gourmet-media-box {
       position: relative;
-      width: 96px;
-      height: 96px;
+      width: 104px;
+      height: 94px;
       border-radius: var(--radius-md);
       overflow: hidden;
       background: var(--surface-sec);
       border: 1.5px solid var(--border);
-      flex-shrink: 0;
       box-shadow: 0 4px 12px rgba(180, 140, 80, 0.08);
     }
 
@@ -629,27 +640,29 @@
       transform: scale(1.05);
     }
 
-    .gourmet-action-wrapper {
-      position: absolute;
-      bottom: 12px;
-      right: 14px;
-      z-index: 2;
+    .gourmet-action-container {
+      margin-top: -16px;
+      z-index: 4;
+      display: flex;
+      justify-content: center;
+      width: 100%;
     }
 
     /* Luxury Golden Add Button */
     .btn-add-dish {
-      background: var(--brand-soft);
-      border: 1.5px solid rgba(217, 119, 6, 0.45);
+      background: #FFFFFF;
+      border: 1.5px solid var(--brand);
       color: var(--brand-dark);
       font-family: var(--font-display);
       font-size: 12px;
       font-weight: 800;
-      padding: 7px 18px;
+      padding: 6px 18px;
       border-radius: var(--radius-full);
       cursor: pointer;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       letter-spacing: 0.6px;
-      box-shadow: 0 2px 8px rgba(217, 119, 6, 0.12);
+      box-shadow: 0 4px 12px rgba(217, 119, 6, 0.16), 0 2px 4px rgba(0, 0, 0, 0.06);
+      white-space: nowrap;
     }
 
     .btn-add-dish:hover {
@@ -660,6 +673,10 @@
       transform: scale(1.04);
     }
 
+    .btn-add-dish:active {
+      transform: scale(0.96);
+    }
+
     /* Luxury Quantity Stepper */
     .luxury-stepper {
       display: inline-flex;
@@ -668,7 +685,8 @@
       border-radius: var(--radius-full);
       overflow: hidden;
       box-shadow: var(--brand-glow);
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      border: 1.5px solid rgba(255, 255, 255, 0.4);
+      height: 30px;
     }
 
     .stepper-btn {
@@ -677,8 +695,8 @@
       color: #FFFFFF;
       font-size: 15px;
       font-weight: 900;
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 30px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -687,7 +705,7 @@
     }
 
     .stepper-btn:hover {
-      background: rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.22);
     }
 
     .stepper-btn:active {
@@ -699,7 +717,7 @@
       font-family: var(--font-display);
       font-weight: 800;
       font-size: 13px;
-      min-width: 22px;
+      min-width: 20px;
       text-align: center;
     }
 
@@ -1161,6 +1179,73 @@
 
     @keyframes spinLoader {
       to { transform: rotate(360deg); }
+    }
+
+    /* Mobile Responsiveness Enhancements */
+    @media (max-width: 480px) {
+      .luxury-header {
+        padding: 12px 16px;
+      }
+      .brand-cluster {
+        gap: 10px;
+      }
+      .restaurant-logo-frame {
+        width: 44px;
+        height: 44px;
+      }
+      .restaurant-headline {
+        font-size: 17px;
+      }
+      .search-zone {
+        padding: 12px 16px 4px;
+      }
+      .diet-filters-row {
+        padding: 6px 16px 4px;
+      }
+      .category-scroll-strip {
+        padding: 8px 16px 12px;
+      }
+      .menu-showcase {
+        padding: 6px 16px 16px;
+      }
+      .gourmet-card {
+        padding: 12px 14px;
+        gap: 12px;
+        border-radius: var(--radius-md);
+      }
+      .gourmet-media-col {
+        width: 96px;
+      }
+      .gourmet-media-box {
+        width: 96px;
+        height: 88px;
+        border-radius: var(--radius-sm);
+      }
+      .gourmet-title {
+        font-size: 15px;
+      }
+      .gourmet-desc {
+        font-size: 11px;
+      }
+      .gourmet-price {
+        font-size: 16px;
+      }
+      .btn-add-dish {
+        padding: 5px 14px;
+        font-size: 11px;
+      }
+      .luxury-stepper {
+        height: 28px;
+      }
+      .stepper-btn {
+        width: 26px;
+        height: 28px;
+        font-size: 14px;
+      }
+      .stepper-value {
+        font-size: 12px;
+        min-width: 18px;
+      }
     }
   </style>
 </head>
@@ -1656,10 +1741,12 @@
               <span class="gourmet-price">₹${Math.round(item.price)}</span>
             </div>
           </div>
-          <div class="gourmet-media-box">
-            <img src="${imgSrc}" class="gourmet-photo" alt="${item.name}" loading="lazy">
+          <div class="gourmet-media-col">
+            <div class="gourmet-media-box">
+              <img src="${imgSrc}" class="gourmet-photo" alt="${item.name}" loading="lazy">
+            </div>
+            ${actionBlock ? `<div class="gourmet-action-container">${actionBlock}</div>` : ''}
           </div>
-          <div class="gourmet-action-wrapper">${actionBlock}</div>
         `;
         container.appendChild(card);
       });

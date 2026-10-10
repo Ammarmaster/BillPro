@@ -149,14 +149,38 @@ export default function TablesScreen() {
             contentContainerStyle={{ paddingTop: spacing.md, paddingBottom: spacing.xxxl, gap: spacing.md }}
             renderItem={({ item }) => (
               <View style={styles.card} testID={`table-${item.id}`}>
-                <Pressable onPress={() => setQrTable(item)} style={styles.qrIcon} hitSlop={8}>
-                  <Ionicons name="qr-code-outline" size={18} color={colors.brand} />
-                </Pressable>
-                <Text style={styles.cardLabel}>Table {item.label}</Text>
-                <Text style={styles.cardSeats}>{item.seats} seats</Text>
-                <Pressable onPress={() => del(item.id)} style={styles.trash} testID={`table-delete-${item.id}`} hitSlop={8}>
-                  <Ionicons name="trash" size={16} color={colors.onError} />
-                </Pressable>
+                {/* Top Action Row: QR Code & Delete Buttons */}
+                <View style={styles.cardTopBar}>
+                  <Pressable 
+                    onPress={() => setQrTable(item)} 
+                    style={({ pressed }) => [styles.qrActionBtn, pressed && { opacity: 0.7 }]} 
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    testID={`table-qr-btn-${item.id}`}
+                  >
+                    <Ionicons name="qr-code" size={15} color={colors.brand} />
+                    <Text style={styles.qrActionText}>QR</Text>
+                  </Pressable>
+
+                  <Pressable 
+                    onPress={() => del(item.id)} 
+                    style={({ pressed }) => [styles.trashActionBtn, pressed && { opacity: 0.7 }]} 
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    testID={`table-delete-${item.id}`}
+                  >
+                    <Ionicons name="trash-outline" size={15} color={colors.onError} />
+                  </Pressable>
+                </View>
+
+                {/* Center Table Details */}
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardLabel} numberOfLines={2} ellipsizeMode="tail">
+                    Table {item.label}
+                  </Text>
+                  <View style={styles.seatsChip}>
+                    <Ionicons name="person-outline" size={12} color={colors.brand} />
+                    <Text style={styles.cardSeats}>{item.seats} seats</Text>
+                  </View>
+                </View>
               </View>
             )}
           />
@@ -202,9 +226,9 @@ export default function TablesScreen() {
 
         {qrTable && (() => {
           const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
-          const tid = tenantId || user?.tenant_id || "undefined";
-          const tableTarget = qrTable.custom_qr ? qrTable.custom_qr : qrTable.label;
-          const targetUrl = `${backendBase}/menu/${tid}/${tableTarget}`;
+          const tid = tenantId || user?.tenant_id || api.getCachedRestaurant()?.id || "undefined";
+          const tableTarget = qrTable.custom_qr ? qrTable.custom_qr : (qrTable.label || qrTable.id);
+          const targetUrl = `${backendBase}/menu/${encodeURIComponent(tid)}/${encodeURIComponent(tableTarget)}`;
 
           return (
             <AttractiveQRStandeeModal
@@ -242,11 +266,80 @@ const styles = StyleSheet.create({
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.brand },
   addBtnText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
-  card: { flex: 1, aspectRatio: 1.4, padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, justifyContent: "center" },
-  cardLabel: { color: colors.onSurface, fontSize: 20, fontWeight: "700", textAlign: "center" },
-  cardSeats: { color: colors.brand, fontSize: 13, marginTop: 4, fontWeight: "600", textAlign: "center" },
-  trash: { position: "absolute", top: 8, right: 8, padding: 6 },
-  qrIcon: { position: "absolute", top: 8, left: 8, padding: 6 },
+  card: { 
+    flex: 1, 
+    aspectRatio: 1.35, 
+    padding: spacing.md, 
+    backgroundColor: colors.surfaceSecondary, 
+    borderRadius: radius.lg, 
+    borderWidth: 1, 
+    borderColor: colors.border, 
+    justifyContent: "space-between",
+    minHeight: 110,
+  },
+  cardTopBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    zIndex: 10,
+  },
+  qrActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(99, 91, 255, 0.12)",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "rgba(99, 91, 255, 0.25)",
+    zIndex: 10,
+  },
+  qrActionText: {
+    color: colors.brand,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  trashActionBtn: {
+    padding: 6,
+    borderRadius: radius.sm,
+    backgroundColor: "rgba(220, 38, 38, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  cardBody: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  cardLabel: { 
+    color: colors.onSurface, 
+    fontSize: 17, 
+    fontWeight: "800", 
+    textAlign: "center",
+    letterSpacing: -0.2,
+  },
+  seatsChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 5,
+    backgroundColor: "rgba(99, 91, 255, 0.06)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  cardSeats: { 
+    color: colors.brand, 
+    fontSize: 12, 
+    fontWeight: "700", 
+    textAlign: "center",
+  },
   err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end" },
   modalCard: { backgroundColor: colors.surfaceSecondary, padding: spacing.xl, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, gap: spacing.md },

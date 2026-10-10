@@ -4843,17 +4843,23 @@ async def serve_customer_menu(tenant_id: str, table_label: Optional[str] = None)
         table_id = ""
         table_num = ""
         if table_label:
+            cleaned_label = table_label.strip()
             table = await db.tables.find_one({
                 "tenant_id": tenant_id,
                 "is_deleted": {"$ne": True},
-                "$or": [{"id": table_label}, {"label": table_label}, {"custom_qr": table_label}]
+                "$or": [
+                    {"id": cleaned_label},
+                    {"label": cleaned_label},
+                    {"label": {"$regex": f"^{re.escape(cleaned_label)}$", "$options": "i"}},
+                    {"custom_qr": cleaned_label}
+                ]
             })
             if table:
                 table_id = table.get("id", "")
                 table_num = table.get("label", "")
             else:
-                table_id = table_label
-                table_num = table_label
+                table_id = cleaned_label
+                table_num = cleaned_label
         
         template_path = Path(__file__).parent / "templates" / "customer_menu.html"
         with open(template_path, "r", encoding="utf-8") as f:
