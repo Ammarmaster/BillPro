@@ -36,9 +36,29 @@ export default function WaiterScreen() {
   const { table: tableParam } = useLocalSearchParams<{ table?: string }>();
   const { isDesktop, isLargeDesktop } = useResponsive();
 
+  const dedupeTables = (tbls: Table[]): Table[] => {
+    if (!Array.isArray(tbls)) return [];
+    const seen = new Set<string>();
+    return tbls.filter(t => {
+      const k = String(t.label || t.id).trim().toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+
   const [cats, setCats] = useState<Cat[]>(() => api.getCachedCategories() || []);
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
-  const [tables, setTables] = useState<Table[]>(() => api.getCachedTables() || []);
+  const [tables, setTables] = useState<Table[]>(() => {
+    const raw = api.getCachedTables() || [];
+    const seen = new Set<string>();
+    return raw.filter((t: any) => {
+      const k = String(t.label || t.id).trim().toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  });
   const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
   
@@ -54,7 +74,7 @@ export default function WaiterScreen() {
     const unsubscribe = subscribeToCache((path: string, data: any) => {
       if (path === "/categories" && data) setCats(data);
       if (path === "/menu-items" && data) setItems(data);
-      if (path === "/tables" && data) setTables(data);
+      if (path === "/tables" && data) setTables(dedupeTables(data));
       if (path === "/orders" && data) setOrders(data);
       if (path === "/bills" && data) setBills(data);
     });
@@ -141,7 +161,7 @@ export default function WaiterScreen() {
         api.listTables().catch(() => null),
         api.listOrders().catch(() => null),
       ]);
-      if (t && t.length > 0) setTables(t);
+      if (t && t.length > 0) setTables(dedupeTables(t));
       if (o) setOrders(o);
 
       // Background lazy sync for menu and bills without blocking tables UI
@@ -214,15 +234,20 @@ export default function WaiterScreen() {
     });
   }, [subscribe]);
 
-// Table number matching normalizer to guarantee table orders are never lost
+// Table number matching normalizer: strips only "Table" prefix, preserving distinct prefixes like T-1, T-2, A1
 const normalizeTable = (val: string | undefined | null) => {
   if (!val) return "";
-  return String(val).toLowerCase().replace("table", "").replace("t", "").replace("-", "").trim();
+  let s = String(val).trim().toLowerCase();
+  s = s.replace(/^(table|tbl)[\s\-_:]*/i, "");
+  s = s.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+  return s;
 };
 
 const isSameTable = (a: string | undefined | null, b: string | undefined | null) => {
   if (!a || !b) return false;
-  if (String(a).toLowerCase().trim() === String(b).toLowerCase().trim()) return true;
+  const strA = String(a).trim().toLowerCase();
+  const strB = String(b).trim().toLowerCase();
+  if (strA === strB) return true;
   const na = normalizeTable(a);
   const nb = normalizeTable(b);
   return na.length > 0 && na === nb;
@@ -396,13 +421,27 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
         try {
           let realOrder: any;
           if (isEdit) {
-            realOrder = await api.updateOrder(activeOrder.id, { items: orderItems, notes: "", customer_name: guestName });
+            realOrder = await api.updateOrder(activeOrder.id, {
+              items: orderItems,
+              notes: "",
+              customer_name: guestName,
+              table_number: tblLabel,
+              session_id: sessId
+            });
           } else {
-            realOrder = await api.createOrder({ table_number: tblLabel, items: orderItems, notes: "", session_id: sessId, customer_name: guestName });
+            realOrder = await api.createOrder({
+              table_number: tblLabel,
+              items: orderItems,
+              notes: "",
+              session_id: sessId,
+              customer_name: guestName
+            });
           }
           if (realOrder && realOrder.id) {
+            api.setTempIdMapping(tempId, realOrder.id);
+            if (activeOrder?.id) api.setTempIdMapping(activeOrder.id, realOrder.id);
             setActiveOrder(realOrder);
-            setOrders(prev => [realOrder, ...prev.filter(o => o.id !== tempId && o.id !== realOrder.id)]);
+            setOrders(prev => [realOrder, ...prev.filter(o => o.id !== tempId && o.id !== realOrder.id && (activeOrder ? o.id !== activeOrder.id : true))]);
             api.injectCachedOrder(realOrder);
           }
         } catch (syncErr: any) {
@@ -808,30 +847,30 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           
           {/* Header with Scan & Printer Action Buttons */}
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 28, fontWeight: "900", color: theme.onSurface }}>Tables</Text>
-              <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, marginTop: 2, fontWeight: "500" }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={{ fontSize: 26, fontWeight: "900", color: theme.onSurface }} numberOfLines={1}>Tables</Text>
+              <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2, fontWeight: "500" }} numberOfLines={1}>
                 Tap a table to add items or generate bill
               </Text>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 }}>
               <SyncStatusIndicator compact />
               <Pressable
                 style={{
                   backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
                   borderColor: isDark ? "#635BFF" : "#C7D2FE",
                   borderWidth: 1,
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                  borderRadius: 14,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 12,
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 5,
+                  gap: 4,
                 }}
                 onPress={() => setShowScanner(true)}
               >
-                <Ionicons name="qr-code-outline" size={16} color="#635BFF" />
-                <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "800" }}>Scan</Text>
+                <Ionicons name="qr-code-outline" size={15} color="#635BFF" />
+                <Text style={{ color: "#635BFF", fontSize: 11, fontWeight: "800" }}>Scan</Text>
               </Pressable>
 
               <Pressable
@@ -839,17 +878,17 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                   backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB",
                   borderColor: isDark ? "#F59E0B" : "#FDE68A",
                   borderWidth: 1,
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                  borderRadius: 14,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 12,
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 5,
+                  gap: 4,
                 }}
                 onPress={() => router.push("/(app)/printer-settings")}
               >
-                <Ionicons name="print-outline" size={16} color="#F59E0B" />
-                <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "800" }}>Printer</Text>
+                <Ionicons name="print-outline" size={15} color="#F59E0B" />
+                <Text style={{ color: "#F59E0B", fontSize: 11, fontWeight: "800" }}>Printer</Text>
               </Pressable>
 
               <Pressable
@@ -857,9 +896,9 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                   backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2",
                   borderColor: isDark ? "rgba(239,68,68,0.3)" : "#FECACA",
                   borderWidth: 1,
-                  paddingHorizontal: 10,
-                  paddingVertical: 7,
-                  borderRadius: 14,
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                  borderRadius: 12,
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 4,
@@ -876,8 +915,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                 }}
                 testID="waiter-logout-btn"
               >
-                <Ionicons name="log-out-outline" size={16} color="#EF4444" />
-                <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "800" }}>Logout</Text>
+                <Ionicons name="log-out-outline" size={15} color="#EF4444" />
+                <Text style={{ color: "#EF4444", fontSize: 11, fontWeight: "800" }}>Logout</Text>
               </Pressable>
             </View>
           </View>

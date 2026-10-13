@@ -55,8 +55,8 @@ export default function Register() {
     }
     setBusy(true);
     try {
-      // 1. Create the user owner account
-      await register(email.trim(), password, ownerName.trim(), "owner", true, privacyConsent, marketingConsent);
+      // 1. Create the user owner account with phone
+      await register(email.trim(), password, ownerName.trim(), "owner", true, privacyConsent, marketingConsent, phone.trim());
       
       // If analytics consent was selected, update it
       if (analyticsConsent) {
@@ -77,8 +77,8 @@ export default function Register() {
       // 3. Refresh user session to update tenant_id
       await refreshUser();
       
-      // 4. Redirect directly to the dashboard
-      router.replace("/(app)/dashboard");
+      // 4. Redirect to interactive demo playground with registered welcome context!
+      router.replace("/demo-billing?registered=1");
     } catch (e: any) {
       setErr(e.message || "Registration failed");
     } finally {

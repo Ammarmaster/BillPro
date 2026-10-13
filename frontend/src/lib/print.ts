@@ -854,10 +854,18 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     lines.push(`[C]${divider}\n`);
 
     // Item Table
+    const billItems = (data.items && data.items.length > 0)
+      ? data.items
+      : (data.order?.items && data.order.items.length > 0)
+        ? data.order.items
+        : (data.order_id || data.order_ids)
+          ? ((api.getCachedOrders() || []).find((o: any) => o.id === data.order_id || (data.order_ids && data.order_ids.includes(o.id)))?.items || [])
+          : [];
+
     if (width === 58) {
       lines.push(`[L]<b>ITEM</b>[R]<b>QTY   AMOUNT</b>\n`);
       lines.push(`[C]${divider}\n`);
-      (data.items || []).forEach((it: any) => {
+      billItems.forEach((it: any) => {
         const name = it.name || "Item";
         const qty = it.quantity || 1;
         const amt = formatThermalMoney((it.price || 0) * qty);
@@ -873,7 +881,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     } else {
       lines.push(`[L]<b>ITEM</b>[C]<b>QTY x RATE</b>[R]<b>AMOUNT</b>\n`);
       lines.push(`[C]${divider}\n`);
-      (data.items || []).forEach((it: any) => {
+      billItems.forEach((it: any) => {
         const name = it.name || "Item";
         const qty = it.quantity || 1;
         const rate = formatThermalMoney(it.price || 0);
@@ -891,7 +899,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     lines.push(`[C]${divider}\n`);
 
     // Totals Section
-    const itemsSubtotal = (data.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+    const itemsSubtotal = billItems.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
     const subtotalVal = Number(data.subtotal || 0) || itemsSubtotal;
     const totalVal = Number(data.total || 0) || subtotalVal;
 
@@ -1433,7 +1441,15 @@ export function billHtml(bill: any): string {
   const r = getRestaurantSnapshot(bill);
   const customLogo = getBillLogo(r);
   
-  const items = (bill.items || []).map(
+  const billItems = (bill.items && bill.items.length > 0)
+    ? bill.items
+    : (bill.order?.items && bill.order.items.length > 0)
+      ? bill.order.items
+      : (bill.order_id || bill.order_ids)
+        ? ((api.getCachedOrders() || []).find((o: any) => o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id)))?.items || [])
+        : [];
+
+  const items = billItems.map(
     (it: any) => `
       <tr>
         <td class="l">${escapeHtml(it.name)}</td>

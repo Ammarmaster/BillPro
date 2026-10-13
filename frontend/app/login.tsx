@@ -93,18 +93,23 @@ export default function Login() {
                 </View>
               )}
 
-              {/* Email Field */}
+              {/* Email or Mobile Number Field */}
               <View style={styles.field}>
-                <Text style={styles.label}>Email</Text>
+                <Text style={styles.label}>Email or Mobile Number</Text>
                 <View style={[styles.inputWrapper, { backgroundColor: "#16161A", borderColor: "#2E2E38" }]}>
-                  <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                  <Ionicons 
+                    name={email.trim() && !email.includes("@") && /^\+?[0-9\s-]+$/.test(email.trim()) ? "call-outline" : "mail-outline"} 
+                    size={20} 
+                    color="#94A3B8" 
+                    style={styles.inputIcon} 
+                  />
                   <TextInput
                     value={email}
                     onChangeText={setEmail}
                     style={[styles.input, { color: "#FFFFFF" }]}
-                    placeholder="owner@yourplace.com"
+                    placeholder="owner@yourplace.com or 9876543210"
                     placeholderTextColor="#64748B"
-                    keyboardType="email-address"
+                    keyboardType="default"
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="login-email-input"

@@ -165,6 +165,31 @@ def sanitize_doc(doc):
     return doc
 
 
+def get_table_match_patterns(tbl_raw: str) -> list[str]:
+    raw = str(tbl_raw).strip()
+    if not raw:
+        return []
+    patterns = {raw}
+    # Check if raw starts with "table" or "tbl" (e.g. "Table 1", "Table-1", "table 5")
+    m = re.match(r"^(?:table|tbl)[\s\-_:]*(.+)$", raw, re.IGNORECASE)
+    if m:
+        core = m.group(1).strip()
+        patterns.add(core)
+        patterns.add(f"Table {core}")
+        patterns.add(f"Table-{core}")
+    else:
+        # If it's a number or normal name (not a letter-hyphen combo like "T-1" or "A-1")
+        if not re.match(r"^[a-zA-Z]\s*-\s*\d+", raw):
+            patterns.add(f"Table {raw}")
+            patterns.add(f"Table-{raw}")
+        # Normalize spaces around hyphens e.g. "T - 1" <-> "T-1"
+        if " - " in raw:
+            patterns.add(raw.replace(" - ", "-"))
+        elif "-" in raw:
+            patterns.add(raw.replace("-", " - "))
+    return list(patterns)
+
+
 async def notify_tenant(tenant_id: str, category: str, title: str, message: str, data: dict = None):
     if not tenant_id:
         return
@@ -606,6 +631,7 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     full_name: str
+    phone: Optional[str] = None
     role: str = "owner"  # owner registers themselves; super_admin creates staff
     terms_accepted: Optional[bool] = False
     privacy_consent: Optional[bool] = False
@@ -613,7 +639,7 @@ class RegisterIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    email: EmailStr
+    email: str = Field(description="Email or mobile phone number")
     password: str
 
 
@@ -675,6 +701,10 @@ class MenuItemUpdate(BaseModel):
     image_url: Optional[str] = None
     is_active: Optional[bool] = None
     category_id: Optional[str] = None
+
+
+class AutoAssignImagesIn(BaseModel):
+    force_all: bool = False
 
 
 class TableIn(BaseModel):
@@ -800,9 +830,12 @@ class OrderStatusIn(BaseModel):
 
 
 class OrderUpdateIn(BaseModel):
-    items: List[OrderItemIn]
+    items: Optional[List[OrderItemIn]] = []
     notes: Optional[str] = ""
     customer_name: Optional[str] = None
+    table_number: Optional[str] = None
+    session_id: Optional[str] = None
+    subtotal: Optional[float] = None
 
 
 class BillIn(BaseModel):
@@ -869,9 +902,11 @@ async def register(payload: RegisterIn, request: Request = None):
         raise HTTPException(status_code=400, detail="Invalid role for self-registration")
     uid = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
+    clean_phone = payload.phone.strip() if payload.phone else ""
     doc = {
         "id": uid,
         "email": payload.email.lower(),
+        "phone": clean_phone,
         "password": hash_pw(payload.password),
         "full_name": payload.full_name,
         "role": payload.role,
@@ -903,7 +938,43 @@ async def register(payload: RegisterIn, request: Request = None):
 
 @api.post("/auth/login", response_model=TokenOut)
 async def login(payload: LoginIn):
-    user = await db.users.find_one({"email": payload.email.lower()})
+    raw_ident = payload.email.strip()
+    is_email = "@" in raw_ident
+    
+    user = None
+    if is_email:
+        user = await db.users.find_one({"email": raw_ident.lower()})
+    else:
+        # Mobile phone number login in same input field
+        digits = "".join(filter(str.isdigit, raw_ident))
+        clean_10 = digits[-10:] if len(digits) >= 10 else digits
+        
+        # 1. Look up user directly by phone
+        query_conditions = [{"phone": raw_ident}]
+        if digits:
+            query_conditions.append({"phone": digits})
+        if clean_10:
+            query_conditions.append({"phone": clean_10})
+            query_conditions.append({"phone": {"$regex": f"{re.escape(clean_10)}$"}})
+        
+        user = await db.users.find_one({"$or": query_conditions})
+        
+        # 2. If not found in user record, match restaurant's registered phone
+        if not user and (clean_10 or digits or raw_ident):
+            rest_conditions = [{"phone": raw_ident}]
+            if digits:
+                rest_conditions.append({"phone": digits})
+            if clean_10:
+                rest_conditions.append({"phone": clean_10})
+                rest_conditions.append({"phone": {"$regex": f"{re.escape(clean_10)}$"}})
+            
+            rest = await db.restaurants.find_one({"$or": rest_conditions}, {"_id": 0})
+            if rest and rest.get("id"):
+                user = await db.users.find_one({
+                    "tenant_id": rest["id"],
+                    "role": {"$in": ["owner", "manager"]}
+                })
+
     if not user or not verify_pw(payload.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     user_out = {k: v for k, v in user.items() if k not in ("password", "_id")}
@@ -1431,11 +1502,92 @@ async def delete_category(cid: str, user: dict = Depends(require_roles("owner", 
     return {"ok": True}
 
 
+# ---------- accurate food image helper (100% free model API) ----------
+def get_accurate_food_image_url(name: str) -> str:
+    from urllib.parse import quote_plus
+    clean_name = (name or "").strip().lower()
+    if not clean_name:
+        return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=400&fit=crop"
+
+    dish_map = [
+        # Biryani & Rice
+        (["hyderabadi biryani", "chicken biryani", "dum biryani", "biryani", "biriyani", "briyani"], "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400&h=400&fit=crop"),
+        (["mutton biryani", "gosht biryani"], "https://images.unsplash.com/photo-1633945274405-b6c8069047b0?w=400&h=400&fit=crop"),
+        (["veg biryani", "pulao", "pulav", "veg pulao"], "https://images.unsplash.com/photo-1645177628172-a94c1f96e6db?w=400&h=400&fit=crop"),
+        (["fried rice", "schezwan rice"], "https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=400&h=400&fit=crop"),
+        (["jeera rice", "kushk", "kushka", "steamed rice", "curd rice", "rice"], "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=400&h=400&fit=crop"),
+
+        # Starters & Kebabs
+        (["chicken 65", "paneer 65", "65"], "https://images.unsplash.com/photo-1610057099443-fde8c4d90ef8?w=400&h=400&fit=crop"),
+        (["tandoori chicken", "tandoori", "chicken tikka", "tangdi kebab"], "https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=400&h=400&fit=crop"),
+        (["paneer tikka", "malai tikka"], "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=400&h=400&fit=crop"),
+        (["kebab", "kabab", "seekh kebab"], "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&h=400&fit=crop"),
+        (["samosa"], "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&h=400&fit=crop"),
+        (["spring roll"], "https://images.unsplash.com/photo-1544025162-d76694265947?w=400&h=400&fit=crop"),
+        (["momo", "momos", "dim sum", "dimsum"], "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400&h=400&fit=crop"),
+        (["manchurian", "chilli chicken", "chilli paneer", "crispy corn"], "https://images.unsplash.com/photo-1525755662778-989d0524087e?w=400&h=400&fit=crop"),
+
+        # Curries - Non-Veg
+        (["butter chicken", "murgh makhani"], "https://images.unsplash.com/photo-1588166524941-3bf61a9c41db?w=400&h=400&fit=crop"),
+        (["chicken curry", "kadai chicken", "chicken masala", "chicken"], "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400&h=400&fit=crop"),
+        (["mutton rogan josh", "rogan josh", "mutton curry", "mutton", "gosht", "lamb"], "https://images.unsplash.com/photo-1545247181-516773ca839b?w=400&h=400&fit=crop"),
+        (["fish curry", "fish fry", "prawns", "shrimp", "fish", "prawn"], "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=400&h=400&fit=crop"),
+        (["egg curry", "egg bhurji", "omelette", "omlet", "egg"], "https://images.unsplash.com/photo-1587486913049-53fc88980cfc?w=400&h=400&fit=crop"),
+
+        # Curries - Veg
+        (["paneer butter masala", "shahi paneer", "kadai paneer", "palak paneer", "matar paneer", "paneer"], "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&h=400&fit=crop"),
+        (["dal makhani", "dal makhni", "black dal"], "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=400&h=400&fit=crop"),
+        (["dal tadka", "dal fry", "yellow dal", "dal"], "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400&h=400&fit=crop"),
+        (["chole", "chana masala", "chole bhature", "bhature", "rajma"], "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&h=400&fit=crop"),
+        (["thali", "veg thali", "special thali"], "https://images.unsplash.com/photo-1610192244261-3f33de3f55e4?w=400&h=400&fit=crop"),
+
+        # Breads
+        (["naan", "garlic naan", "butter naan", "roti", "chapati", "paratha", "parotta", "kulcha"], "https://images.unsplash.com/photo-1626074353765-517a681e40be?w=400&h=400&fit=crop"),
+
+        # South Indian
+        (["dosa", "masala dosa", "ghee roast"], "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=400&h=400&fit=crop"),
+        (["idli", "vada", "uttapam"], "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&h=400&fit=crop"),
+
+        # Continental & Fast Food
+        (["pizza", "margherita"], "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&h=400&fit=crop"),
+        (["burger", "cheeseburger"], "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&h=400&fit=crop"),
+        (["french fries", "fries"], "https://images.unsplash.com/photo-1576107232684-1279f3908594?w=400&h=400&fit=crop"),
+        (["pasta", "alfredo", "arrabiata", "macaroni"], "https://images.unsplash.com/photo-1621996346565-e3d5d628102a?w=400&h=400&fit=crop"),
+        (["noodles", "hakka noodles", "chowmein"], "https://images.unsplash.com/photo-1585032226651-759b368d7246?w=400&h=400&fit=crop"),
+        (["sandwich", "club sandwich"], "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400&h=400&fit=crop"),
+        (["shawarma", "roll", "frankie", "wrap"], "https://images.unsplash.com/photo-1633321702518-7feccafb94d5?w=400&h=400&fit=crop"),
+
+        # Desserts
+        (["gulab jamun", "rasgulla", "rasmalai", "jalebi"], "https://images.unsplash.com/photo-1667489022797-ab608913feeb?w=400&h=400&fit=crop"),
+        (["ice cream", "kulfi", "sundae"], "https://images.unsplash.com/photo-1497034825429-c343d7c6a68f?w=400&h=400&fit=crop"),
+        (["brownie", "cake", "pastry"], "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&h=400&fit=crop"),
+
+        # Beverages
+        (["chai", "tea"], "https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=400&h=400&fit=crop"),
+        (["coffee", "cappuccino", "latte"], "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=400&h=400&fit=crop"),
+        (["lassi", "chaas", "buttermilk"], "https://images.unsplash.com/photo-1626074353765-517a681e40be?w=400&h=400&fit=crop"),
+        (["lime soda", "lemonade", "mojito", "soda"], "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&h=400&fit=crop"),
+        (["shake", "smoothie", "juice"], "https://images.unsplash.com/photo-1572490122747-3968b75cc699?w=400&h=400&fit=crop"),
+    ]
+
+    for keywords, url in dish_map:
+        if any(kw in clean_name for kw in keywords):
+            return url
+
+    clean_prompt = re.sub(r"[^\w\s]", " ", clean_name)
+    clean_prompt = re.sub(r"\s+", " ", clean_prompt).strip()
+    prompt = f"{clean_prompt} delicious appetizing gourmet restaurant food photography plate dish 4k"
+    return f"https://image.pollinations.ai/prompt/{quote_plus(prompt)}?width=400&height=400&nologo=true"
+
+
 # ---------- menu items ----------
 @api.post("/menu-items")
 async def create_menu_item(payload: MenuItemIn, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
-    doc = {"id": str(uuid.uuid4()), "tenant_id": tid, **payload.dict(), "created_at": datetime.now(timezone.utc).isoformat()}
+    data = payload.dict()
+    if not data.get("image_url") and not data.get("image_base64"):
+        data["image_url"] = get_accurate_food_image_url(data.get("name", ""))
+    doc = {"id": str(uuid.uuid4()), "tenant_id": tid, **data, "created_at": datetime.now(timezone.utc).isoformat()}
     await db.menu_items.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -1468,6 +1620,25 @@ async def update_menu_item(iid: str, payload: MenuItemUpdate, user: dict = Depen
     return await db.menu_items.find_one({"id": iid}, {"_id": 0})
 
 
+@api.post("/menu/auto-assign-images")
+async def auto_assign_menu_images(payload: AutoAssignImagesIn = AutoAssignImagesIn(), user: dict = Depends(require_roles("owner", "manager"))):
+    tid = await _ensure_tenant(user)
+    query = {"tenant_id": tid, "is_deleted": {"$ne": True}}
+    if not payload.force_all:
+        query["$or"] = [
+            {"image_url": None, "image_base64": None},
+            {"image_url": ""},
+            {"image_url": {"$exists": False}}
+        ]
+    items = await db.menu_items.find(query).to_list(5000)
+    updated = 0
+    for item in items:
+        new_img = get_accurate_food_image_url(item.get("name", ""))
+        await db.menu_items.update_one({"id": item["id"], "tenant_id": tid}, {"$set": {"image_url": new_img}})
+        updated += 1
+    return {"success": True, "updated_count": updated, "message": f"Successfully auto-assigned accurate images to {updated} dishes."}
+
+
 # ---------- BULK JSON MENU IMPORT (SUPER ADMIN & OWNER) ----------
 async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: bool = False) -> dict:
     import json
@@ -1479,16 +1650,26 @@ async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: 
             raise HTTPException(status_code=400, detail=f"Invalid JSON string syntax: {str(e)}")
 
     if isinstance(data, dict):
-        if "categories" in data and isinstance(data["categories"], list):
+        # Auto-detect tenant_id if passed in JSON envelope
+        if not tid:
+            tid = str(data.get("restaurant_id") or data.get("tenant_id") or data.get("restaurantId") or data.get("store_id") or "").strip()
+
+        if "menu" in data and isinstance(data["menu"], list):
+            data = data["menu"]
+        elif "categories" in data and isinstance(data["categories"], list):
             data = data["categories"]
         elif "data" in data and isinstance(data["data"], list):
             data = data["data"]
         elif "items" in data and isinstance(data["items"], list):
             data = [{"category": "Main Menu", "items": data["items"]}]
+        elif "dishes" in data and isinstance(data["dishes"], list):
+            data = [{"category": "Main Menu", "items": data["dishes"]}]
+        elif "products" in data and isinstance(data["products"], list):
+            data = [{"category": "Main Menu", "items": data["products"]}]
         else:
             cat_list = []
             for k, v in data.items():
-                if isinstance(v, list):
+                if isinstance(v, list) and k not in ("restaurant_id", "tenant_id", "restaurantId", "store_id", "status"):
                     cat_list.append({"category": str(k), "items": v})
             if cat_list:
                 data = cat_list
@@ -1499,7 +1680,7 @@ async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: 
         raise HTTPException(status_code=400, detail="Menu JSON must be an array of categories or dish items.")
 
     # Check if data is flat list of dishes (e.g. [{"name": "Paneer", "price": 200, "category": "Starters"}])
-    is_flat_items = any("price" in x and "items" not in x for x in data if isinstance(x, dict))
+    is_flat_items = any(("price" in x or "rate" in x or "cost" in x) and "items" not in x for x in data if isinstance(x, dict))
     if is_flat_items:
         grouped: dict[str, list] = {}
         for it in data:
@@ -1529,7 +1710,7 @@ async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: 
     for cat_entry in data:
         if not isinstance(cat_entry, dict):
             continue
-        raw_cat_name = str(cat_entry.get("category") or cat_entry.get("name") or cat_entry.get("title") or "General").strip()
+        raw_cat_name = str(cat_entry.get("category") or cat_entry.get("category_name") or cat_entry.get("name") or cat_entry.get("title") or "General").strip()
         if not raw_cat_name:
             raw_cat_name = "General"
 
@@ -1551,26 +1732,30 @@ async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: 
             cat_map[norm_cat_name] = cat_doc
             categories_created += 1
 
-        items_list = cat_entry.get("items") or cat_entry.get("dishes") or cat_entry.get("menu_items") or []
+        items_list = cat_entry.get("items") or cat_entry.get("dishes") or cat_entry.get("menu_items") or cat_entry.get("products") or []
         if not isinstance(items_list, list):
             continue
 
         for it in items_list:
             if not isinstance(it, dict):
                 continue
-            item_name = str(it.get("name") or it.get("item_name") or it.get("title") or "").strip()
+            item_name = str(it.get("name") or it.get("item_name") or it.get("dish_name") or it.get("title") or "").strip()
             if not item_name:
                 continue
 
             try:
-                raw_price = it.get("price") or it.get("rate") or it.get("cost") or 0.0
-                item_price = float(raw_price)
+                raw_price = it.get("price") or it.get("rate") or it.get("cost") or it.get("amount") or 0.0
+                if isinstance(raw_price, str):
+                    clean_p = re.sub(r"[^\d.]", "", raw_price)
+                    item_price = float(clean_p) if clean_p else 0.0
+                else:
+                    item_price = float(raw_price or 0.0)
                 if item_price < 0:
                     item_price = 0.0
             except Exception:
                 item_price = 0.0
 
-            item_desc = str(it.get("description") or it.get("desc") or "").strip()
+            item_desc = str(it.get("description") or it.get("desc") or it.get("details") or "").strip()
 
             # Determine veg / non-veg
             if "is_veg" in it:
@@ -1584,6 +1769,14 @@ async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: 
                 is_veg = not any(w in lower_name for w in non_veg_keywords)
 
             item_img = it.get("image_url") or it.get("image_base64") or it.get("image") or None
+            img_url = None
+            img_b64 = None
+            if isinstance(item_img, str) and item_img.startswith("data:"):
+                img_b64 = item_img
+            elif isinstance(item_img, str) and item_img.startswith("http"):
+                img_url = item_img
+            else:
+                img_url = get_accurate_food_image_url(item_name)
 
             item_doc = {
                 "id": str(uuid.uuid4()),
@@ -1593,8 +1786,8 @@ async def _process_json_menu_import(tid: str, raw_input: Any, replace_existing: 
                 "price": round(item_price, 2),
                 "description": item_desc,
                 "is_veg": is_veg,
-                "image_url": item_img if isinstance(item_img, str) and item_img.startswith("http") else None,
-                "image_base64": item_img if isinstance(item_img, str) and item_img.startswith("data:") else None,
+                "image_url": img_url,
+                "image_base64": img_b64,
                 "is_active": True,
                 "created_at": now_iso,
             }
@@ -1674,12 +1867,45 @@ async def admin_clear_restaurant_menu(target_tid: str, user: dict = Depends(requ
     return {"success": True, "message": f"Menu cleared for restaurant {target_tid}."}
 
 
+@api.post("/admin/restaurants/{target_tid}/menu/auto-assign-images")
+async def admin_auto_assign_menu_images(target_tid: str, payload: AutoAssignImagesIn = AutoAssignImagesIn(), user: dict = Depends(require_roles("super_admin", "admin_employee"))):
+    query = {"tenant_id": target_tid, "is_deleted": {"$ne": True}}
+    if not payload.force_all:
+        query["$or"] = [
+            {"image_url": None, "image_base64": None},
+            {"image_url": ""},
+            {"image_url": {"$exists": False}}
+        ]
+    items = await db.menu_items.find(query).to_list(5000)
+    updated = 0
+    for item in items:
+        new_img = get_accurate_food_image_url(item.get("name", ""))
+        await db.menu_items.update_one({"id": item["id"], "tenant_id": target_tid}, {"$set": {"image_url": new_img}})
+        updated += 1
+    return {"success": True, "updated_count": updated, "message": f"Assigned accurate images to {updated} dishes for restaurant {target_tid}."}
+
+
 
 # ---------- tables ----------
 @api.post("/tables")
 async def create_table(payload: TableIn, user: dict = Depends(require_roles("owner", "manager"))):
     tid = await _ensure_tenant(user)
+    clean_lbl = payload.label.strip()
+    # Check if a non-deleted table with this exact or case-insensitive label already exists
+    existing = await db.tables.find_one({
+        "tenant_id": tid,
+        "is_deleted": {"$ne": True},
+        "$or": [
+            {"label": clean_lbl},
+            {"label": {"$regex": f"^{re.escape(clean_lbl)}$", "$options": "i"}}
+        ]
+    })
+    if existing:
+        existing.pop("_id", None)
+        return existing
+
     doc = {"id": str(uuid.uuid4()), "tenant_id": tid, **payload.dict(),
+           "label": clean_lbl,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.tables.insert_one(doc)
     doc.pop("_id", None)
@@ -1690,8 +1916,35 @@ async def create_table(payload: TableIn, user: dict = Depends(require_roles("own
 async def list_tables(user: dict = Depends(get_current_user)):
     tid = await _ensure_tenant(user)
     await _auto_clear_kitchen_orders(tid)
-    tables = await db.tables.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("label", 1).to_list(500)
-    return tables
+    raw_tables = await db.tables.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("label", 1).to_list(500)
+    
+    seen = set()
+    unique_tables = []
+    duplicate_ids = []
+    for t in raw_tables:
+        lbl = str(t.get("label", "")).strip().lower()
+        if not lbl:
+            unique_tables.append(t)
+            continue
+        if lbl in seen:
+            if t.get("id"):
+                duplicate_ids.append(t["id"])
+        else:
+            seen.add(lbl)
+            unique_tables.append(t)
+            
+    # Clean up duplicate records in background
+    if duplicate_ids:
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await db.tables.update_many(
+                {"id": {"$in": duplicate_ids}, "tenant_id": tid},
+                {"$set": {"is_deleted": True, "deleted_at": now_iso}}
+            )
+        except Exception:
+            pass
+            
+    return unique_tables
 
 
 @api.put("/tables/{tbl_id}")
@@ -1729,7 +1982,17 @@ async def delta_sync(since: Optional[str] = None, user: dict = Depends(get_curre
     menu_items = await db.menu_items.find(q, {"_id": 0}).to_list(2000)
     orders = await db.orders.find(q, {"_id": 0}).to_list(1000)
     bills = await db.bills.find(q, {"_id": 0}).to_list(1000)
-    tables = await db.tables.find(q, {"_id": 0}).to_list(500)
+    raw_tables = await db.tables.find(q, {"_id": 0}).to_list(500)
+    
+    seen_tables = set()
+    tables = []
+    for t in raw_tables:
+        lbl = str(t.get("label", "")).strip().lower()
+        if lbl and lbl in seen_tables:
+            continue
+        if lbl:
+            seen_tables.add(lbl)
+        tables.append(t)
     
     return {
         "categories": categories,
@@ -1744,7 +2007,7 @@ async def delta_sync(since: Optional[str] = None, user: dict = Depends(get_curre
 class BatchSyncAction(BaseModel):
     id: Optional[str] = None
     type: str
-    payload: dict = {}
+    payload: Optional[Any] = {}
     localId: Optional[str] = None
     createdAt: Optional[str] = None
 
@@ -1824,9 +2087,21 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                 synced_count += 1
                 
             elif a_type == "CREATE_TABLE":
-                tbl_id = str(uuid.uuid4())
-                doc = {"id": tbl_id, "tenant_id": tid, "label": p.get("label"), "seats": p.get("seats", 4), "created_at": now}
-                await db.tables.insert_one(doc)
+                clean_lbl = str(p.get("label", "")).strip()
+                existing = await db.tables.find_one({
+                    "tenant_id": tid,
+                    "is_deleted": {"$ne": True},
+                    "$or": [
+                        {"label": clean_lbl},
+                        {"label": {"$regex": f"^{re.escape(clean_lbl)}$", "$options": "i"}}
+                    ]
+                })
+                if existing:
+                    tbl_id = existing["id"]
+                else:
+                    tbl_id = str(uuid.uuid4())
+                    doc = {"id": tbl_id, "tenant_id": tid, "label": clean_lbl, "seats": p.get("seats", 4), "created_at": now}
+                    await db.tables.insert_one(doc)
                 if local_id:
                     id_map[local_id] = tbl_id
                 synced_count += 1
@@ -1872,10 +2147,45 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                 
             elif a_type == "UPDATE_ORDER":
                 target_id = id_map.get(p.get("id"), p.get("id"))
+                order_doc = None
                 if target_id:
+                    order_doc = await db.orders.find_one({"id": target_id, "tenant_id": tid})
+                if not order_doc and p.get("session_id"):
+                    order_doc = await db.orders.find_one({"session_id": p.get("session_id"), "tenant_id": tid})
+                if not order_doc and p.get("table_number"):
+                    order_doc = await db.orders.find_one(
+                        {"table_number": p.get("table_number"), "tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]}},
+                        sort=[("created_at", -1)]
+                    )
+                if order_doc:
                     upd = {k: v for k, v in p.items() if k not in ["id", "_id", "tenant_id"] and v is not None}
                     upd["updated_at"] = now
-                    await db.orders.update_one({"id": target_id, "tenant_id": tid}, {"$set": upd})
+                    if "items" in upd and upd["items"]:
+                        upd["subtotal"] = float(p.get("subtotal", 0) or sum(float(x.get("price", 0)) * int(x.get("quantity", 1)) for x in upd["items"]))
+                    await db.orders.update_one({"id": order_doc["id"], "tenant_id": tid}, {"$set": upd})
+                    if target_id:
+                        id_map[target_id] = order_doc["id"]
+                else:
+                    new_oid = str(uuid.uuid4())
+                    items = p.get("items", [])
+                    subtotal = float(p.get("subtotal", 0) or sum(float(x.get("price", 0)) * int(x.get("quantity", 1)) for x in items))
+                    doc = {
+                        "id": new_oid,
+                        "tenant_id": tid,
+                        "order_number": p.get("order_number") or str(uuid.uuid4().hex[:4].upper()),
+                        "table_number": p.get("table_number", "Takeaway"),
+                        "customer_name": p.get("customer_name", "Guest"),
+                        "session_id": p.get("session_id", ""),
+                        "items": items,
+                        "subtotal": subtotal,
+                        "notes": p.get("notes", ""),
+                        "status": p.get("status", "placed"),
+                        "created_at": p.get("created_at") or now,
+                        "updated_at": now,
+                    }
+                    await db.orders.insert_one(doc)
+                    if target_id:
+                        id_map[target_id] = new_oid
                 synced_count += 1
                 
             elif a_type == "UPDATE_ORDER_STATUS":
@@ -1918,10 +2228,44 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
             elif a_type == "MARK_BILL_PAID":
                 target_id = id_map.get(p.get("id"), p.get("id"))
                 pay_method = p.get("payment_method", "UPI")
+                bill_doc = None
                 if target_id:
-                    await db.bills.update_one({"id": target_id, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                    bill_doc = await db.bills.find_one({"$or": [{"id": target_id}, {"order_id": target_id}, {"order_ids": target_id}], "tenant_id": tid})
+                if not bill_doc and p.get("order_id"):
+                    mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
+                    bill_doc = await db.bills.find_one({"$or": [{"order_id": mapped_oid}, {"order_ids": mapped_oid}], "tenant_id": tid})
+                if bill_doc:
+                    await db.bills.update_one({"id": bill_doc["id"], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                else:
+                    # Insert paid bill so sales data is never lost
+                    bid = str(uuid.uuid4())
+                    items = p.get("items", [])
+                    subtotal = float(p.get("subtotal", 0) or sum(float(x.get("price", 0)) * int(x.get("quantity", 1)) for x in items))
+                    total = float(p.get("total", subtotal))
+                    mapped_oid = id_map.get(p.get("order_id"), p.get("order_id")) or (target_id if target_id and not target_id.startswith("temp-") else None)
+                    bill_doc = {
+                        "id": bid,
+                        "tenant_id": tid,
+                        "bill_number": p.get("bill_number") or f"EZ-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}",
+                        "order_id": mapped_oid,
+                        "order_ids": [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else []),
+                        "table_number": p.get("table_number", "Takeaway"),
+                        "customer_name": p.get("customer_name", "Guest"),
+                        "items": items,
+                        "subtotal": subtotal,
+                        "total": total,
+                        "tax": float(p.get("tax", 0)),
+                        "discount": float(p.get("discount", 0)),
+                        "payment_method": pay_method,
+                        "status": "paid",
+                        "created_at": p.get("created_at") or now,
+                        "paid_at": now,
+                    }
+                    await db.bills.insert_one(bill_doc)
+                    if target_id:
+                        id_map[target_id] = bid
                 mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
-                mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else [])
+                mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else ([target_id] if target_id else []))
                 if mapped_oids:
                     await db.orders.update_many({"id": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
                 synced_count += 1
@@ -1934,8 +2278,9 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                     await db.orders.update_many({"id": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
                     await db.bills.update_many({"order_ids": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
                 elif tbl:
-                    await db.orders.update_many({"table_number": tbl, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
-                    await db.bills.update_many({"table_number": tbl, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                    tbl_patterns = get_table_match_patterns(tbl)
+                    await db.orders.update_many({"table_number": {"$in": tbl_patterns}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
+                    await db.bills.update_many({"table_number": {"$in": tbl_patterns}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
                 synced_count += 1
 
             elif a_type == "OPEN_CASH_SESSION":
@@ -2129,6 +2474,11 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
     tid = await _ensure_tenant(user)
     await _ensure_active_subscription(tid, user)
     subtotal = sum(i.price * i.quantity for i in payload.items)
+    restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0, "gst_enabled": 1, "gst_rate": 1}) or {}
+    gst_enabled = bool(restaurant.get("gst_enabled"))
+    gst_rate = float(restaurant.get("gst_rate", 5.0))
+    tax = round(subtotal * (gst_rate / 100.0), 2) if gst_enabled else 0.0
+    total = round(subtotal + tax, 2)
     cust_name = (payload.customer_name or "Guest 1").strip()
     sess_id = payload.session_id or str(uuid.uuid4())
     order_status = payload.status or "placed"
@@ -2141,6 +2491,10 @@ async def create_order(payload: OrderIn, user: dict = Depends(require_roles("own
         "items": [i.dict() for i in payload.items],
         "notes": payload.notes,
         "subtotal": subtotal,
+        "tax_percent": gst_rate if gst_enabled else 0.0,
+        "tax": tax,
+        "gst_enabled": gst_enabled,
+        "total": total,
         "status": order_status,
         "order_source": "waiter",
         "created_by": user["id"],
@@ -2389,23 +2743,63 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
 
 @api.patch("/orders/{oid}")
 async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
-    order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    tid = await _ensure_tenant(user)
+    order = await db.orders.find_one({"id": oid, "tenant_id": tid}, {"_id": 0})
+    if not order and payload.session_id:
+        order = await db.orders.find_one({"session_id": payload.session_id, "tenant_id": tid}, {"_id": 0})
+    if not order and payload.table_number:
+        order = await db.orders.find_one(
+            {"table_number": payload.table_number, "tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]}},
+            {"_id": 0},
+            sort=[("created_at", -1)]
+        )
+    
+    now_iso = datetime.now(timezone.utc).isoformat()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    tid = order["tenant_id"]
-    subtotal = sum(i.price * i.quantity for i in payload.items)
-    await db.orders.update_one(
-        {"id": oid},
-        {"$set": {
-            "items": [i.dict() for i in payload.items],
-            "notes": payload.notes,
+        # If client passes order items for an uncreated or temp ID order, create it cleanly!
+        real_oid = oid if (oid and not oid.startswith("temp-")) else str(uuid.uuid4())
+        items_dict = [i.dict() for i in payload.items] if payload.items else []
+        subtotal = sum(i.price * i.quantity for i in payload.items) if payload.items else (payload.subtotal or 0.0)
+        order = {
+            "id": real_oid,
+            "tenant_id": tid,
+            "order_number": str(uuid.uuid4().hex[:4].upper()),
+            "table_number": payload.table_number or "Takeaway",
+            "session_id": payload.session_id or str(uuid.uuid4()),
+            "customer_name": payload.customer_name or "Guest 1",
+            "items": items_dict,
+            "notes": payload.notes or "",
             "subtotal": subtotal,
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }}
+            "status": "placed",
+            "order_source": "waiter",
+            "created_by": user["id"],
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        await db.orders.insert_one(order)
+        order.pop("_id", None)
+        return order
+
+    target_oid = order["id"]
+    subtotal = sum(i.price * i.quantity for i in payload.items) if (payload.items and len(payload.items) > 0) else (payload.subtotal or order.get("subtotal", 0.0))
+    upd_fields = {
+        "updated_at": now_iso
+    }
+    if payload.items is not None and len(payload.items) > 0:
+        upd_fields["items"] = [i.dict() for i in payload.items]
+        upd_fields["subtotal"] = subtotal
+    if payload.notes is not None:
+        upd_fields["notes"] = payload.notes
+    if payload.customer_name:
+        upd_fields["customer_name"] = payload.customer_name
+
+    await db.orders.update_one(
+        {"id": target_oid, "tenant_id": tid},
+        {"$set": upd_fields}
     )
     
     # Recalculate pending bill if it exists
-    bill = await db.bills.find_one({"order_id": oid})
+    bill = await db.bills.find_one({"order_id": target_oid, "tenant_id": tid})
     if bill and bill.get("status") == "pending":
         restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
         gst_enabled = bill.get("gst_enabled", bool(restaurant.get("gst_enabled")))
@@ -2419,12 +2813,12 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
         
         upi_id = restaurant.get("upi_id", "")
         merchant = restaurant.get("merchant_name", restaurant.get("name", "Merchant"))
-        upi_url = f"upi://pay?pa={upi_id}&pn={merchant.replace(' ', '%20')}&am={total}&cu=INR&tn=Order-{oid[:8]}"
+        upi_url = f"upi://pay?pa={upi_id}&pn={merchant.replace(' ', '%20')}&am={total}&cu=INR&tn=Order-{target_oid[:8]}"
         
         await db.bills.update_one(
-            {"id": bill["id"]},
+            {"id": bill["id"], "tenant_id": tid},
             {"$set": {
-                "items": [i.dict() for i in payload.items],
+                "items": upd_fields.get("items", bill.get("items", [])),
                 "subtotal": subtotal,
                 "tax": tax,
                 "cgst": cgst,
@@ -2433,10 +2827,10 @@ async def update_order(oid: str, payload: OrderUpdateIn, user: dict = Depends(re
                 "upi_url": upi_url
             }}
         )
-    updated_order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    updated_order = await db.orders.find_one({"id": target_oid, "tenant_id": tid}, {"_id": 0})
     updated_payload = {
         "event": "order.updated",
-        "order_id": oid,
+        "order_id": target_oid,
         "table_number": order.get("table_number", "-"),
         "order": updated_order
     }
@@ -2561,6 +2955,13 @@ async def public_create_order(payload: PublicOrderIn):
     table_number = table["label"]
 
     subtotal = sum(i.price * i.quantity for i in payload.items)
+    restaurant = await db.restaurants.find_one({"id": payload.tenant_id}, {"_id": 0, "gst_enabled": 1, "gst_rate": 1}) or {}
+    gst_enabled = bool(restaurant.get("gst_enabled"))
+    gst_rate = float(restaurant.get("gst_rate", 5.0))
+    tax = round(subtotal * (gst_rate / 100.0), 2) if gst_enabled else 0.0
+    cgst = round(tax / 2.0, 2) if gst_enabled else 0.0
+    sgst = round(tax - cgst, 2) if gst_enabled else 0.0
+    total = round(subtotal + tax, 2)
     order_id = str(uuid.uuid4())
     qr_token = str(uuid.uuid4())[:16]
     cust_name = (payload.customer_name or "Guest 1").strip()
@@ -2578,6 +2979,10 @@ async def public_create_order(payload: PublicOrderIn):
         "items": [i.dict() for i in payload.items],
         "notes": payload.notes,
         "subtotal": subtotal,
+        "tax_percent": gst_rate if gst_enabled else 0.0,
+        "tax": tax,
+        "gst_enabled": gst_enabled,
+        "total": total,
         "status": "placed" if is_online_paid else "pending_scan",
         "qr_imported": True if is_online_paid else False,
         "order_source": "qr_web",
@@ -2607,13 +3012,13 @@ async def public_create_order(payload: PublicOrderIn):
             "table_number": payload.table_number or "",
             "items": [i.dict() for i in payload.items],
             "subtotal": float(subtotal),
-            "tax_percent": 0.0,
-            "tax": 0.0,
-            "cgst": 0.0,
-            "sgst": 0.0,
-            "gst_enabled": False,
+            "tax_percent": gst_rate if gst_enabled else 0.0,
+            "tax": tax,
+            "cgst": cgst,
+            "sgst": sgst,
+            "gst_enabled": gst_enabled,
             "discount": 0.0,
-            "total": float(subtotal),
+            "total": total,
             "upi_url": "",
             "status": "paid",
             "payment_method": payload.payment_method or "online",
@@ -3163,6 +3568,7 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
             else:
                 # Create a new menu item
                 item_id = str(uuid.uuid4())
+                img_url = getattr(it, "image_url", None) or get_accurate_food_image_url(it.name)
                 await db.menu_items.insert_one({
                     "id": item_id,
                     "tenant_id": tid,
@@ -3171,6 +3577,7 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
                     "price": float(it.price),
                     "description": it.description or "",
                     "is_veg": bool(it.is_veg),
+                    "image_url": img_url,
                     "is_active": True,
                     "sort_order": next_item_order,
                     "created_at": datetime.now(timezone.utc).isoformat()
@@ -3257,11 +3664,7 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
         if single:
             target_orders = [single]
     elif payload.table_number:
-        tbl_raw = str(payload.table_number).strip()
-        tbl_num = tbl_raw.replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
-        tbl_patterns = [tbl_raw]
-        if tbl_num:
-            tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
+        tbl_patterns = get_table_match_patterns(payload.table_number)
         target_orders = await db.orders.find({
             "table_number": {"$in": tbl_patterns},
             "tenant_id": tid,
@@ -3353,10 +3756,11 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
     tid = await _ensure_tenant(user)
     pm = payload.payment_method or "UPI"
     tbl_raw = str(payload.table_number).strip()
-    tbl_num = tbl_raw.replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
-    tbl_patterns = [tbl_raw]
-    if tbl_num:
-        tbl_patterns.extend([tbl_num, f"T - {tbl_num}", f"T-{tbl_num}", f"Table {tbl_num}"])
+    tbl_patterns = get_table_match_patterns(tbl_raw)
+
+    restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
+    gst_enabled = bool(restaurant.get("gst_enabled"))
+    gst_rate = float(restaurant.get("gst_rate", 5.0))
 
     # 1. Find all active orders being settled for this table (clean temp IDs)
     clean_order_ids = [oid for oid in (payload.order_ids or []) if oid and not str(oid).startswith("temp-")]
@@ -3376,7 +3780,12 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
             "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
     
-    total_settled = payload.total if payload.total is not None and payload.total > 0 else sum(float(o.get("subtotal", 0.0)) for o in active_orders)
+    if payload.total is not None and payload.total > 0:
+        total_settled = payload.total
+    else:
+        active_sub = sum(float(o.get("subtotal", 0.0)) for o in active_orders)
+        active_tax = round(active_sub * (gst_rate / 100.0), 2) if gst_enabled else 0.0
+        total_settled = round(active_sub + active_tax, 2)
 
     # 2. For any active order that does not have a bill, create a paid bill in db.bills to guarantee revenue tracking
     for o in active_orders:
@@ -3387,6 +3796,14 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
             ],
             "tenant_id": tid
         })
+        o_sub = float(o.get("subtotal", 0.0))
+        if o_sub <= 0:
+            o_sub = sum(float(i.get("price", 0.0)) * int(i.get("quantity", 1)) for i in o.get("items", []))
+        o_tax = round(o_sub * (gst_rate / 100.0), 2) if gst_enabled else 0.0
+        o_cgst = round(o_tax / 2.0, 2) if gst_enabled else 0.0
+        o_sgst = round(o_tax - o_cgst, 2) if gst_enabled else 0.0
+        o_tot = round(o_sub + o_tax, 2)
+
         if not existing_b:
             import random
             bill_id = str(uuid.uuid4())
@@ -3401,14 +3818,14 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
                 "customer_name": o.get("customer_name", "Guest"),
                 "table_number": o.get("table_number", payload.table_number),
                 "items": o.get("items", []),
-                "subtotal": float(o.get("subtotal", 0.0)),
-                "tax_percent": 0.0,
-                "tax": 0.0,
-                "cgst": 0.0,
-                "sgst": 0.0,
-                "gst_enabled": False,
+                "subtotal": o_sub,
+                "tax_percent": gst_rate if gst_enabled else 0.0,
+                "tax": o_tax,
+                "cgst": o_cgst,
+                "sgst": o_sgst,
+                "gst_enabled": gst_enabled,
                 "discount": 0.0,
-                "total": float(o.get("subtotal", 0.0)),
+                "total": o_tot,
                 "upi_url": "",
                 "status": "paid",
                 "payment_method": pm,
@@ -3417,6 +3834,20 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
                 "paid_at": datetime.now(timezone.utc).isoformat(),
             }
             await db.bills.insert_one(bill_doc)
+        else:
+            upd = {
+                "status": "paid",
+                "payment_method": pm,
+                "paid_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if gst_enabled and float(existing_b.get("tax", 0.0)) == 0.0:
+                upd["tax_percent"] = gst_rate
+                upd["tax"] = o_tax
+                upd["cgst"] = o_cgst
+                upd["sgst"] = o_sgst
+                upd["gst_enabled"] = True
+                upd["total"] = o_tot
+            await db.bills.update_one({"id": existing_b["id"], "tenant_id": tid}, {"$set": upd})
 
     # 3. Settle all matching pending bills for these orders or this table
     order_id_list = [o["id"] for o in active_orders]
@@ -3482,6 +3913,10 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     tid = await _ensure_tenant(user)
     pm = (payload and payload.payment_method) or "UPI"
     
+    restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
+    gst_enabled = bool(restaurant.get("gst_enabled"))
+    gst_rate = float(restaurant.get("gst_rate", 5.0))
+
     # 1. Look up bill by ID
     bill = await db.bills.find_one({"id": bid, "tenant_id": tid}, {"_id": 0})
     
@@ -3489,7 +3924,25 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         # Fallback: check if bid is an order_id or in order_ids
         bill = await db.bills.find_one({"$or": [{"order_id": bid}, {"order_ids": bid}], "tenant_id": tid}, {"_id": 0})
         if bill:
-            await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+            bill_upd = {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}
+            if gst_enabled and float(bill.get("tax", 0.0)) == 0.0:
+                b_sub = float(bill.get("subtotal", 0.0))
+                if b_sub <= 0:
+                    b_sub = sum(float(i.get("price", 0.0)) * int(i.get("quantity", 1)) for i in bill.get("items", []))
+                b_tax = round(b_sub * (gst_rate / 100.0), 2)
+                b_cgst = round(b_tax / 2.0, 2)
+                b_sgst = round(b_tax - b_cgst, 2)
+                b_tot = round(b_sub + b_tax, 2)
+                bill_upd.update({
+                    "tax_percent": gst_rate,
+                    "tax": b_tax,
+                    "cgst": b_cgst,
+                    "sgst": b_sgst,
+                    "gst_enabled": True,
+                    "total": b_tot
+                })
+                bill.update(bill_upd)
+            await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": bill_upd})
             bill["status"] = "paid"
             bill["payment_method"] = pm
         else:
@@ -3498,6 +3951,13 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             if o:
                 await db.orders.update_one({"id": bid, "tenant_id": tid}, {"$set": {"status": "paid"}})
                 bill_id = str(uuid.uuid4())
+                o_sub = float(o.get("subtotal", 0.0))
+                if o_sub <= 0:
+                    o_sub = sum(float(i.get("price", 0.0)) * int(i.get("quantity", 1)) for i in o.get("items", []))
+                o_tax = round(o_sub * (gst_rate / 100.0), 2) if gst_enabled else 0.0
+                o_cgst = round(o_tax / 2.0, 2) if gst_enabled else 0.0
+                o_sgst = round(o_tax - o_cgst, 2) if gst_enabled else 0.0
+                o_tot = round(o_sub + o_tax, 2)
                 bill_doc = {
                     "id": bill_id,
                     "tenant_id": tid,
@@ -3506,14 +3966,14 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
                     "customer_name": o.get("customer_name", "Guest"),
                     "table_number": o.get("table_number", "Takeaway"),
                     "items": o.get("items", []),
-                    "subtotal": float(o.get("subtotal", 0.0)),
-                    "tax_percent": 0.0,
-                    "tax": 0.0,
-                    "cgst": 0.0,
-                    "sgst": 0.0,
-                    "gst_enabled": False,
+                    "subtotal": o_sub,
+                    "tax_percent": gst_rate if gst_enabled else 0.0,
+                    "tax": o_tax,
+                    "cgst": o_cgst,
+                    "sgst": o_sgst,
+                    "gst_enabled": gst_enabled,
                     "discount": 0.0,
-                    "total": float(o.get("subtotal", 0.0)),
+                    "total": o_tot,
                     "upi_url": "",
                     "status": "paid",
                     "payment_method": pm,
@@ -3526,7 +3986,25 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             else:
                 raise HTTPException(status_code=404, detail="Bill or order not found")
     else:
-        await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+        bill_upd = {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}
+        if gst_enabled and float(bill.get("tax", 0.0)) == 0.0:
+            b_sub = float(bill.get("subtotal", 0.0))
+            if b_sub <= 0:
+                b_sub = sum(float(i.get("price", 0.0)) * int(i.get("quantity", 1)) for i in bill.get("items", []))
+            b_tax = round(b_sub * (gst_rate / 100.0), 2)
+            b_cgst = round(b_tax / 2.0, 2)
+            b_sgst = round(b_tax - b_cgst, 2)
+            b_tot = round(b_sub + b_tax, 2)
+            bill_upd.update({
+                "tax_percent": gst_rate,
+                "tax": b_tax,
+                "cgst": b_cgst,
+                "sgst": b_sgst,
+                "gst_enabled": True,
+                "total": b_tot
+            })
+            bill.update(bill_upd)
+        await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": bill_upd})
         bill["status"] = "paid"
         bill["payment_method"] = pm
 
@@ -3541,11 +4019,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     tbl_status = "AVAILABLE"
     
     if tbl_num and tbl_num not in ["Takeaway", "Take-Away", "Contactless"]:
-        tbl_raw = str(tbl_num).strip()
-        tbl_clean = tbl_raw.replace("Table", "").replace("table", "").replace("T", "").replace("-", "").strip()
-        tbl_patterns = [tbl_raw]
-        if tbl_clean:
-            tbl_patterns.extend([tbl_clean, f"T - {tbl_clean}", f"T-{tbl_clean}", f"Table {tbl_clean}"])
+        tbl_patterns = get_table_match_patterns(tbl_num)
         remaining = await db.orders.count_documents({
             "tenant_id": tid,
             "table_number": {"$in": tbl_patterns},
@@ -4187,7 +4661,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
             {"status": "pending"}
         ]
     }, {
-        "_id": 0, "status": 1, "total": 1, "created_at": 1, "paid_at": 1, "created_by": 1, "order_id": 1, "order_ids": 1, "items.name": 1, "items.quantity": 1, "items.price": 1
+        "_id": 0, "status": 1, "total": 1, "subtotal": 1, "tax": 1, "gst_enabled": 1, "created_at": 1, "paid_at": 1, "created_by": 1, "order_id": 1, "order_ids": 1, "items.name": 1, "items.quantity": 1, "items.price": 1
     }).sort("created_at", -1).to_list(1000)
     
     # Deduplicate paid bills to guarantee no duplicate sales counting
@@ -4202,12 +4676,30 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         seen_order_ids.update(oids)
         paid_bills.append(b)
     
-    today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))]
-    revenue_today = round(sum(float(b.get("total", 0.0)) for b in today_bills), 2)
-    revenue_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills), 2)
+    rest = await db.restaurants.find_one({"id": tid}, {"_id": 0, "gst_enabled": 1, "gst_rate": 1}) or {}
+    rest_gst = bool(rest.get("gst_enabled"))
+    rest_rate = float(rest.get("gst_rate", 5.0))
 
-    revenue_web_today = round(sum(float(b.get("total", 0.0)) for b in today_bills if b.get("created_by") == "guest"), 2)
-    revenue_web_total = round(sum(float(b.get("total", 0.0)) for b in paid_bills if b.get("created_by") == "guest"), 2)
+    def get_effective_total(b):
+        b_tot = float(b.get("total", 0.0))
+        b_sub = float(b.get("subtotal", 0.0))
+        b_tax = float(b.get("tax", 0.0))
+        if b_sub <= 0:
+            items = b.get("items") or []
+            b_sub = sum(float(i.get("price", 0.0)) * int(i.get("quantity", 1)) for i in items)
+        if b_tax > 0 and b_tot >= (b_sub + b_tax - 0.05):
+            return round(b_tot, 2)
+        if rest_gst:
+            calc_tax = b_tax if b_tax > 0 else round(b_sub * (rest_rate / 100.0), 2)
+            return round(b_sub + calc_tax, 2)
+        return round(b_tot if b_tot > 0 else b_sub, 2)
+
+    today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))]
+    revenue_today = round(sum(get_effective_total(b) for b in today_bills), 2)
+    revenue_total = round(sum(get_effective_total(b) for b in paid_bills), 2)
+
+    revenue_web_today = round(sum(get_effective_total(b) for b in today_bills if b.get("created_by") == "guest"), 2)
+    revenue_web_total = round(sum(get_effective_total(b) for b in paid_bills if b.get("created_by") == "guest"), 2)
 
     # Last 7 days revenue calculation
     ist_offset = timedelta(hours=5, minutes=30)
@@ -4223,7 +4715,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
                 return False
             return dt.astimezone(timezone(ist_offset)).date() == target_day
 
-        day_rev = round(sum(float(b.get("total", 0.0)) for b in paid_bills if is_on_target_day(b)), 2)
+        day_rev = round(sum(get_effective_total(b) for b in paid_bills if is_on_target_day(b)), 2)
         last_7_days.append({"date": day_label, "revenue": day_rev})
 
     # Top selling items
@@ -4352,9 +4844,15 @@ async def admin_summary(user: dict = Depends(require_roles("super_admin", "admin
             "ends_at": {"$gte": now_iso, "$lte": in_7_days}
         })
 
-        # Calculate total revenue collected from payment orders
-        payment_orders = await db.payment_orders.find({"status": "paid"}, {"_id": 0, "amount": 1, "created_at": 1}).to_list(2000)
-        total_revenue_collected = sum(float(p.get("amount") or 0) for p in payment_orders)
+        # Calculate total revenue collected from payment orders (converting paise to rupees)
+        payment_orders = await db.payment_orders.find({"status": "paid"}, {"_id": 0}).to_list(2000)
+        total_revenue_collected = 0.0
+        for p in payment_orders:
+            raw_amt = float(p.get("amount") or 0)
+            if p.get("razorpay_order_id") or p.get("razorpay_subscription_id") or p.get("razorpay_payment_id") or raw_amt >= 10000:
+                total_revenue_collected += raw_amt / 100.0
+            else:
+                total_revenue_collected += raw_amt
         if total_revenue_collected == 0 and active_subs:
             total_revenue_collected = sum(float(s.get("price") or 0) for s in active_subs)
 
@@ -4453,8 +4951,11 @@ async def admin_list_payments(
             plan = plan_map.get(po.get("plan_id")) or {}
             owner_u = user_map.get(rest.get("owner_user_id")) or {}
 
-            raw_amt = po.get("amount", 0)
-            amt_rupees = raw_amt / 100.0 if raw_amt > 10000 and po.get("razorpay_order_id") else float(raw_amt or 0)
+            raw_amt = float(po.get("amount") or 0)
+            if po.get("razorpay_order_id") or po.get("razorpay_subscription_id") or po.get("razorpay_payment_id") or raw_amt >= 10000:
+                amt_rupees = raw_amt / 100.0
+            else:
+                amt_rupees = raw_amt
             if amt_rupees == 0 and plan.get("price"):
                 amt_rupees = float(plan.get("price"))
 
@@ -4689,9 +5190,15 @@ async def admin_business_summary(user: dict = Depends(require_roles("super_admin
                 "ends_at": s.get("ends_at"),
             })
 
-        # Lifetime Revenue from payment_orders
-        payments = await db.payment_orders.find({"status": "paid"}, {"_id": 0, "amount": 1, "created_at": 1, "payment_method": 1}).to_list(5000)
-        total_rev = sum(float(p.get("amount") or 0) for p in payments)
+        # Lifetime Revenue from payment_orders (converting paise to rupees)
+        payments = await db.payment_orders.find({"status": "paid"}, {"_id": 0}).to_list(5000)
+        total_rev = 0.0
+        for p in payments:
+            raw_amt = float(p.get("amount") or 0)
+            if p.get("razorpay_order_id") or p.get("razorpay_subscription_id") or p.get("razorpay_payment_id") or raw_amt >= 10000:
+                total_rev += raw_amt / 100.0
+            else:
+                total_rev += raw_amt
         if total_rev == 0 and active_subs:
             total_rev = sum(float(s.get("price") or 0) for s in active_subs)
 

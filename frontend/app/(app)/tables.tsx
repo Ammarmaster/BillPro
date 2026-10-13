@@ -54,7 +54,14 @@ export default function TablesScreen() {
         api.listTables(),
         api.getRestaurant()
       ]);
-      setTables(tbls);
+      const seen = new Set<string>();
+      const dedupedTbls = (Array.isArray(tbls) ? tbls : []).filter((t: any) => {
+        const k = String(t?.label || t?.id).trim().toLowerCase();
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      setTables(dedupedTbls);
       if (rest) {
         setTenantId(rest.id);
         if (rest.name) setRestaurantName(rest.name);
@@ -104,10 +111,18 @@ export default function TablesScreen() {
 
   const save = async () => {
     const s = parseInt(seats, 10);
-    if (!label.trim() || isNaN(s) || s <= 0) { setErr("Enter label and seat count."); return; }
+    const cleanLabel = label.trim();
+    if (!cleanLabel || isNaN(s) || s <= 0) { setErr("Enter label and seat count."); return; }
+    
+    // Prevent duplicate table names
+    if (tables.some(t => String(t.label).trim().toLowerCase() === cleanLabel.toLowerCase())) {
+      setErr(`Table "${cleanLabel}" already exists.`);
+      return;
+    }
+
     setBusy(true);
     try {
-      await api.createTable({ label: label.trim(), seats: s });
+      await api.createTable({ label: cleanLabel, seats: s });
       setLabel(""); setSeats("4"); setModal(false);
       await load();
     } catch (e: any) { setErr(e.message); }

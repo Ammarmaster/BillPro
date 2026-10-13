@@ -53,6 +53,7 @@ function AdminConsole() {
   // Toggle detail states
   const [detailedMRR, setDetailedMRR] = useState(false);
   const [detailedARR, setDetailedARR] = useState(false);
+  const [detailedRev, setDetailedRev] = useState(false);
 
   // Animated values state
   const [animatedMRR, setAnimatedMRR] = useState(() => summary?.mrr || 0);
@@ -392,9 +393,11 @@ function AdminConsole() {
                   <Ionicons name="card" size={20} color="#10B981" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.metricValText, { color: theme.onSurface }]}>
-                    {formatAmount(summary?.total_revenue_collected || 0)}
-                  </Text>
+                  <Pressable onPress={() => setDetailedRev(!detailedRev)}>
+                    <Text style={[styles.metricValText, { color: theme.onSurface }]}>
+                      {formatAmount(summary?.total_revenue_collected || 0, detailedRev)}
+                    </Text>
+                  </Pressable>
                   <Text style={[styles.metricLblText, { color: theme.onSurfaceSecondary }]}>Payments & Txns</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={14} color={theme.onSurfaceTertiary} />

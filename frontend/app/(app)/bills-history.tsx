@@ -25,6 +25,7 @@ export default function BillsHistory() {
   const [activeFilter, setActiveFilter] = useState<"today" | "all">(() => params.filter === "today" ? "today" : "all");
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
   const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
+  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selBill, setSelBill] = useState<any>(null);
@@ -43,6 +44,9 @@ export default function BillsHistory() {
       }
       if (path === "/orders" && data) {
         setOrders(data);
+      }
+      if (path === "/restaurant" && data) {
+        setRestaurant(data);
       }
     });
     return () => unsubscribe();
@@ -69,12 +73,14 @@ export default function BillsHistory() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [data, oData] = await Promise.all([
+      const [data, oData, rData] = await Promise.all([
         api.listBills().catch(() => []),
-        api.listOrders().catch(() => [])
+        api.listOrders().catch(() => []),
+        api.getRestaurant().catch(() => null)
       ]);
       if (data) setBills(data);
       if (oData) setOrders(oData);
+      if (rData) setRestaurant(rData);
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -89,6 +95,43 @@ export default function BillsHistory() {
     return s === "paid" || s === "completed" || s === "settled" || s === "served";
   };
 
+  const gstEnabled = !!restaurant?.gst_enabled;
+  const gstRate = Number(restaurant?.gst_rate ?? 5);
+
+  const getEffectiveBillData = useCallback((b: any) => {
+    const items = b.items || [];
+    const subtotal = Number(b.subtotal || 0) || items.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+    const existingTax = Number(b.tax || 0);
+    const existingTotal = Number(b.total || 0);
+
+    let tax = existingTax;
+    let total = existingTotal;
+    let cgst = Number(b.cgst || 0);
+    let sgst = Number(b.sgst || 0);
+
+    if (gstEnabled) {
+      if (existingTax <= 0 || existingTotal <= subtotal) {
+        tax = Math.round(subtotal * (gstRate / 100) * 100) / 100;
+        cgst = Math.round((tax / 2) * 100) / 100;
+        sgst = Math.round((tax - cgst) * 100) / 100;
+        total = Math.round((subtotal + tax) * 100) / 100;
+      }
+    } else if (total <= 0) {
+      total = subtotal;
+    }
+
+    return {
+      ...b,
+      items,
+      subtotal,
+      tax,
+      cgst,
+      sgst,
+      gst_enabled: gstEnabled,
+      total
+    };
+  }, [gstEnabled, gstRate]);
+
   const todayPaidBills = useMemo(() => {
     const seenOrderIds = new Set<string>();
     const rawPaid = bills.filter(b => isPaidStatus(b.status) && (b.is_today === true || isTodayBusinessDay(b.paid_at || b.created_at)));
@@ -99,7 +142,7 @@ export default function BillsHistory() {
         continue;
       }
       oids.forEach(id => seenOrderIds.add(id));
-      deduped.push(b);
+      deduped.push(getEffectiveBillData(b));
     }
 
     // Unify any paid orders today that don't have a separate bill document
@@ -113,9 +156,8 @@ export default function BillsHistory() {
       seenOrderIds.add(o.id);
       const items = o.items || [];
       const subtotal = Number(o.subtotal || 0) || items.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-      const total = Number(o.total || 0) || subtotal;
       const billNumber = o.bill_number || (o.order_number ? `EZ-${new Date().getFullYear()}-${o.order_number}` : `EZ-${new Date().getFullYear()}-${String(o.id).slice(-4)}`);
-      deduped.push({
+      const baseBill = {
         id: o.id || `bill_${o.id}`,
         bill_number: billNumber,
         order_id: o.id,
@@ -124,24 +166,24 @@ export default function BillsHistory() {
         customer_name: o.customer_name || "Guest",
         items,
         subtotal,
-        total,
         status: "paid",
         payment_method: o.payment_method || "CASH",
         created_at: o.created_at || new Date().toISOString(),
         paid_at: o.paid_at || o.updated_at || o.created_at || new Date().toISOString(),
         is_today: true
-      });
+      };
+      deduped.push(getEffectiveBillData(baseBill));
     }
 
     // Sort newest first
     return deduped.sort((a, b) => new Date(b.paid_at || b.created_at).getTime() - new Date(a.paid_at || a.created_at).getTime());
-  }, [bills, orders]);
+  }, [bills, orders, getEffectiveBillData]);
 
   const allBillsList = useMemo(() => {
     const existingIds = new Set(bills.map(b => b.id || b.order_id));
     const extra = todayPaidBills.filter(b => !existingIds.has(b.id) && !existingIds.has(b.order_id));
-    return [...extra, ...bills];
-  }, [bills, todayPaidBills]);
+    return [...extra, ...bills.map(b => getEffectiveBillData(b))];
+  }, [bills, todayPaidBills, getEffectiveBillData]);
 
   const filteredBills = useMemo(() => {
     if (activeFilter === "all") return allBillsList;
@@ -150,7 +192,7 @@ export default function BillsHistory() {
 
   const todayTotal = useMemo(() => {
     return todayPaidBills.reduce((sum, b) => {
-      const amt = Number(b.total ?? b.subtotal ?? 0) || (b.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+      const amt = Number(b.total ?? b.subtotal ?? 0);
       return sum + amt;
     }, 0);
   }, [todayPaidBills]);

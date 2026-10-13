@@ -13,11 +13,13 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { api } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
+import { foodImageUrl } from "@/src/lib/foodImage";
 
 const SAMPLE_MENU_JSON = `[
   {
@@ -567,7 +569,13 @@ export default function MenuJsonImportModal({
                       {cat.items?.slice(0, 10).map((dish: any, dIdx: number) => {
                         const isVeg = dish.is_veg !== false && dish.veg !== false && dish.type !== "non-veg";
                         return (
-                          <View key={dIdx} style={[styles.dishPreviewRow, { borderColor: theme.border }]}>
+                          <View key={dIdx} style={[styles.dishPreviewRow, { borderColor: theme.border, alignItems: "center" }]}>
+                            <Image
+                              source={{ uri: dish.image_url || dish.image || foodImageUrl(dish.name || dish.item_name || "") }}
+                              style={{ width: 36, height: 36, borderRadius: 6, marginRight: 8, backgroundColor: theme.surfaceTertiary }}
+                              contentFit="cover"
+                              transition={150}
+                            />
                             <View style={[styles.vegBadge, { borderColor: isVeg ? "#10B981" : "#EF4444" }]}>
                               <View style={[styles.vegDot, { backgroundColor: isVeg ? "#10B981" : "#EF4444" }]} />
                             </View>

@@ -48,12 +48,17 @@ function base64Encode(str: string): string {
 
 const normalizeTable = (val: string | undefined | null) => {
   if (!val) return "";
-  return String(val).toLowerCase().replace("table", "").replace("t", "").replace("-", "").trim();
+  let s = String(val).trim().toLowerCase();
+  s = s.replace(/^(table|tbl)[\s\-_:]*/i, "");
+  s = s.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+  return s;
 };
 
 const isSameTable = (a: string | undefined | null, b: string | undefined | null) => {
   if (!a || !b) return false;
-  if (String(a).toLowerCase().trim() === String(b).toLowerCase().trim()) return true;
+  const strA = String(a).trim().toLowerCase();
+  const strB = String(b).trim().toLowerCase();
+  if (strA === strB) return true;
   const na = normalizeTable(a);
   const nb = normalizeTable(b);
   return na.length > 0 && na === nb;
@@ -205,7 +210,14 @@ export default function Billing() {
           const targetOrdId = orderId || (order ? order.id : null);
           if (targetOrdId) {
             const foundB = bList.find((b: any) => b.order_id === targetOrdId || (b.order_ids && b.order_ids.includes(targetOrdId)));
-            if (foundB) setBill(foundB);
+            if (foundB) {
+              setBill((prev: any) => {
+                if (prev && prev.status === "paid" && foundB.status !== "paid") {
+                  return prev; // NEVER revert a paid bill back to pending/open!
+                }
+                return foundB;
+              });
+            }
           }
         }
       }
@@ -266,7 +278,12 @@ export default function Billing() {
             }).catch(() => {});
           }
         } else if (b) {
-          setBill(b);
+          setBill((prev: any) => {
+            if (prev && prev.status === "paid" && b.status !== "paid") {
+              return prev;
+            }
+            return b;
+          });
         } else if (!o) {
           setErr("Order not found or already settled.");
         }
@@ -331,7 +348,12 @@ export default function Billing() {
           }
         }
         if (b) {
-          setBill(b);
+          setBill((prev: any) => {
+            if (prev && prev.status === "paid" && b.status !== "paid") {
+              return prev;
+            }
+            return b;
+          });
           setOrder({ table_number: tableNumber, items: b.items || [], subtotal: b.subtotal || 0, id: b.order_id || (tableOrders[0] ? tableOrders[0].id : targetOrderId) });
         } else if (tableOrders.length > 0) {
           setOrder({ table_number: tableNumber, items: tableOrders.flatMap((o: any) => o.items || []), subtotal: subtotalToBill, id: tableOrders[0].id });
@@ -397,8 +419,26 @@ export default function Billing() {
     const targetTbl = bill.table_number || order?.table_number || tableNumber;
     const isIndividualOrder = !!orderId;
 
+    const activeItems = (bill?.items && bill.items.length > 0)
+      ? bill.items
+      : (order?.items && order.items.length > 0)
+        ? order.items
+        : [];
+    const activeSubtotal = Number(bill?.subtotal || order?.subtotal || 0) || activeItems.reduce((s: number, it: any) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+    const activeTotal = Number(bill?.total || activeSubtotal);
+
     // Optimistic UI updates
-    const updatedLocalBill = { ...bill, status: "paid", payment_method: method };
+    const updatedLocalBill = {
+      ...bill,
+      items: activeItems,
+      subtotal: activeSubtotal,
+      total: activeTotal,
+      table_number: targetTbl,
+      customer_name: bill?.customer_name || order?.customer_name || "Guest",
+      status: "paid",
+      payment_method: method,
+      restaurant_snapshot: bill?.restaurant_snapshot || restaurant || api.getCachedRestaurant()
+    };
     setBill(updatedLocalBill);
     setPayModal(false);
     
@@ -484,8 +524,21 @@ export default function Billing() {
   const doPrint = async () => {
     if (!bill) return;
     try {
+      const activeItems = (bill?.items && bill.items.length > 0)
+        ? bill.items
+        : (order?.items && order.items.length > 0)
+          ? order.items
+          : [];
+      const activeSubtotal = Number(bill?.subtotal || order?.subtotal || 0) || activeItems.reduce((s: number, it: any) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+      const activeTotal = Number(bill?.total || activeSubtotal);
+
       const printableBill = {
         ...bill,
+        items: activeItems,
+        subtotal: activeSubtotal,
+        total: activeTotal,
+        table_number: bill?.table_number || order?.table_number || tableNumber || "Takeaway",
+        customer_name: bill?.customer_name || order?.customer_name || "Guest",
         restaurant_snapshot: bill.restaurant_snapshot || restaurant || api.getCachedRestaurant()
       };
       await printBill(printableBill);

@@ -28,11 +28,26 @@ export default function AppLayout() {
       setCheckingSub(false);
       return;
     }
+
+    // Do not block or force-redirect if user is exploring the playground or public routes
+    const isExempt =
+      !pathname ||
+      pathname.includes("demo-billing") ||
+      pathname.includes("subscribe") ||
+      pathname.includes("pricing") ||
+      pathname.includes("pos-erp") ||
+      !pathname.startsWith("/(app)");
+
+    if (isExempt) {
+      setCheckingSub(false);
+      return;
+    }
+
     try {
       const sub = await api.mySubscription();
       if (!sub || sub.status === "expired" || sub.status !== "active") {
         setSubStatus("expired");
-        if ((user.role === "owner" || user.role === "manager") && !pathname?.includes("subscribe")) {
+        if (user.role === "owner" || user.role === "manager") {
           router.replace("/(app)/subscribe");
         }
       } else {
@@ -44,9 +59,7 @@ export default function AppLayout() {
     } catch {
       if (user.role === "owner" || user.role === "manager") {
         setSubStatus("expired");
-        if (!pathname?.includes("subscribe")) {
-          router.replace("/(app)/subscribe");
-        }
+        router.replace("/(app)/subscribe");
       }
     } finally {
       setCheckingSub(false);

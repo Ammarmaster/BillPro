@@ -36,6 +36,11 @@ let syncQueue: SyncAction[] = [];
 let isSyncing = false;
 let isInitialized = false;
 
+// Active runner references for instant 0ms background sync execution
+let runnerReqFn: ((path: string, opts?: RequestInit, auth?: boolean) => Promise<any>) | null = null;
+let runnerIdMap: Record<string, string> | null = null;
+let runnerUpdateCacheFn: ((type: SyncActionType, localId: string | undefined, realObj: any) => void) | null = null;
+
 type QueueListener = (queue: SyncAction[], syncing: boolean) => void;
 const queueListeners: Set<QueueListener> = new Set();
 
@@ -137,7 +142,19 @@ export async function enqueueSyncAction(
   syncQueue.push(action);
   await saveQueueToDisk(syncQueue);
   notifyQueueListeners();
+
+  // 0ms INSTANT BACKGROUND FLUSH — sync immediately if online without waiting for interval
+  if (runnerReqFn && runnerIdMap && !isSyncing) {
+    processSyncQueue(runnerReqFn, runnerIdMap, runnerUpdateCacheFn || undefined).catch(() => {});
+  }
+
   return action;
+}
+
+export function triggerOfflineSyncImmediate() {
+  if (runnerReqFn && runnerIdMap && !isSyncing && syncQueue.length > 0) {
+    processSyncQueue(runnerReqFn, runnerIdMap, runnerUpdateCacheFn || undefined).catch(() => {});
+  }
 }
 
 export async function clearSyncQueue() {
@@ -429,25 +446,45 @@ export async function processSyncQueue(
         const msg = String(itemErr?.message || "").toLowerCase();
         const status = itemErr?.status;
 
-        // Permanent rejection / already handled errors: skip so queue doesn't lock
+        const isNetworkErr =
+          !status &&
+          (msg.includes("network") ||
+           msg.includes("failed to fetch") ||
+           msg.includes("offline") ||
+           msg.includes("unavailable") ||
+           msg.includes("connection") ||
+           msg.includes("load failed"));
+
+        // If server actually responded with HTTP status (4xx client rejection or handled), skip so queue doesn't lock
+        const isClientError = status && status >= 400 && status < 500;
+        (action as any)._retries = ((action as any)._retries || 0) + 1;
+
         if (
-          status === 400 ||
-          status === 404 ||
-          status === 409 ||
+          isClientError ||
           msg.includes("already exists") ||
-          msg.includes("not found")
+          msg.includes("not found") ||
+          (action as any)._retries >= 3
         ) {
-          console.warn(`[SyncQueue] Skipping invalid/expired action (${action.type}):`, msg);
+          console.warn(`[SyncQueue] Skipping invalid/expired action (${action.type}):`, msg || status);
           syncQueue.shift();
           await saveQueueToDisk(syncQueue);
           notifyQueueListeners();
           continue;
         }
 
-        // Network connection drops / offline: pause queue and exit
-        console.warn(`[SyncQueue] Offline or server unreachable during ${action.type}. Will retry on next sync:`, itemErr?.message);
-        failCount++;
-        break;
+        if (isNetworkErr) {
+          // Genuinely offline: pause queue and exit
+          console.warn(`[SyncQueue] Offline during ${action.type}. Will retry on reconnect:`, itemErr?.message);
+          failCount++;
+          break;
+        }
+
+        // Server responded with 500 or unknown error: advance after logging to prevent indefinite deadlock
+        console.warn(`[SyncQueue] Action ${action.type} failed with server response:`, msg || status);
+        syncQueue.shift();
+        await saveQueueToDisk(syncQueue);
+        notifyQueueListeners();
+        continue;
       }
     }
   } finally {
@@ -517,6 +554,10 @@ export function startOfflineSyncRunner(
   isLocalModeFn: () => boolean,
   updateCacheFn?: (type: SyncActionType, localId: string | undefined, realObj: any) => void
 ) {
+  runnerReqFn = reqFn;
+  runnerIdMap = idMap;
+  if (updateCacheFn) runnerUpdateCacheFn = updateCacheFn;
+
   const triggerSync = async () => {
     try {
       if (syncQueue.length === 0 || isSyncing) return;
@@ -562,12 +603,12 @@ export function startOfflineSyncRunner(
     });
   } catch {}
 
-  // 3. Fast periodic auto-sync runner (every 5 seconds if pending items exist)
+  // 3. Fast periodic auto-sync runner (every 2 seconds if pending items exist)
   const syncInterval = setInterval(() => {
     if (syncQueue.length > 0 && !isSyncing) {
       triggerSync().catch(() => {});
     }
-  }, 5000);
+  }, 2000);
 
   // 4. Periodic check for 12:00 AM Midnight scheduled cloud sync
   const midnightInterval = setInterval(() => {
@@ -578,7 +619,7 @@ export function startOfflineSyncRunner(
   setTimeout(() => {
     triggerSync().catch(() => {});
     triggerMidnightSync().catch(() => {});
-  }, 1500);
+  }, 500);
 
   return () => {
     try {

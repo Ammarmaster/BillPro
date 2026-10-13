@@ -276,4 +276,59 @@ def test_all_closing_and_reconciliation_scenarios():
         finally:
             await db.bills.delete_many({"tenant_id": {"$in": [tid_a, tid_b]}})
 
+        # Scenario 5: Mobile Phone Login and Table Deduplication Mechanics
+        from server import login, list_tables, create_table, LoginIn, TableIn, hash_pw
+        tid_s5 = f"test_tid_{uuid.uuid4().hex[:8]}"
+        uid_s5 = f"uid_{uuid.uuid4().hex[:8]}"
+        phone_s5 = "9876543210"
+
+        user_s5 = {
+            "id": uid_s5,
+            "email": f"test_{uuid.uuid4().hex[:6]}@example.com",
+            "phone": phone_s5,
+            "password": hash_pw("secret123"),
+            "full_name": "Test Owner",
+            "role": "owner",
+            "tenant_id": tid_s5,
+            "token_version": 0,
+        }
+
+        try:
+            await db.users.insert_one(user_s5)
+
+            # Test 1: Login via exact 10-digit mobile phone
+            res1 = await login(LoginIn(email=phone_s5, password="secret123"))
+            assert res1.access_token is not None
+            assert res1.user["id"] == uid_s5
+
+            # Test 2: Login via +91 prefixed phone
+            res2 = await login(LoginIn(email=f"+91{phone_s5}", password="secret123"))
+            assert res2.access_token is not None
+            assert res2.user["id"] == uid_s5
+
+            # Test 3: Table Deduplication Mechanics
+            mock_user = {"id": uid_s5, "role": "owner", "tenant_id": tid_s5}
+
+            # Insert Table "3"
+            t1 = await create_table(TableIn(label="3", seats=4), user=mock_user)
+            assert t1["label"] == "3"
+
+            # Try inserting Table "3" again (exact duplicate) -> must return existing table
+            t2 = await create_table(TableIn(label="3", seats=4), user=mock_user)
+            assert t2["id"] == t1["id"]
+
+            # Try inserting Table " 3 " with extra spaces -> must recognize existing table
+            t3 = await create_table(TableIn(label=" 3 ", seats=4), user=mock_user)
+            assert t3["id"] == t1["id"]
+
+            # Verify list_tables returns exactly 1 table
+            all_tbls = await list_tables(user=mock_user)
+            assert len([x for x in all_tbls if x["label"] == "3"]) == 1
+
+        finally:
+            await db.users.delete_one({"id": uid_s5})
+            await db.tables.delete_many({"tenant_id": tid_s5})
+
     asyncio.run(_main())
+
+

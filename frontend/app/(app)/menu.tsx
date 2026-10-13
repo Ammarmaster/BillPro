@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { pickImageBase64 } from "@/src/lib/imagePicker";
-import { menuItemImageSource } from "@/src/lib/foodImage";
+import { menuItemImageSource, foodImageUrl, generateAiDishImageUrl } from "@/src/lib/foodImage";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
@@ -42,6 +42,8 @@ export default function MenuScreen() {
   const [iDesc, setIDesc] = useState("");
   const [iCat, setICat] = useState<string>("");
   const [iImg, setIImg] = useState<string>("");
+  const [iImgUrl, setIImgUrl] = useState<string>("");
+  const [autoAssigning, setAutoAssigning] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const { subscribeToCache } = require("@/src/lib/api");
@@ -65,8 +67,22 @@ export default function MenuScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const pickImg = async () => {
-    try { const b = await pickImageBase64(0.5); if (b) setIImg(b); }
+    try { const b = await pickImageBase64(0.5); if (b) { setIImg(b); setIImgUrl(""); } }
     catch (e: any) { setErr(e.message); }
+  };
+
+  const handleAutoAssignImages = async () => {
+    setAutoAssigning(true);
+    setErr(null);
+    try {
+      const res: any = await api.autoAssignMenuImages(false);
+      await load();
+      alert(res?.message || "Accurate AI dish photos auto-assigned!");
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setAutoAssigning(false);
+    }
   };
 
   const addCat = async () => {
@@ -89,20 +105,23 @@ export default function MenuScreen() {
           description: iDesc,
           price,
           image_base64: iImg || undefined,
+          image_url: iImgUrl || undefined,
           is_active: editingItem.is_active
         });
       } else {
         // Create new item
+        const autoUrl = iImgUrl || foodImageUrl(iName.trim());
         await api.createMenuItem({
           category_id: iCat,
           name: iName.trim(),
           description: iDesc,
           price,
           image_base64: iImg,
+          image_url: autoUrl,
           is_active: true
         });
       }
-      setIName(""); setIPrice(""); setIDesc(""); setIImg(""); setEditingItem(null); setItemModal(false);
+      setIName(""); setIPrice(""); setIDesc(""); setIImg(""); setIImgUrl(""); setEditingItem(null); setItemModal(false);
       await load();
     } catch (e: any) {
       setErr(e.message);
@@ -127,6 +146,21 @@ export default function MenuScreen() {
             <Text style={styles.title} numberOfLines={1}>Menu</Text>
           </View>
           <View style={styles.headerRight}>
+            <Pressable
+              style={styles.iconBtn}
+              onPress={handleAutoAssignImages}
+              disabled={autoAssigning}
+              testID="menu-auto-photos-btn"
+            >
+              {autoAssigning ? (
+                <ActivityIndicator size="small" color={colors.brand} />
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={15} color={colors.brand} />
+                  <Text style={styles.iconBtnText}>AI Photos</Text>
+                </>
+              )}
+            </Pressable>
             <Pressable style={styles.iconBtn} onPress={() => setJsonImportModal(true)} testID="menu-json-import-btn">
               <Ionicons name="code-working" size={15} color={colors.brand} />
               <Text style={styles.iconBtnText}>JSON Import</Text>
@@ -142,6 +176,7 @@ export default function MenuScreen() {
               setIPrice("");
               setIDesc("");
               setIImg("");
+              setIImgUrl("");
               setICat(cats[0].id);
               setItemModal(true);
             }} testID="menu-add-item-btn">
@@ -183,6 +218,7 @@ export default function MenuScreen() {
                   setIDesc(item.description || "");
                   setICat(item.category_id);
                   setIImg(item.image_base64 || "");
+                  setIImgUrl(item.image_url || "");
                   setItemModal(true);
                 }}
               >
@@ -247,17 +283,68 @@ export default function MenuScreen() {
               <Pressable style={styles.imgPickerRow} onPress={pickImg} testID="item-image-picker">
                 {iImg ? (
                   <Image source={{ uri: iImg.startsWith("data:") ? iImg : `data:image/jpeg;base64,${iImg}` }} style={styles.imgPreview} contentFit="cover" />
+                ) : iImgUrl ? (
+                  <Image source={{ uri: iImgUrl }} style={styles.imgPreview} contentFit="cover" />
                 ) : (
                   <View style={styles.imgPlaceholder}>
                     <Ionicons name="image" size={26} color={colors.onSurfaceSecondary} />
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.imgPickerTitle}>{iImg ? "Change photo" : "Add photo"}</Text>
-                  <Text style={styles.imgPickerHint}>If skipped, an image will be auto-fetched by name.</Text>
+                  <Text style={styles.imgPickerTitle}>{iImg || iImgUrl ? "Change photo" : "Add photo"}</Text>
+                  <Text style={styles.imgPickerHint}>Upload photo or generate with free AI model.</Text>
                 </View>
                 <Ionicons name="camera" size={22} color={colors.brand} />
               </Pressable>
+
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: spacing.md, alignItems: "center" }}>
+                <Pressable
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: radius.sm,
+                    backgroundColor: isDark ? "rgba(99,91,255,0.18)" : "#EEF2FF",
+                    borderColor: "#635BFF",
+                    borderWidth: 1,
+                  }}
+                  onPress={() => {
+                    if (!iName.trim()) {
+                      setErr("Enter dish name first to generate AI photo.");
+                      return;
+                    }
+                    const aiUrl = generateAiDishImageUrl(iName.trim());
+                    setIImgUrl(aiUrl);
+                    setIImg("");
+                  }}
+                >
+                  <Ionicons name="sparkles" size={14} color="#635BFF" />
+                  <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "700" }}>Generate AI Photo</Text>
+                </Pressable>
+
+                {iImgUrl || iImg ? (
+                  <Pressable
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      paddingHorizontal: 10,
+                      paddingVertical: 7,
+                      borderRadius: radius.sm,
+                      backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2",
+                    }}
+                    onPress={() => {
+                      setIImg("");
+                      setIImgUrl("");
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={14} color="#EF4444" />
+                    <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "600" }}>Clear</Text>
+                  </Pressable>
+                ) : null}
+              </View>
 
               <TextInput value={iName} onChangeText={setIName} placeholder="Name" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="item-name-input" />
               <TextInput value={iPrice} onChangeText={setIPrice} placeholder="Price ₹" keyboardType="decimal-pad" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="item-price-input" />

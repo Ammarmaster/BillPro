@@ -55,59 +55,18 @@ export default function SyncStatusIndicator({ compact = false }: { compact?: boo
     } catch {}
   };
 
-  if (pendingCount === 0 && isOnline && !syncSuccessToast) {
-    if (compact) return null;
-    return (
-      <View style={[styles.pill, { backgroundColor: isDark ? "rgba(16, 185, 129, 0.12)" : "#ECFDF5", borderColor: isDark ? "rgba(16, 185, 129, 0.3)" : "#A7F3D0" }]}>
-        <View style={[styles.dot, { backgroundColor: "#10B981" }]} />
-        <Text style={[styles.text, { color: "#059669" }]}>Online & Synced</Text>
-      </View>
-    );
+  if (compact) {
+    // Keep background sync running completely silent without any annoying badges or text
+    return null;
   }
 
-  if (syncSuccessToast) {
+  // Non-compact view: completely clean and silent
+  if (!isOnline) {
     return (
-      <View style={[styles.pill, { backgroundColor: "#ECFDF5", borderColor: "#6EE7B7" }]}>
-        <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-        <Text style={[styles.text, { color: "#059669", fontWeight: "800" }]}>All Changes Synced!</Text>
+      <View style={[styles.pill, { backgroundColor: isDark ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2", borderColor: isDark ? "rgba(239, 68, 68, 0.3)" : "#FECACA" }]}>
+        <View style={[styles.dot, { backgroundColor: "#EF4444" }]} />
+        <Text style={[styles.text, { color: "#DC2626" }]}>Offline Mode</Text>
       </View>
-    );
-  }
-
-  if (isSyncing) {
-    return (
-      <View style={[styles.pill, { backgroundColor: isDark ? "rgba(99, 91, 255, 0.15)" : "#EEF2FF", borderColor: isDark ? "rgba(99, 91, 255, 0.35)" : "#C7D2FE" }]}>
-        <ActivityIndicator size="small" color="#635BFF" style={{ transform: [{ scale: 0.75 }] }} />
-        <Text style={[styles.text, { color: "#635BFF", fontWeight: "800" }]}>
-          Syncing {pendingCount > 0 ? `(${pendingCount})` : ""}...
-        </Text>
-      </View>
-    );
-  }
-
-  if (!isOnline || pendingCount > 0) {
-    return (
-      <Pressable
-        onPress={handleManualSync}
-        style={({ pressed }) => [
-          styles.pill,
-          {
-            backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "#FFFBEB",
-            borderColor: isDark ? "rgba(245, 158, 11, 0.35)" : "#FDE68A",
-            opacity: pressed ? 0.75 : 1,
-          },
-        ]}
-      >
-        <Ionicons name={isOnline ? "cloud-upload-outline" : "cloud-offline"} size={14} color="#D97706" />
-        <Text style={[styles.text, { color: "#B45309", fontWeight: "800" }]}>
-          {!isOnline ? "Offline" : "Pending Sync"} {pendingCount > 0 ? `(${pendingCount})` : ""}
-        </Text>
-        {isOnline && pendingCount > 0 && (
-          <View style={styles.syncBtnBadge}>
-            <Text style={styles.syncBtnText}>Sync Now</Text>
-          </View>
-        )}
-      </Pressable>
     );
   }
 

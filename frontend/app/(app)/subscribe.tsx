@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, SafeAreaView, StatusBar, Modal, Alert,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, SafeAreaView, StatusBar, Modal, Alert, Platform,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -20,6 +20,26 @@ type Plan = {
   valid_days?: number; 
   features: string[] 
 };
+
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(false);
+    if ((window as any).Razorpay) return resolve(true);
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      if ((window as any).Razorpay) return resolve(true);
+      existing.addEventListener("load", () => resolve(true));
+      existing.addEventListener("error", () => resolve(false));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
 
 export default function Subscribe() {
   const insets = useSafeAreaInsets();
@@ -42,6 +62,12 @@ export default function Subscribe() {
   const [isYearly, setIsYearly] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      loadRazorpayScript().catch(() => {});
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
@@ -61,12 +87,74 @@ export default function Subscribe() {
     currentPlanRef.current = plan;
     try {
       const co = await api.checkout(plan.id);
+
+      if (Platform.OS === "web") {
+        const loaded = await loadRazorpayScript();
+        if (!loaded || !(window as any).Razorpay) {
+          throw new Error("Unable to connect to Razorpay payment gateway. Please check your internet connection.");
+        }
+
+        const opts = {
+          key: co.key_id,
+          subscription_id: co.subscription_id,
+          name: "EzBill ERP",
+          description: (`${co.plan_name} Subscription`).replace(/[^a-zA-Z0-9 ]/g, ""),
+          prefill: co.prefill,
+          theme: { color: "#FF5E2B" },
+          handler: async (response: any) => {
+            setLoadingPlanId(plan.id);
+            setMsg("Payment authorized! Activating subscription...");
+            try {
+              const verified = await api.verifyPayment({
+                razorpay_subscription_id: response.razorpay_subscription_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                plan_id: plan.id,
+              });
+              setSub(verified);
+              setMsg(`Subscription activated successfully! Unlocking ${plan.name}...`);
+              setTimeout(() => {
+                if (!user?.tenant_id) {
+                  router.replace("/onboarding");
+                } else {
+                  router.replace("/(app)/dashboard");
+                }
+              }, 1500);
+            } catch (verErr: any) {
+              setErr(verErr.message || "Payment verification failed.");
+            } finally {
+              setLoadingPlanId(null);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setLoadingPlanId(null);
+              setErr("Checkout cancelled.");
+            }
+          }
+        };
+
+        const rzp = new (window as any).Razorpay(opts);
+        rzp.on("payment.failed", (resp: any) => {
+          setLoadingPlanId(null);
+          setErr(resp.error?.description || "Payment failed.");
+        });
+        rzp.open();
+        setTimeout(() => {
+          setLoadingPlanId(null);
+        }, 1000);
+        return;
+      }
+
+      // Native (Android / iOS): use WebView modal
       const html = buildCheckoutHtml(co);
       setCheckoutHtml(html);
     } catch (e: any) { 
       setErr(e.message || "An error occurred."); 
     } finally { 
-      setLoadingPlanId(null); 
+      if (Platform.OS !== "web") {
+        setLoadingPlanId(null); 
+      }
     }
   };
 
@@ -164,8 +252,10 @@ export default function Subscribe() {
             onPress={() => {
               if (router.canGoBack()) {
                 router.back();
-              } else {
+              } else if (sub?.status === "active") {
                 router.replace("/(app)/more");
+              } else {
+                router.replace("/demo-billing");
               }
             }} 
             testID="subscribe-back-btn" 
@@ -196,6 +286,36 @@ export default function Subscribe() {
             <Text style={[styles.heroTagline, { color: colors.brand }]}>No per-order commission.</Text>
           </View>
 
+          {/* Interactive Playground Discovery Banner */}
+          <Pressable
+            style={{
+              backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+              borderColor: isDark ? "#635BFF" : "#C7D2FE",
+              borderWidth: 1,
+              borderRadius: radius.md,
+              padding: spacing.md,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+            onPress={() => router.push("/demo-billing")}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#635BFF", justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="game-controller-outline" size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 14 }}>
+                  Want to explore before subscribing?
+                </Text>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, marginTop: 2 }}>
+                  Test-drive live tables, superfast billing & thermal prints in our playground
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#635BFF" />
+          </Pressable>
+
           {/* Monthly / Yearly Toggle */}
           <View style={[styles.toggleContainer, { backgroundColor: theme.surfaceSecondary }]}>
             <Pressable 
@@ -223,6 +343,13 @@ export default function Subscribe() {
             <View style={styles.msgBox}>
               <Ionicons name="sparkles" size={18} color="#FFFFFF" />
               <Text style={styles.msgText}>{msg}</Text>
+            </View>
+          )}
+
+          {loadingPlanId && (
+            <View style={styles.loadingBanner}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+              <Text style={styles.loadingBannerText}>Connecting to Razorpay secure checkout... Please wait</Text>
             </View>
           )}
 
@@ -311,13 +438,20 @@ export default function Subscribe() {
                   <Text style={[styles.cardTagline, { color: theme.onSurfaceSecondary }]}>Simple Billing</Text>
 
                   <Pressable 
-                    style={[styles.cardBtn, activePlanId === starterPlan.id && styles.cardBtnCurrent]}
+                    style={[styles.cardBtn, activePlanId === starterPlan.id && styles.cardBtnCurrent, loadingPlanId === starterPlan.id && { opacity: 0.85 }]}
                     disabled={activePlanId === starterPlan.id || loadingPlanId !== null}
                     onPress={() => startCheckout(starterPlan)}
                   >
-                    <Text style={[styles.cardBtnText, activePlanId === starterPlan.id && styles.cardBtnTextCurrent]}>
-                      {activePlanId === starterPlan.id ? "Current Plan" : "Choose Starter"}
-                    </Text>
+                    {loadingPlanId === starterPlan.id ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={[styles.cardBtnText, { color: "#FFFFFF" }]}>Connecting...</Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.cardBtnText, activePlanId === starterPlan.id && styles.cardBtnTextCurrent]}>
+                        {activePlanId === starterPlan.id ? "Current Plan" : "Choose Starter"}
+                      </Text>
+                    )}
                   </Pressable>
 
                   <View style={[styles.divider, { backgroundColor: theme.border }]} />
@@ -348,13 +482,20 @@ export default function Subscribe() {
                   <Text style={[styles.cardTagline, { color: theme.onSurfaceSecondary }]}>Restaurant Management</Text>
 
                   <Pressable 
-                    style={[styles.cardBtn, { backgroundColor: "#FF5E2B" }, activePlanId === growthPlan.id && styles.cardBtnCurrent]}
+                    style={[styles.cardBtn, { backgroundColor: "#FF5E2B" }, activePlanId === growthPlan.id && styles.cardBtnCurrent, loadingPlanId === growthPlan.id && { opacity: 0.85 }]}
                     disabled={activePlanId === growthPlan.id || loadingPlanId !== null}
                     onPress={() => startCheckout(growthPlan)}
                   >
-                    <Text style={[styles.cardBtnText, { color: "#FFFFFF" }, activePlanId === growthPlan.id && styles.cardBtnTextCurrent]}>
-                      {activePlanId === growthPlan.id ? "Current Plan" : "Choose Growth"}
-                    </Text>
+                    {loadingPlanId === growthPlan.id ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={[styles.cardBtnText, { color: "#FFFFFF" }]}>Connecting...</Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.cardBtnText, { color: "#FFFFFF" }, activePlanId === growthPlan.id && styles.cardBtnTextCurrent]}>
+                        {activePlanId === growthPlan.id ? "Current Plan" : "Choose Growth"}
+                      </Text>
+                    )}
                   </Pressable>
 
                   <View style={[styles.divider, { backgroundColor: theme.border }]} />
@@ -382,13 +523,20 @@ export default function Subscribe() {
                   <Text style={[styles.cardTagline, { color: "rgba(255,255,255,0.6)" }]}>Digital Restaurant</Text>
 
                   <Pressable 
-                    style={[styles.cardBtn, { backgroundColor: "#635BFF" }, activePlanId === proPlan.id && styles.cardBtnCurrent]}
+                    style={[styles.cardBtn, { backgroundColor: "#635BFF" }, activePlanId === proPlan.id && styles.cardBtnCurrent, loadingPlanId === proPlan.id && { opacity: 0.85 }]}
                     disabled={activePlanId === proPlan.id || loadingPlanId !== null}
                     onPress={() => startCheckout(proPlan)}
                   >
-                    <Text style={[styles.cardBtnText, { color: "#FFFFFF" }, activePlanId === proPlan.id && styles.cardBtnTextCurrent]}>
-                      {activePlanId === proPlan.id ? "Current Plan" : "Choose Pro"}
-                    </Text>
+                    {loadingPlanId === proPlan.id ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={[styles.cardBtnText, { color: "#FFFFFF" }]}>Connecting...</Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.cardBtnText, { color: "#FFFFFF" }, activePlanId === proPlan.id && styles.cardBtnTextCurrent]}>
+                        {activePlanId === proPlan.id ? "Current Plan" : "Choose Pro"}
+                      </Text>
+                    )}
                   </Pressable>
 
                   <View style={[styles.divider, { backgroundColor: "rgba(255,255,255,0.1)" }]} />
@@ -562,14 +710,23 @@ export default function Subscribe() {
             <View style={{ width: 40 }} />
           </View>
           {checkoutHtml && (
-            <WebView
-              source={{ html: checkoutHtml, baseUrl: "https://checkout.razorpay.com" }}
-              originWhitelist={["*"]}
-              javaScriptEnabled
-              onMessage={onWebMessage}
-              startInLoadingState
-              style={{ flex: 1 }}
-            />
+            Platform.OS !== "web" ? (
+              <WebView
+                source={{ html: checkoutHtml, baseUrl: "https://checkout.razorpay.com" }}
+                originWhitelist={["*"]}
+                javaScriptEnabled
+                onMessage={onWebMessage}
+                startInLoadingState
+                style={{ flex: 1 }}
+              />
+            ) : (
+              <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xl }}>
+                <ActivityIndicator size="large" color={colors.brand} />
+                <Text style={{ color: "#111", marginTop: 12, fontWeight: "600" }}>
+                  Connecting to Razorpay checkout...
+                </Text>
+              </View>
+            )
           )}
         </SafeAreaView>
       </Modal>
@@ -689,6 +846,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     flex: 1,
+  },
+  loadingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: "#FF5E2B",
+    padding: spacing.md,
+    borderRadius: radius.lg,
+  },
+  loadingBannerText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   activeSubCard: {
     padding: spacing.xl,
