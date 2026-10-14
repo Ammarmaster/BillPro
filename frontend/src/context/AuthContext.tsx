@@ -14,8 +14,8 @@ type User = {
 type Ctx = {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  staffLogin: (phone: string, pin: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<any>;
+  staffLogin: (phone: string, pin: string) => Promise<any>;
   register: (email: string, password: string, full_name: string, role?: string, terms_accepted?: boolean, privacy_consent?: boolean, marketing_consent?: boolean, phone?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -108,11 +108,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const r = await api.login(email, password);
     await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
+    return r.user;
   };
   const staffLogin = async (phone: string, pin: string) => {
     const r = await api.staffLogin(phone, pin);
     await saveTokens(r.access_token, r.refresh_token, r.user);
     setUser(r.user);
+    return r.user;
   };
   const register = async (email: string, password: string, full_name: string, role = "owner", terms_accepted = false, privacy_consent = false, marketing_consent = false, phone?: string) => {
     const r = await api.register(email, password, full_name, role, terms_accepted, privacy_consent, marketing_consent, phone);

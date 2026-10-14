@@ -37,10 +37,20 @@ export default function Login() {
 
   const submit = async () => {
     setErr(null);
+    if (!email.trim() || !password) {
+      setErr("Please enter your email or mobile number and password.");
+      return;
+    }
     setBusy(true);
     try {
-      await login(email.trim(), password);
-      router.replace("/(app)/dashboard");
+      const u = await login(email.trim(), password);
+      if (u?.role === "waiter") {
+        router.replace("/(app)/waiter");
+      } else if (u?.role === "kitchen") {
+        router.replace("/(app)/kitchen");
+      } else {
+        router.replace("/(app)/dashboard");
+      }
     } catch (e: any) {
       setErr(e.message || "Login failed");
     } finally {

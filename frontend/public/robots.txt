@@ -1,17 +1,21 @@
 User-agent: *
 Allow: /
-Allow: /pricing
 Allow: /pos-billing-software.html
 Allow: /pos-erp
+Allow: /pricing
 Allow: /demo-billing
 Allow: /login
 Allow: /register
+Allow: /staff-login
 Allow: /legal
 Allow: /manifest.json
+Allow: /assets/
+Allow: /assets/screenshots/
+Allow: /assets/images/
 Allow: /sitemap.xml
 Allow: /sitemap.txt
 
-# Disallow internal authenticated API / admin calls from direct indexing
+# Disallow internal backend APIs and WebSockets from index pollution
 Disallow: /api/
 Disallow: /ws/
 

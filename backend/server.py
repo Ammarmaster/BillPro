@@ -936,48 +936,106 @@ async def register(payload: RegisterIn, request: Request = None):
     )
 
 
+def get_phone_query_patterns(raw_phone: str) -> list[dict]:
+    clean = (raw_phone or "").strip()
+    if not clean:
+        return []
+    digits = "".join(filter(str.isdigit, clean))
+    core_10 = digits[-10:] if len(digits) >= 10 else digits
+
+    conditions: list[dict] = [{"phone": clean}]
+    if digits and digits != clean:
+        conditions.append({"phone": digits})
+    if core_10:
+        if core_10 not in (clean, digits):
+            conditions.append({"phone": core_10})
+        # Common prefix variations
+        conditions.append({"phone": f"+91{core_10}"})
+        conditions.append({"phone": f"91{core_10}"})
+        conditions.append({"phone": f"0{core_10}"})
+        if len(core_10) == 10:
+            spaced = f"{core_10[:5]} {core_10[5:]}"
+            conditions.append({"phone": spaced})
+            conditions.append({"phone": f"+91 {spaced}"})
+            conditions.append({"phone": f"+91 {core_10}"})
+            conditions.append({"phone": f"91 {spaced}"})
+            conditions.append({"phone": f"0 {spaced}"})
+
+        # Regex allowing any spaces/hyphens between digits, with optional leading country code or 0
+        sep = r"[\s\-\.]*"
+        core_pattern = sep.join(re.escape(d) for d in core_10)
+        regex_pattern = rf"^\s*(?:\+?\d{{1,3}}[\s\-\.]*|0[\s\-\.]*)?{core_pattern}\s*$"
+        conditions.append({"phone": {"$regex": regex_pattern}})
+
+    return conditions
+
+
 @api.post("/auth/login", response_model=TokenOut)
 async def login(payload: LoginIn):
     raw_ident = payload.email.strip()
     is_email = "@" in raw_ident
-    
+
     user = None
     if is_email:
         user = await db.users.find_one({"email": raw_ident.lower()})
+        if not user or not verify_pw(payload.password, user.get("password", "")):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
     else:
         # Mobile phone number login in same input field
-        digits = "".join(filter(str.isdigit, raw_ident))
-        clean_10 = digits[-10:] if len(digits) >= 10 else digits
-        
-        # 1. Look up user directly by phone
-        query_conditions = [{"phone": raw_ident}]
-        if digits:
-            query_conditions.append({"phone": digits})
-        if clean_10:
-            query_conditions.append({"phone": clean_10})
-            query_conditions.append({"phone": {"$regex": f"{re.escape(clean_10)}$"}})
-        
-        user = await db.users.find_one({"$or": query_conditions})
-        
-        # 2. If not found in user record, match restaurant's registered phone
-        if not user and (clean_10 or digits or raw_ident):
-            rest_conditions = [{"phone": raw_ident}]
-            if digits:
-                rest_conditions.append({"phone": digits})
-            if clean_10:
-                rest_conditions.append({"phone": clean_10})
-                rest_conditions.append({"phone": {"$regex": f"{re.escape(clean_10)}$"}})
-            
-            rest = await db.restaurants.find_one({"$or": rest_conditions}, {"_id": 0})
-            if rest and rest.get("id"):
-                user = await db.users.find_one({
-                    "tenant_id": rest["id"],
-                    "role": {"$in": ["owner", "manager"]}
-                })
+        phone_conds = get_phone_query_patterns(raw_ident)
+        if not phone_conds:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not user or not verify_pw(payload.password, user["password"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    user_out = {k: v for k, v in user.items() if k not in ("password", "_id")}
+        candidate_users = []
+        seen_user_ids = set()
+
+        # 1. Look up users directly by phone field in db.users
+        users_by_phone = await db.users.find({"$or": phone_conds}).to_list(50)
+        for u in users_by_phone:
+            if u.get("id") and u["id"] not in seen_user_ids:
+                seen_user_ids.add(u["id"])
+                candidate_users.append(u)
+
+        # 2. Look up matching restaurants by phone in db.restaurants
+        matched_rests = await db.restaurants.find({"$or": phone_conds}, {"_id": 0, "id": 1, "owner_user_id": 1}).to_list(50)
+        tenant_ids = [r["id"] for r in matched_rests if r.get("id")]
+        owner_ids = [r["owner_user_id"] for r in matched_rests if r.get("owner_user_id")]
+
+        for u in users_by_phone:
+            if u.get("tenant_id") and u["tenant_id"] not in tenant_ids:
+                tenant_ids.append(u["tenant_id"])
+
+        rest_user_queries = []
+        if tenant_ids:
+            rest_user_queries.append({"tenant_id": {"$in": tenant_ids}})
+        if owner_ids:
+            rest_user_queries.append({"id": {"$in": owner_ids}})
+
+        if rest_user_queries:
+            users_by_rest = await db.users.find({"$or": rest_user_queries}).to_list(50)
+            for u in users_by_rest:
+                if u.get("id") and u["id"] not in seen_user_ids:
+                    seen_user_ids.add(u["id"])
+                    candidate_users.append(u)
+
+        # Prioritize owners and managers first, then staff
+        candidate_users.sort(key=lambda x: 0 if x.get("role") in ("owner", "manager", "super_admin", "admin_employee") else 1)
+
+        input_pw = payload.password.strip()
+        for cand in candidate_users:
+            stored_pw = cand.get("password")
+            if stored_pw and verify_pw(payload.password, stored_pw):
+                user = cand
+                break
+            # Also allow staff/waiter login if PIN was entered as password
+            if cand.get("pin") and cand.get("pin") == input_pw:
+                user = cand
+                break
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user_out = {k: v for k, v in user.items() if k not in ("password", "_id", "pin")}
     tv = user.get("token_version", 0)
     return TokenOut(
         access_token=make_token(user["id"], user["role"], user.get("tenant_id"), token_version=tv),
@@ -2449,22 +2507,40 @@ async def delete_waiter(wid: str, user: dict = Depends(require_roles("owner", "m
 
 @api.post("/auth/staff-login", response_model=TokenOut)
 async def staff_login(payload: StaffLoginIn):
-    # find restaurant by phone
-    restaurant = await db.restaurants.find_one({"phone": payload.phone}, {"_id": 0})
-    if not restaurant:
+    raw_phone = (payload.phone or "").strip()
+    clean_pin = (payload.pin or "").strip()
+
+    phone_conds = get_phone_query_patterns(raw_phone)
+    if not phone_conds:
+        raise HTTPException(status_code=400, detail="Invalid phone number format")
+
+    # 1. Find matching restaurants by phone
+    restaurants = await db.restaurants.find({"$or": phone_conds}, {"_id": 0, "id": 1}).to_list(50)
+    tenant_ids = [r["id"] for r in restaurants if r.get("id")]
+
+    # 2. Also search owner/manager users with this phone
+    owner_users = await db.users.find({"$or": phone_conds, "role": {"$in": ["owner", "manager"]}}, {"_id": 0, "tenant_id": 1}).to_list(50)
+    for o in owner_users:
+        if o.get("tenant_id") and o["tenant_id"] not in tenant_ids:
+            tenant_ids.append(o["tenant_id"])
+
+    if not tenant_ids:
         raise HTTPException(status_code=401, detail="Restaurant phone not found")
-    tid = restaurant["id"]
+
     waiter = await db.users.find_one(
-        {"tenant_id": tid, "role": "waiter", "pin": payload.pin},
+        {"tenant_id": {"$in": tenant_ids}, "role": {"$in": ["waiter", "kitchen"]}, "pin": clean_pin},
         {"_id": 0, "password": 0},
     )
     if not waiter:
         raise HTTPException(status_code=401, detail="Invalid PIN")
+
+    tid = waiter.get("tenant_id") or tenant_ids[0]
+    staff_role = waiter.get("role", "waiter")
     tv = waiter.get("token_version", 0)
     return TokenOut(
-        access_token=make_token(waiter["id"], "waiter", tid, token_version=tv),
-        refresh_token=make_token(waiter["id"], "waiter", tid, refresh=True, token_version=tv),
-        user={k: v for k, v in waiter.items() if k != "pin"},
+        access_token=make_token(waiter["id"], staff_role, tid, token_version=tv),
+        refresh_token=make_token(waiter["id"], staff_role, tid, refresh=True, token_version=tv),
+        user={k: v for k, v in waiter.items() if k not in ("pin", "password")},
     )
 
 

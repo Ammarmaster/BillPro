@@ -24,14 +24,18 @@ export default function StaffLogin() {
 
   const submit = async () => {
     setErr(null);
-    if (!phone.trim() || pin.length < 4) {
+    if (!phone.trim() || pin.trim().length < 4) {
       setErr("Enter business phone and 4-6 digit PIN.");
       return;
     }
     setBusy(true);
     try {
-      await staffLogin(phone.trim(), pin.trim());
-      router.replace("/(app)/waiter");
+      const u = await staffLogin(phone.trim(), pin.trim());
+      if (u?.role === "kitchen") {
+        router.replace("/(app)/kitchen");
+      } else {
+        router.replace("/(app)/waiter");
+      }
     } catch (e: any) {
       setErr(e.message || "Login failed");
     } finally {

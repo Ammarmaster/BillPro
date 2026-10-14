@@ -1,57 +1,112 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+
+  <!-- 1. Home / Root Page (EzBill Restaurant POS & ERP) -->
   <url>
     <loc>https://ezbill.jobsio.in/</loc>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-14</lastmod>
     <changefreq>daily</changefreq>
-    <priority>1.0</priority>
+    <priority>1.00</priority>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/web-pos.png</image:loc>
+      <image:title>EzBill POS - Takeaway &amp; Fast Billing Register</image:title>
+      <image:caption>EzBill Restaurant POS Takeaway &amp; Billing Register with category tabs, 1-tap cart, and GST settlement</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/web-tables.png</image:loc>
+      <image:title>EzBill ERP - Live Dine-In Table Management</image:title>
+      <image:caption>EzBill visual floor plan showing live table occupancy, covers, and split bills</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/web-kds.png</image:loc>
+      <image:title>EzBill KDS - Digital Kitchen Order Ticket Display</image:title>
+      <image:caption>EzBill digital KOT kitchen display with elapsed cooking timers and audio alerts</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/web-printers.png</image:loc>
+      <image:title>EzBill Thermal Printer Auto-Setup</image:title>
+      <image:caption>Universal ESC/POS 58mm and 80mm thermal receipt and KOT printer setup for Bluetooth, USB, and LAN</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/web-dashboard.png</image:loc>
+      <image:title>EzBill ERP Dashboard &amp; Revenue Analytics</image:title>
+      <image:caption>Real-time revenue tracking, order pipeline, and cash closing reconciliation</image:caption>
+    </image:image>
   </url>
-  <url>
-    <loc>https://ezbill.jobsio.in/pricing</loc>
-    <lastmod>2026-09-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
+
+  <!-- 2. Dedicated SEO Landing Page (Restaurant POS & ERP) -->
   <url>
     <loc>https://ezbill.jobsio.in/pos-billing-software.html</loc>
-    <lastmod>2026-09-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
+    <lastmod>2026-10-14</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.98</priority>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/web-pos.png</image:loc>
+      <image:title>EzBill POS Billing Software</image:title>
+      <image:caption>Best POS billing software for restaurants, cafes, and retail stores</image:caption>
+    </image:image>
   </url>
+
+  <!-- 3. POS & ERP Feature Deep-Dive -->
   <url>
     <loc>https://ezbill.jobsio.in/pos-erp</loc>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-14</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.90</priority>
+    <priority>0.95</priority>
+    <image:image>
+      <image:loc>https://ezbill.jobsio.in/assets/screenshots/mobile-tables.png</image:loc>
+      <image:title>EzBill Mobile Waiter POS</image:title>
+      <image:caption>EzBill handheld waiter mobile app for instant table ordering</image:caption>
+    </image:image>
   </url>
+
+  <!-- 4. Transparent Pricing & Plans (₹299/mo) -->
+  <url>
+    <loc>https://ezbill.jobsio.in/pricing</loc>
+    <lastmod>2026-10-14</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.92</priority>
+  </url>
+
+  <!-- 5. Interactive Demo Billing Playground -->
   <url>
     <loc>https://ezbill.jobsio.in/demo-billing</loc>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.88</priority>
+  </url>
+
+  <!-- 6. Free Trial Registration -->
+  <url>
+    <loc>https://ezbill.jobsio.in/register</loc>
+    <lastmod>2026-10-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
-  <url>
-    <loc>https://ezbill.jobsio.in/register</loc>
-    <lastmod>2026-09-28</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.80</priority>
-  </url>
+
+  <!-- 7. Restaurant Owner Login Portal -->
   <url>
     <loc>https://ezbill.jobsio.in/login</loc>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.80</priority>
   </url>
+
+  <!-- 8. Staff PIN Login Terminal (Waiters & Chefs) -->
   <url>
     <loc>https://ezbill.jobsio.in/staff-login</loc>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-14</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.70</priority>
+    <priority>0.75</priority>
   </url>
+
+  <!-- 9. Legal & Terms -->
   <url>
     <loc>https://ezbill.jobsio.in/legal</loc>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.50</priority>
   </url>
+
 </urlset>
