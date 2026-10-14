@@ -19,6 +19,8 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
+import { useCart } from "@/src/context/CartContext";
+import CartDrawerModal from "@/src/components/CartDrawerModal";
 import { spacing, radius } from "@/src/theme";
 
 // Helper to resolve images safely across Web and Native
@@ -501,6 +503,7 @@ const APP_MODULES = [
 export default function Index() {
   const { user, loading } = useAuth();
   const { isDesktop } = useResponsive();
+  const { addToCart, cartCount, cartTotal, setIsCartOpen } = useCart();
   const router = useRouter();
   const { width } = useWindowDimensions();
 
@@ -566,7 +569,7 @@ export default function Index() {
               <Text style={styles.navBrandTitle}>
                 EzBill <Text style={styles.navBrandHighlight}>POS</Text>
               </Text>
-              <Text style={styles.navBrandSubtitle}>RESTAURANT ERP &amp; BILLING</Text>
+              <Text style={styles.navBrandSubtitle}>BY PRODEVOPZ · RESTAURANT ERP</Text>
             </View>
           </TouchableOpacity>
 
@@ -588,20 +591,20 @@ export default function Index() {
                 <Text style={styles.navLinkText}>Features</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                onPress={() => router.push("/shop" as any)}
+                style={styles.navLinkItem}
+              >
+                <Text style={[styles.navLinkText, { color: "#FF8A3D", fontWeight: "800" }]}>
+                  Hardware Store
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => {
                   scrollViewRef.current?.scrollTo({ y: 1650, animated: true });
                 }}
                 style={styles.navLinkItem}
               >
                 <Text style={styles.navLinkText}>Categories</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  scrollViewRef.current?.scrollTo({ y: 2200, animated: true });
-                }}
-                style={styles.navLinkItem}
-              >
-                <Text style={styles.navLinkText}>Hardware Store</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => router.push("/pricing")}
@@ -620,46 +623,74 @@ export default function Index() {
 
           {/* Actions & Portal Access */}
           <View style={styles.navRightActions}>
+            {/* Cart Button */}
             <TouchableOpacity
-              style={styles.navLoginBtn}
-              testID="landing-login-btn"
-              onPress={() => router.push("/login")}
-              activeOpacity={0.8}
+              style={styles.navCartBtn}
+              onPress={() => setIsCartOpen(true)}
+              testID="landing-cart-btn"
             >
-              <Ionicons name="log-in-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.navLoginBtnText}>Owner Login</Text>
+              <Ionicons name="cart" size={17} color="#FFFFFF" />
+              {isDesktop && <Text style={styles.navCartBtnText}>Cart</Text>}
+              {cartCount > 0 && (
+                <View style={styles.navCartBadge}>
+                  <Text style={styles.navCartBadgeText}>{cartCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.navStaffBtn}
-              testID="landing-staff-btn"
-              onPress={() => router.push("/staff-login")}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="keypad-outline" size={14} color="#FF8A3D" style={{ marginRight: 4 }} />
-              <Text style={styles.navStaffBtnText}>Staff PIN</Text>
-            </TouchableOpacity>
+            {isDesktop ? (
+              <>
+                <TouchableOpacity
+                  style={styles.navLoginBtn}
+                  testID="landing-login-btn"
+                  onPress={() => router.push("/login")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="log-in-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.navLoginBtnText}>Owner Login</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.navBookBtn}
-              testID="landing-register-btn"
-              onPress={() => router.push("/register")}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.navBookBtnText}>Free Trial</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.navStaffBtn}
+                  testID="landing-staff-btn"
+                  onPress={() => router.push("/staff-login")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="keypad-outline" size={14} color="#FF8A3D" style={{ marginRight: 4 }} />
+                  <Text style={styles.navStaffBtnText}>Staff PIN</Text>
+                </TouchableOpacity>
 
-            {!isDesktop && (
-              <TouchableOpacity
-                style={styles.hamburgerBtn}
-                onPress={() => setMobileMenuOpen(!mobileMenuOpen)}
-              >
-                <Ionicons
-                  name={mobileMenuOpen ? "close" : "menu"}
-                  size={24}
-                  color="#FFFFFF"
-                />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.navBookBtn}
+                  testID="landing-register-btn"
+                  onPress={() => router.push("/register")}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.navBookBtnText}>Free Trial</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={styles.navLoginBtnMobile}
+                  onPress={() => router.push("/login")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="log-in-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.navLoginBtnMobileText}>Login</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.hamburgerBtn}
+                  onPress={() => setMobileMenuOpen(!mobileMenuOpen)}
+                >
+                  <Ionicons
+                    name={mobileMenuOpen ? "close" : "menu"}
+                    size={24}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </View>
@@ -671,12 +702,26 @@ export default function Index() {
               style={styles.mobileDropdownItem}
               onPress={() => {
                 setMobileMenuOpen(false);
+                router.push("/shop" as any);
+              }}
+            >
+              <Ionicons name="storefront-outline" size={18} color="#FF5E2B" />
+              <Text style={[styles.mobileDropdownText, { color: "#FF8A3D", fontWeight: "800" }]}>
+                Hardware Store (Printers & POS)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.mobileDropdownItem}
+              onPress={() => {
+                setMobileMenuOpen(false);
                 scrollViewRef.current?.scrollTo({ y: 600, animated: true });
               }}
             >
               <Ionicons name="phone-portrait-outline" size={18} color="#FF5E2B" />
               <Text style={styles.mobileDropdownText}>Live App Tour</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.mobileDropdownItem}
               onPress={() => {
@@ -687,6 +732,7 @@ export default function Index() {
               <Ionicons name="grid-outline" size={18} color="#38BDF8" />
               <Text style={styles.mobileDropdownText}>ERP &amp; Billing Features</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.mobileDropdownItem}
               onPress={() => {
@@ -697,6 +743,29 @@ export default function Index() {
               <Ionicons name="pricetag-outline" size={18} color="#10B981" />
               <Text style={styles.mobileDropdownText}>Pricing Plans (₹299/mo)</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.mobileDropdownItem}
+              onPress={() => {
+                setMobileMenuOpen(false);
+                router.push("/staff-login");
+              }}
+            >
+              <Ionicons name="keypad-outline" size={18} color="#F59E0B" />
+              <Text style={styles.mobileDropdownText}>Staff PIN Login (Waiter / KDS)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.mobileDropdownItem}
+              onPress={() => {
+                setMobileMenuOpen(false);
+                router.push("/register");
+              }}
+            >
+              <Ionicons name="person-add-outline" size={18} color="#10B981" />
+              <Text style={styles.mobileDropdownText}>Create Free Account</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.mobileDropdownItem}
               onPress={() => {
@@ -743,6 +812,24 @@ export default function Index() {
               <View style={styles.heroCtaRow}>
                 <TouchableOpacity
                   style={styles.heroPrimaryBtn}
+                  onPress={() => router.push("/register")}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="sparkles" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.heroPrimaryBtnText}>Start Free Trial</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.heroStoreBtn}
+                  onPress={() => router.push("/shop" as any)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="storefront-outline" size={16} color="#FF8A3D" style={{ marginRight: 6 }} />
+                  <Text style={styles.heroStoreBtnText}>Hardware Store</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.heroSecondaryBtn}
                   onPress={() =>
                     openWhatsApp(
                       "Hi, I want to book the EzBill POS Billing Machine. Please share complete hardware package details and pricing."
@@ -750,17 +837,8 @@ export default function Index() {
                   }
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="cart" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.heroPrimaryBtnText}>Book Billing Machine</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.heroSecondaryBtn}
-                  onPress={() => router.push("/register")}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="sparkles" size={16} color="#FF8A3D" style={{ marginRight: 8 }} />
-                  <Text style={styles.heroSecondaryBtnText}>Start Free Cloud Trial</Text>
+                  <Ionicons name="logo-whatsapp" size={16} color="#25D366" style={{ marginRight: 6 }} />
+                  <Text style={styles.heroSecondaryBtnText}>WhatsApp Demo</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1138,8 +1216,10 @@ export default function Index() {
                   style={[
                     styles.productCard,
                     isDesktop
-                      ? { width: "23.5%", marginHorizontal: "0.75%" }
-                      : { width: width < 600 ? "100%" : "48%" },
+                      ? { width: "23.5%" }
+                      : width < 576
+                      ? { width: "100%" }
+                      : { width: "48%" },
                   ]}
                 >
                   {/* Product Image Click opens details */}
@@ -1156,6 +1236,10 @@ export default function Index() {
                     <View style={styles.discountBadge}>
                       <Text style={styles.discountBadgeText}>{prod.discount}</Text>
                     </View>
+                    <View style={styles.stockBadge}>
+                      <View style={styles.greenDot} />
+                      <Text style={styles.stockText}>In Stock</Text>
+                    </View>
                   </TouchableOpacity>
 
                   {/* Product Information */}
@@ -1170,37 +1254,62 @@ export default function Index() {
                     </TouchableOpacity>
 
                     <View style={styles.priceRow}>
+                      <Text style={styles.prodSalePrice}>{prod.salePrice}</Text>
                       <Text style={styles.prodOriginalPrice}>{prod.originalPrice}</Text>
-                      <Text style={styles.prodSalePrice}>From {prod.salePrice}</Text>
                     </View>
 
-                    {/* Action Buttons */}
+                    {/* Action Buttons: Add to Cart, Buy Now, Details */}
                     <View style={styles.prodActionsRow}>
                       <TouchableOpacity
-                        style={styles.viewDetailsBtn}
-                        onPress={() => setSelectedProduct(prod)}
+                        style={styles.addCartBtn}
+                        onPress={() => addToCart(prod, 1)}
                         activeOpacity={0.8}
                       >
-                        <Ionicons name="information-circle-outline" size={14} color="#FFFFFF" />
-                        <Text style={styles.viewDetailsBtnText}>Details</Text>
+                        <Ionicons name="cart-outline" size={15} color="#FFFFFF" />
+                        <Text style={styles.addCartBtnText}>Add</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={styles.whatsappEnquiryBtn}
-                        onPress={() =>
-                          openWhatsApp(
-                            `Hi, I want to book the ${prod.title}. Please share details and best pricing.`
-                          )
-                        }
+                        style={styles.buyNowBtn}
+                        onPress={() => {
+                          addToCart(prod, 1);
+                          router.push("/checkout" as any);
+                        }}
                         activeOpacity={0.8}
                       >
-                        <Ionicons name="logo-whatsapp" size={14} color="#FFFFFF" />
-                        <Text style={styles.whatsappEnquiryBtnText}>Enquire</Text>
+                        <Ionicons name="flash" size={13} color="#FFFFFF" />
+                        <Text style={styles.buyNowBtnText}>Buy</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.detailsIconBtn}
+                        onPress={() => setSelectedProduct(prod)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="information-circle-outline" size={16} color="#CBD5E1" />
                       </TouchableOpacity>
                     </View>
                   </View>
                 </View>
               ))}
+            </View>
+
+            {/* Visit Store Banner */}
+            <View style={styles.visitStoreBanner}>
+              <View style={styles.visitStoreInfo}>
+                <Text style={styles.visitStoreTitle}>Official EzBill POS Hardware Store by ProDevOpz</Text>
+                <Text style={styles.visitStoreSub}>
+                  Compare models, view technical ESC/POS specifications, and order with 1-Year on-site warranty.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.visitStoreBtn}
+                onPress={() => router.push("/shop" as any)}
+              >
+                <Ionicons name="storefront" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.visitStoreBtnText}>Open Hardware Store</Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -1481,26 +1590,39 @@ export default function Index() {
                     {/* Action Buttons */}
                     <View style={styles.modalCtaRow}>
                       <TouchableOpacity
+                        style={styles.modalAddCartBtn}
+                        onPress={() => {
+                          addToCart(selectedProduct, 1);
+                          setSelectedProduct(null);
+                          setIsCartOpen(true);
+                        }}
+                      >
+                        <Ionicons name="cart" size={16} color="#FF8A3D" style={{ marginRight: 6 }} />
+                        <Text style={styles.modalAddCartBtnText}>Add to Cart</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
                         style={styles.modalBuyBtn}
                         onPress={() => {
+                          addToCart(selectedProduct, 1);
                           setSelectedProduct(null);
-                          router.push("/register");
+                          router.push("/checkout" as any);
                         }}
                       >
                         <Ionicons name="flash" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.modalBuyBtnText}>Book Machine / Buy Now</Text>
+                        <Text style={styles.modalBuyBtnText}>Buy Now</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
                         style={styles.modalWhatsappBtn}
                         onPress={() =>
                           openWhatsApp(
-                            `Hi, I want to book ${selectedProduct.title}. Please share specifications and dispatch details.`
+                            `Hi, I want to order ${selectedProduct.title}. Please share specifications and delivery details.`
                           )
                         }
                       >
-                        <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.modalWhatsappBtnText}>Enquire Now</Text>
+                        <Ionicons name="logo-whatsapp" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.modalWhatsappBtnText}>Enquire</Text>
                       </TouchableOpacity>
                     </View>
 
@@ -1557,6 +1679,36 @@ export default function Index() {
           </View>
         </View>
       </Modal>
+
+      {/* ================= FLOATING CART BAR (MOBILE/TABLET) ================= */}
+      {cartCount > 0 && (
+        <View style={styles.floatingCartBar}>
+          <TouchableOpacity
+            style={styles.floatingCartContent}
+            onPress={() => setIsCartOpen(true)}
+            activeOpacity={0.9}
+          >
+            <View style={styles.floatingCartLeft}>
+              <View style={styles.floatingCartBadge}>
+                <Ionicons name="cart" size={15} color="#FFFFFF" />
+                <Text style={styles.floatingCartBadgeText}>{cartCount}</Text>
+              </View>
+              <View>
+                <Text style={styles.floatingCartTitle}>Cart ({cartCount} {cartCount === 1 ? "item" : "items"})</Text>
+                <Text style={styles.floatingCartSub}>₹{cartTotal.toLocaleString("en-IN")}</Text>
+              </View>
+            </View>
+
+            <View style={styles.floatingCartRight}>
+              <Text style={styles.floatingCartBtnText}>View Cart</Text>
+              <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ================= SHOPPING CART DRAWER ================= */}
+      <CartDrawerModal />
     </SafeAreaView>
   );
 }
@@ -1658,6 +1810,56 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  navCartBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FF5E2B",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    position: "relative",
+  },
+  navCartBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  navCartBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#10B981",
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#08090C",
+  },
+  navCartBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  navLoginBtnMobile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  navLoginBtnMobileText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   navLoginBtn: {
     flexDirection: "row",
@@ -1846,6 +2048,21 @@ const styles = StyleSheet.create({
   },
   heroPrimaryBtnText: {
     color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  heroStoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 94, 43, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 94, 43, 0.35)",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  heroStoreBtnText: {
+    color: "#FF8A3D",
     fontSize: 15,
     fontWeight: "800",
   },
@@ -2493,40 +2710,117 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
   },
-  prodActionsRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  viewDetailsBtn: {
-    flex: 1,
+  stockBadge: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    gap: 5,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-    paddingVertical: 10,
-    borderRadius: 10,
+    borderColor: "rgba(16, 185, 129, 0.3)",
   },
-  viewDetailsBtnText: {
-    color: "#FFFFFF",
-    fontSize: 12,
+  greenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10B981",
+  },
+  stockText: {
+    color: "#E2E8F0",
+    fontSize: 10,
     fontWeight: "700",
   },
-  whatsappEnquiryBtn: {
+  prodActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  addCartBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
-    backgroundColor: "#15803D",
-    paddingVertical: 10,
-    borderRadius: 10,
+    backgroundColor: "rgba(255, 94, 43, 0.15)",
+    borderWidth: 1,
+    borderColor: "#FF5E2B",
+    paddingVertical: 9,
+    borderRadius: 8,
   },
-  whatsappEnquiryBtnText: {
+  addCartBtnText: {
+    color: "#FF8A3D",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  buyNowBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: "#FF5E2B",
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  buyNowBtnText: {
     color: "#FFFFFF",
     fontSize: 12,
+    fontWeight: "800",
+  },
+  detailsIconBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 8,
+  },
+  visitStoreBanner: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    backgroundColor: "rgba(255, 94, 43, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 94, 43, 0.25)",
+    borderRadius: 16,
+    padding: 24,
+    marginTop: 32,
+  },
+  visitStoreInfo: {
+    flex: 1,
+    minWidth: 260,
+  },
+  visitStoreTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+  visitStoreSub: {
+    color: "#94A3B8",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  visitStoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF5E2B",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  visitStoreBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "800",
   },
 
@@ -2939,5 +3233,89 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
+  },
+  modalAddCartBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 94, 43, 0.15)",
+    borderWidth: 1,
+    borderColor: "#FF5E2B",
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalAddCartBtnText: {
+    color: "#FF8A3D",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  // ===== FLOATING CART BAR =====
+  floatingCartBar: {
+    position: "absolute",
+    bottom: 20,
+    left: 16,
+    right: 16,
+    maxWidth: 580,
+    alignSelf: "center",
+    zIndex: 999,
+  },
+  floatingCartContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FF5E2B",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  floatingCartLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  floatingCartBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  floatingCartBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  floatingCartTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  floatingCartSub: {
+    color: "#FFE5DC",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  floatingCartRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  floatingCartBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
   },
 });

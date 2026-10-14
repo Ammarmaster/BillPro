@@ -13,7 +13,6 @@ import { BillingEngine } from "@/src/lib/billingEngine";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
-import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
 import QRCode from "qrcode";
 
 function base64Encode(str: string): string {
@@ -69,7 +68,7 @@ export default function Billing() {
   const router = useRouter();
   const { theme, isDark } = useTheme();
   const { isDesktop } = useResponsive();
-  const { orderId, tableNumber, orderIds, backTo } = useLocalSearchParams<{ orderId?: string; tableNumber?: string; orderIds?: string; backTo?: string }>();
+  const { orderId, tableNumber, orderIds, backTo, billId } = useLocalSearchParams<{ orderId?: string; tableNumber?: string; orderIds?: string; backTo?: string; billId?: string }>();
 
   // Synchronous cache lookup helper
   const computeInitialState = () => {
@@ -82,14 +81,26 @@ export default function Billing() {
     let initialOrder = null;
     let initialBill = null;
 
-    if (orderId) {
+    if (billId) {
+      const foundBill = bList.find((x: any) => x && x.id === billId);
+      if (foundBill) {
+        initialBill = foundBill;
+        if (foundBill.order_id) {
+          const foundOrd = oList.find((x: any) => x && x.id === foundBill.order_id);
+          if (foundOrd) initialOrder = foundOrd;
+        }
+      }
+    }
+
+    if (orderId && !initialBill) {
       const targetOrderId = api.resolveTempId(orderId);
-      const o = oList.find((x: any) => x.id === targetOrderId);
+      const o = oList.find((x: any) => x.id === targetOrderId || x.id === orderId);
       initialOrder = o || null;
-      const existing = bList.find((x: any) => x.order_id === targetOrderId && x.status === "pending");
+      const existing = bList.find((x: any) => (x.order_id === targetOrderId || x.order_id === orderId || (x.order_ids && (x.order_ids.includes(targetOrderId) || x.order_ids.includes(orderId)))) && x.status !== "cancelled");
       if (existing) {
         initialBill = existing;
       } else if (o) {
+        const isOrderPaid = o.status === "paid" || o.status === "completed" || o.status === "served";
         const itemsToBill = o.items || [];
         const subtotalToBill = Number(o.subtotal || 0) || itemsToBill.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
         const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
@@ -110,7 +121,7 @@ export default function Billing() {
           gst_enabled: !!gst,
           discount: 0,
           total: total,
-          status: o.status === "served" ? "paid" : "pending",
+          status: isOrderPaid ? "paid" : "pending",
           restaurant_snapshot: r,
           created_at: o.created_at || new Date().toISOString(),
         };
@@ -237,13 +248,25 @@ export default function Billing() {
       
       const targetOrderId = orderId ? api.resolveTempId(orderId) : "";
       
+      let b: any = null;
+      if (billId) {
+        b = (bills || []).find((x: any) => x && x.id === billId) || (api.getCachedBills() || []).find((x: any) => x && x.id === billId);
+      }
+
       if (orderId && targetOrderId) {
         // Individual order billing - STAGED ONLY TO THIS SPECIFIC ORDER
-        const o = (orders || []).find((x: any) => x.id === targetOrderId) || (api.getCachedOrders() || []).find((x: any) => x.id === targetOrderId);
+        const o = (orders || []).find((x: any) => x.id === targetOrderId || x.id === orderId) || (api.getCachedOrders() || []).find((x: any) => x.id === targetOrderId || x.id === orderId);
         if (o) setOrder(o);
-        let b = (bills || []).find((x: any) => x.order_id === targetOrderId || (x.order_ids && x.order_ids.includes(targetOrderId))) || (api.getCachedBills() || []).find((x: any) => x.order_id === targetOrderId);
+        if (!b) {
+          b = (bills || []).find((x: any) => 
+            x.order_id === targetOrderId || x.order_id === orderId || (x.order_ids && (x.order_ids.includes(targetOrderId) || x.order_ids.includes(orderId)))
+          ) || (api.getCachedBills() || []).find((x: any) => 
+            x.order_id === targetOrderId || x.order_id === orderId || (x.order_ids && (x.order_ids.includes(targetOrderId) || x.order_ids.includes(orderId)))
+          );
+        }
         
         if (!b && o) {
+          const isOrderPaid = o.status === "paid" || o.status === "completed" || o.status === "served";
           // Instant calculation without blocking UI
           const calc = BillingEngine.calculate({
             items: o.items || [],
@@ -267,14 +290,22 @@ export default function Billing() {
             gst_enabled: !!r?.gst_enabled,
             discount: calc.discount,
             total: calc.total,
-            status: "pending",
+            status: isOrderPaid ? "paid" : "pending",
             created_at: new Date().toISOString()
           };
-          setBill(b);
+          setBill((prev: any) => {
+            if (prev && prev.status === "paid" && b.status !== "paid") return prev;
+            return b;
+          });
 
-          if (!api.isLocalProcessingMode() && !String(targetOrderId).startsWith("temp-")) {
+          if (!isOrderPaid && !api.isLocalProcessingMode() && !String(targetOrderId).startsWith("temp-")) {
             api.createBill({ order_id: targetOrderId }).then((createdBill: any) => {
-              if (createdBill) setBill(createdBill);
+              if (createdBill) {
+                setBill((prev: any) => {
+                  if (prev && prev.status === "paid" && createdBill.status !== "paid") return prev;
+                  return createdBill;
+                });
+              }
             }).catch(() => {});
           }
         } else if (b) {
@@ -463,8 +494,16 @@ export default function Billing() {
       let targetOid = api.resolveTempId(orderId || bill.order_id);
       let realBillId = api.resolveTempId(bill.id);
 
+      if (targetOid && targetOid.startsWith("temp-")) {
+        const resolved = await api.resolvePendingOrder(targetOid);
+        if (resolved && resolved.id) {
+          targetOid = resolved.id;
+          api.setTempIdMapping(orderId || bill.order_id, resolved.id);
+        }
+      }
+
       const updatedOrders = oList.map((o: any) => {
-        if (o.id === targetOid || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
+        if (o.id === targetOid || o.id === orderId || o.id === bill.order_id || (bill.order_ids && bill.order_ids.includes(o.id))) {
           return { ...o, status: "paid" };
         }
         return o;
@@ -478,18 +517,24 @@ export default function Billing() {
             table_number: bill.table_number || "Takeaway",
             items: bill.items || order?.items || [],
             notes: "Takeaway"
-          });
+          }, targetOid);
           targetOid = created.id;
           api.setTempIdMapping(orderId || bill.order_id, created.id);
         } catch {}
       }
 
-      // Perform single targeted mutation
+      // Perform targeted mutation for both bill and order
       const mutationId = (!realBillId || realBillId.startsWith("temp-")) ? targetOid : realBillId;
       if (mutationId && !mutationId.startsWith("temp-")) {
         api.markBillPaid(mutationId, method).catch((e: any) => {
           console.warn("Individual markBillPaid sync failed:", e.message);
         });
+      }
+      if (bill.id && !String(bill.id).startsWith("temp-") && bill.id !== mutationId) {
+        api.markBillPaid(bill.id, method).catch(() => {});
+      }
+      if (targetOid && !String(targetOid).startsWith("temp-") && targetOid !== mutationId) {
+        api.markBillPaid(targetOid, method).catch(() => {});
       }
     } else {
       // 2. SETTLE ENTIRE TABLE: Update all active orders on that table to PAID!
@@ -613,7 +658,6 @@ export default function Billing() {
             <Text style={[styles.subTitle, { color: theme.onSurfaceSecondary }]}>{tableName} · {dateStr}</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <SyncStatusIndicator compact />
             <View style={[styles.statusBadge, { backgroundColor: isPaid ? "#DCFCE7" : "#FEF3C7" }]}>
               <Text style={[styles.statusBadgeText, { color: isPaid ? "#10B981" : "#F59E0B" }]}>
                 {isPaid ? "PAID" : "OPEN"}

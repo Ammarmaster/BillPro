@@ -93,3 +93,5 @@ frontend/.metro-cache/
 frontend/dist/
 frontend/web-build/
 backend/backups/
+scratch/*
+!scratch/generate_ezbill_prodevopz_images.py

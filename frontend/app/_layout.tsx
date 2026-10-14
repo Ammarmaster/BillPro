@@ -12,6 +12,7 @@ import { ThemeProvider } from "@/src/context/ThemeContext";
 import { colors } from "@/src/theme";
 
 import { NotificationProvider } from "@/src/context/NotificationContext";
+import { CartProvider } from "@/src/context/CartContext";
 import DynamicIslandBanner from "@/src/components/DynamicIslandBanner";
 import PWAInstallPrompt from "@/src/components/PWAInstallPrompt";
 
@@ -57,11 +58,13 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <NotificationProvider>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
-              <DynamicIslandBanner />
-              {Platform.OS === "web" && <PWAInstallPrompt />}
-            </NotificationProvider>
+            <CartProvider>
+              <NotificationProvider>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+                <DynamicIslandBanner />
+                {Platform.OS === "web" && <PWAInstallPrompt />}
+              </NotificationProvider>
+            </CartProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

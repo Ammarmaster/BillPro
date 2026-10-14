@@ -87,13 +87,46 @@ export default function TakeawayScreen() {
       const isTblTakeaway = String(b.table_number || "").toLowerCase() === "takeaway";
       const isPaid = String(b.status || "").toLowerCase() === "paid" || String(b.status || "").toLowerCase() === "completed";
       if (isPaid) return false;
+
+      const bOrderIds = [
+        ...(b.order_ids || []),
+        ...(b.order_id ? [b.order_id] : [])
+      ].map((id: string) => api.resolveTempId(id));
+
+      // If the linked order is already paid, this bill is paid
+      const matchingOrder = orders.find((o: any) => o && (bOrderIds.includes(api.resolveTempId(o.id)) || bOrderIds.includes(o.id)));
+      if (matchingOrder && (String(matchingOrder.status).toLowerCase() === "paid" || String(matchingOrder.status).toLowerCase() === "completed")) {
+        return false;
+      }
+
+      // If any sibling bill for the same order is paid, this bill is paid
+      const hasPaidSibling = bills.some((other: any) => {
+        if (!other || other.id === b.id) return false;
+        const otherIsPaid = String(other.status).toLowerCase() === "paid" || String(other.status).toLowerCase() === "completed";
+        if (!otherIsPaid) return false;
+        const otherOrderIds = [
+          ...(other.order_ids || []),
+          ...(other.order_id ? [other.order_id] : [])
+        ].map((id: string) => api.resolveTempId(id));
+        return bOrderIds.some((id: string) => otherOrderIds.includes(id));
+      });
+      if (hasPaidSibling) return false;
+
       const isToday = isTodayBusinessDay(b.created_at || b.paid_at);
       return isTblTakeaway && isToday;
     });
 
     for (const b of unpaidBills) {
-      if (b.order_id) seenOrderIds.add(b.order_id);
-      if (Array.isArray(b.order_ids)) b.order_ids.forEach((id: string) => seenOrderIds.add(id));
+      if (b.order_id) {
+        seenOrderIds.add(b.order_id);
+        seenOrderIds.add(api.resolveTempId(b.order_id));
+      }
+      if (Array.isArray(b.order_ids)) {
+        b.order_ids.forEach((id: string) => {
+          seenOrderIds.add(id);
+          seenOrderIds.add(api.resolveTempId(id));
+        });
+      }
       list.push({
         type: "bill",
         id: b.id,
@@ -114,10 +147,24 @@ export default function TakeawayScreen() {
       const isTblTakeaway = String(o.table_number || "").toLowerCase() === "takeaway";
       const isPaid = String(o.status || "").toLowerCase() === "paid" || String(o.status || "").toLowerCase() === "completed" || String(o.status || "").toLowerCase() === "cancelled";
       if (isPaid) return false;
-      const hasPaidBill = bills.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && (String(b.status).toLowerCase() === "paid" || String(b.status).toLowerCase() === "completed"));
+
+      const resolvedOid = api.resolveTempId(o.id);
+      if (seenOrderIds.has(o.id) || seenOrderIds.has(resolvedOid)) return false;
+
+      const hasPaidBill = bills.some((b: any) => {
+        if (!b) return false;
+        const bPaid = String(b.status).toLowerCase() === "paid" || String(b.status).toLowerCase() === "completed";
+        if (!bPaid) return false;
+        const bOids = [
+          ...(b.order_ids || []),
+          ...(b.order_id ? [b.order_id] : [])
+        ].map((id: string) => api.resolveTempId(id));
+        return bOids.includes(resolvedOid) || bOids.includes(o.id);
+      });
       if (hasPaidBill) return false;
+
       const isToday = isTodayBusinessDay(o.created_at);
-      return isTblTakeaway && isToday && !seenOrderIds.has(o.id);
+      return isTblTakeaway && isToday;
     });
 
     for (const o of activeOrders) {
@@ -144,6 +191,7 @@ export default function TakeawayScreen() {
     router.push({
       pathname: "/(app)/billing",
       params: {
+        billId: item.type === "bill" ? item.id : undefined,
         orderId: item.order_id || item.id,
         backTo: "/(app)/takeaway"
       }
@@ -271,18 +319,17 @@ export default function TakeawayScreen() {
         } catch {}
       })();
 
-      // 3. Sync order to server in background
-      (async () => {
-        try {
-          const realOrder = await api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" });
+      // 3. Sync order to server in background with tracking tempId to prevent duplicate creations
+      api.createOrder({ table_number: "Takeaway", items: cartItems, notes: "Takeaway" }, tempId)
+        .then((realOrder: any) => {
           if (realOrder && realOrder.id) {
             api.setTempIdMapping(tempId, realOrder.id);
             api.injectCachedOrder(realOrder);
           }
-        } catch (syncErr: any) {
+        })
+        .catch((syncErr: any) => {
           console.warn("Takeaway order background sync error:", syncErr);
-        }
-      })();
+        });
 
       // 4. Reset cart and redirect immediately with 0ms delay!
       setCart([]);

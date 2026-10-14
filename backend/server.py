@@ -2256,10 +2256,31 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                 bid = local_id if (local_id and not local_id.startswith("temp-")) else str(uuid.uuid4())
                 mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
                 mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else [])
+                
+                # Check if order or any bill for this order is already paid
+                order_is_paid = False
+                if mapped_oid:
+                    chk_o = await db.orders.find_one({"id": mapped_oid, "tenant_id": tid}, {"_id": 0, "status": 1})
+                    if chk_o and chk_o.get("status") in ("paid", "completed"):
+                        order_is_paid = True
+                        
+                existing_bill = await db.bills.find_one({
+                    "$or": [{"id": bid}] + ([{"order_id": mapped_oid}, {"order_ids": mapped_oid}] if mapped_oid else []),
+                    "tenant_id": tid
+                })
+                
+                incoming_status = p.get("status", "unpaid")
+                paid_at = p.get("paid_at")
+                if order_is_paid or (existing_bill and existing_bill.get("status") == "paid"):
+                    incoming_status = "paid"
+                    paid_at = paid_at or (existing_bill.get("paid_at") if existing_bill else None) or now
+                elif incoming_status == "paid":
+                    paid_at = paid_at or now
+
                 doc = {
-                    "id": bid,
+                    "id": (existing_bill.get("id") if existing_bill else bid),
                     "tenant_id": tid,
-                    "bill_number": p.get("bill_number") or f"EZ-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}",
+                    "bill_number": p.get("bill_number") or (existing_bill.get("bill_number") if existing_bill else None) or f"EZ-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}",
                     "order_id": mapped_oid,
                     "order_ids": mapped_oids,
                     "table_number": p.get("table_number", "Takeaway"),
@@ -2269,44 +2290,65 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                     "total": float(p.get("total", 0)),
                     "tax": float(p.get("tax", 0)),
                     "discount": float(p.get("discount", 0)),
-                    "payment_method": p.get("payment_method", "UPI"),
-                    "status": p.get("status", "unpaid"),
-                    "created_at": p.get("created_at") or now,
-                    "paid_at": p.get("paid_at") or (now if p.get("status") == "paid" else None)
+                    "payment_method": p.get("payment_method") or (existing_bill.get("payment_method") if existing_bill else "UPI"),
+                    "status": incoming_status,
+                    "created_at": p.get("created_at") or (existing_bill.get("created_at") if existing_bill else None) or now,
+                    "paid_at": paid_at
                 }
-                existing = await db.bills.find_one({"id": bid, "tenant_id": tid})
-                if existing:
-                    await db.bills.update_one({"id": bid, "tenant_id": tid}, {"$set": doc})
+                if existing_bill:
+                    await db.bills.update_one({"id": existing_bill["id"], "tenant_id": tid}, {"$set": doc})
+                    if local_id:
+                        id_map[local_id] = existing_bill["id"]
                 else:
                     await db.bills.insert_one(doc)
-                if local_id:
-                    id_map[local_id] = bid
+                    if local_id:
+                        id_map[local_id] = bid
                 synced_count += 1
                 
             elif a_type == "MARK_BILL_PAID":
                 target_id = id_map.get(p.get("id"), p.get("id"))
                 pay_method = p.get("payment_method", "UPI")
-                bill_doc = None
+                mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
+
+                query_conds = []
                 if target_id:
-                    bill_doc = await db.bills.find_one({"$or": [{"id": target_id}, {"order_id": target_id}, {"order_ids": target_id}], "tenant_id": tid})
-                if not bill_doc and p.get("order_id"):
-                    mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
-                    bill_doc = await db.bills.find_one({"$or": [{"order_id": mapped_oid}, {"order_ids": mapped_oid}], "tenant_id": tid})
-                if bill_doc:
-                    await db.bills.update_one({"id": bill_doc["id"], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
-                else:
+                    query_conds.extend([{"id": target_id}, {"order_id": target_id}, {"order_ids": target_id}])
+                if mapped_oid:
+                    query_conds.extend([{"order_id": mapped_oid}, {"order_ids": mapped_oid}])
+
+                matched_count = 0
+                if query_conds:
+                    res_upd = await db.bills.update_many(
+                        {"$or": query_conds, "tenant_id": tid},
+                        {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}}
+                    )
+                    matched_count = res_upd.matched_count
+
+                # Also mark orders as paid
+                order_conds = []
+                if target_id:
+                    order_conds.append({"id": target_id})
+                if mapped_oid:
+                    order_conds.append({"id": mapped_oid})
+                if order_conds:
+                    await db.orders.update_many(
+                        {"$or": order_conds, "tenant_id": tid},
+                        {"$set": {"status": "paid", "updated_at": now}}
+                    )
+
+                if matched_count == 0:
                     # Insert paid bill so sales data is never lost
                     bid = str(uuid.uuid4())
                     items = p.get("items", [])
                     subtotal = float(p.get("subtotal", 0) or sum(float(x.get("price", 0)) * int(x.get("quantity", 1)) for x in items))
                     total = float(p.get("total", subtotal))
-                    mapped_oid = id_map.get(p.get("order_id"), p.get("order_id")) or (target_id if target_id and not target_id.startswith("temp-") else None)
+                    final_oid = mapped_oid or (target_id if target_id and not target_id.startswith("temp-") else None)
                     bill_doc = {
                         "id": bid,
                         "tenant_id": tid,
                         "bill_number": p.get("bill_number") or f"EZ-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}",
-                        "order_id": mapped_oid,
-                        "order_ids": [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([mapped_oid] if mapped_oid else []),
+                        "order_id": final_oid,
+                        "order_ids": [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else ([final_oid] if final_oid else []),
                         "table_number": p.get("table_number", "Takeaway"),
                         "customer_name": p.get("customer_name", "Guest"),
                         "items": items,
@@ -3727,8 +3769,25 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
     tid = await _ensure_tenant(user)
     await _ensure_active_subscription(tid, user)
     
+    search_ids = []
     if payload.order_id:
-        existing_b = await db.bills.find_one({"order_id": payload.order_id, "tenant_id": tid}, {"_id": 0})
+        search_ids.append(payload.order_id)
+    if payload.order_ids:
+        search_ids.extend(payload.order_ids)
+
+    if search_ids:
+        existing_paid = await db.bills.find_one({
+            "$or": [{"order_id": {"$in": search_ids}}, {"order_ids": {"$in": search_ids}}],
+            "status": {"$in": ["paid", "completed"]},
+            "tenant_id": tid
+        }, {"_id": 0})
+        if existing_paid:
+            return existing_paid
+
+        existing_b = await db.bills.find_one({
+            "$or": [{"order_id": {"$in": search_ids}}, {"order_ids": {"$in": search_ids}}],
+            "tenant_id": tid
+        }, {"_id": 0})
         if existing_b:
             return existing_b
 
@@ -3744,11 +3803,20 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
         target_orders = await db.orders.find({
             "table_number": {"$in": tbl_patterns},
             "tenant_id": tid,
-            "status": {"$nin": ["served", "cancelled"]}
+            "status": {"$nin": ["served", "paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
         
     if not target_orders:
         raise HTTPException(status_code=404, detail="No active orders found for billing")
+
+    all_paid = all(o.get("status") in ["paid", "completed"] for o in target_orders)
+    if all_paid:
+        existing_any = await db.bills.find_one({
+            "$or": [{"order_id": {"$in": search_ids}}, {"order_ids": {"$in": search_ids}}],
+            "tenant_id": tid
+        }, {"_id": 0})
+        if existing_any:
+            return existing_any
         
     restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
     
@@ -4084,10 +4152,12 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         bill["status"] = "paid"
         bill["payment_method"] = pm
 
-    # Mark ONLY the target order(s) associated with this bill as paid
+    # Mark ONLY the target order(s) associated with this bill as paid, AND all sibling bills
     target_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
     if target_oids:
-        await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "paid"}})
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now_iso}})
+        await db.bills.update_many({"$or": [{"order_id": {"$in": target_oids}}, {"order_ids": {"$in": target_oids}}], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": now_iso}})
     
     # Calculate remaining active orders on this table strictly (DO NOT wipe other table orders!)
     tbl_num = bill.get("table_number")
@@ -4162,6 +4232,27 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
     bills = await db.bills.find(q, {
         "_id": 0, "restaurant_snapshot": 0
     }).sort("created_at", -1).to_list(limit or 5000)
+
+    # Pre-collect all paid order IDs for this tenant so paid orders always mark their bills paid
+    paid_orders = await db.orders.find({"tenant_id": tid, "status": "paid"}, {"_id": 0, "id": 1}).to_list(2000)
+    paid_order_ids = {o["id"] for o in paid_orders if o.get("id")}
+
+    # Also collect any order_ids that already have a paid bill
+    paid_bill_oids = set()
+    for b in bills:
+        if str(b.get("status", "")).lower() == "paid":
+            b_oids = b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else [])
+            paid_bill_oids.update(b_oids)
+    all_paid_oids = paid_order_ids.union(paid_bill_oids)
+
+    # Any bill associated with a paid order or paid sibling is guaranteed paid
+    for b in bills:
+        b_oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
+        if b_oids and b_oids.intersection(all_paid_oids):
+            b["status"] = "paid"
+
+    # Prioritize paid bills over unpaid bills during deduplication
+    bills.sort(key=lambda b: 0 if str(b.get("status", "")).lower() == "paid" else 1)
 
     seen_oids = set()
     deduped_bills = []

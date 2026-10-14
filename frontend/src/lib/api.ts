@@ -286,6 +286,7 @@ if (Platform.OS === "web" && typeof window !== "undefined") {
 
 // Temporary client-side ID mapping for instant optimistic transitions
 const tempIdMap: Record<string, string> = {};
+const pendingOrderCreations: Record<string, Promise<any> | undefined> = {};
 
 export function clearCachePrefix(prefix: string) {
   for (const k in memoryCache) {
@@ -815,58 +816,98 @@ export const api = {
     return false;
   },
 
-  createOrder: async (payload: any) => {
-    try {
-      const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
-      const list = memoryCache["/orders"] || [];
-      memoryCache["/orders"] = [res, ...list.filter((o: any) => o.id !== res.id && !String(o.id).startsWith("temp-"))];
-      clearCachePrefix("/tables");
-      clearCachePrefix("/dashboard/summary");
-      notifyCacheUpdate("/orders", memoryCache["/orders"]);
-      return res;
-    } catch (netErr: any) {
-      console.warn("[api.createOrder] Server request failed, activating offline local persistence:", netErr.message);
-      const localId = "ord_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-      const nowIso = new Date().toISOString();
-      const items = payload.items || [];
-      const computedSubtotal = payload.subtotal !== undefined
-        ? Number(payload.subtotal)
-        : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-
-      const localOrder = {
-        id: localId,
-        ...payload,
-        items,
-        subtotal: computedSubtotal,
-        status: payload.status || "placed",
-        created_at: nowIso,
-        updated_at: nowIso,
-      };
-
-      const list = memoryCache["/orders"] || [];
-      const cleanedList = list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== localId);
-      memoryCache["/orders"] = [localOrder, ...cleanedList];
-      setDiskCache("disk_cache_/orders", JSON.stringify(memoryCache["/orders"])).catch(() => {});
-      notifyCacheUpdate("/orders", memoryCache["/orders"]);
-
-      if (payload.table_number) {
-        const tList = memoryCache["/tables"] || [];
-        const updatedTables = tList.map((t: any) => 
-          isSameTable(t.label, payload.table_number)
-            ? { ...t, status: "occupied" }
-            : t
-        );
-        memoryCache["/tables"] = updatedTables;
-        setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
-        notifyCacheUpdate("/tables", updatedTables);
-      }
-
-      const summary = computeLocalSummary();
-      notifyCacheUpdate("/dashboard/summary", summary);
-
-      await enqueueSyncAction("CREATE_ORDER", { ...payload, subtotal: computedSubtotal }, localId);
-      return localOrder;
+  createOrder: async (payload: any, tempTrackingId?: string) => {
+    if (tempTrackingId && pendingOrderCreations[tempTrackingId] !== undefined) {
+      return pendingOrderCreations[tempTrackingId];
     }
+    if (tempTrackingId && tempIdMap[tempTrackingId] !== undefined) {
+      const mappedId = tempIdMap[tempTrackingId];
+      const orders = memoryCache["/orders"] || [];
+      const found = orders.find((o: any) => o.id === mappedId);
+      if (found) return found;
+    }
+
+    const orderPromise = (async () => {
+      try {
+        const res = await req("/orders", { method: "POST", body: JSON.stringify(payload) });
+        if (tempTrackingId && res && res.id) {
+          tempIdMap[tempTrackingId] = res.id;
+        }
+        const list = memoryCache["/orders"] || [];
+        const existing = list.find((o: any) => o.id === res.id || (tempTrackingId && (o.id === tempTrackingId || tempIdMap[o.id] === res.id)));
+        const bList = memoryCache["/bills"] || [];
+        const isPaid = (existing && (existing.status === "paid" || existing.status === "completed")) ||
+          bList.some((b: any) => 
+            (b.status === "paid" || b.status === "completed") && 
+            (b.order_id === res.id || (tempTrackingId && b.order_id === tempTrackingId) || (b.order_ids && (b.order_ids.includes(res.id) || (tempTrackingId && b.order_ids.includes(tempTrackingId)))))
+          );
+
+        const finalOrder = isPaid ? { ...res, status: "paid" } : res;
+        if (isPaid && res.status !== "paid") {
+          api.markBillPaid(res.id).catch(() => {});
+        }
+
+        memoryCache["/orders"] = [finalOrder, ...list.filter((o: any) => o.id !== res.id && (tempTrackingId ? o.id !== tempTrackingId : true) && !String(o.id).startsWith("temp-"))];
+        clearCachePrefix("/tables");
+        clearCachePrefix("/dashboard/summary");
+        notifyCacheUpdate("/orders", memoryCache["/orders"]);
+        return finalOrder;
+      } catch (netErr: any) {
+        console.warn("[api.createOrder] Server request failed, activating offline local persistence:", netErr.message);
+        const localId = "ord_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+        if (tempTrackingId) {
+          tempIdMap[tempTrackingId] = localId;
+        }
+        const nowIso = new Date().toISOString();
+        const items = payload.items || [];
+        const computedSubtotal = payload.subtotal !== undefined
+          ? Number(payload.subtotal)
+          : items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+        const localOrder = {
+          id: localId,
+          ...payload,
+          items,
+          subtotal: computedSubtotal,
+          status: payload.status || "placed",
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+
+        const list = memoryCache["/orders"] || [];
+        const cleanedList = list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== localId && (tempTrackingId ? o.id !== tempTrackingId : true));
+        memoryCache["/orders"] = [localOrder, ...cleanedList];
+        setDiskCache("disk_cache_/orders", JSON.stringify(memoryCache["/orders"])).catch(() => {});
+        notifyCacheUpdate("/orders", memoryCache["/orders"]);
+
+        if (payload.table_number) {
+          const tList = memoryCache["/tables"] || [];
+          const updatedTables = tList.map((t: any) => 
+            isSameTable(t.label, payload.table_number)
+              ? { ...t, status: "occupied" }
+              : t
+          );
+          memoryCache["/tables"] = updatedTables;
+          setDiskCache("disk_cache_/tables", JSON.stringify(updatedTables)).catch(() => {});
+          notifyCacheUpdate("/tables", updatedTables);
+        }
+
+        const summary = computeLocalSummary();
+        notifyCacheUpdate("/dashboard/summary", summary);
+
+        await enqueueSyncAction("CREATE_ORDER", { ...payload, subtotal: computedSubtotal }, localId);
+        return localOrder;
+      }
+    })();
+
+    if (tempTrackingId) {
+      pendingOrderCreations[tempTrackingId] = orderPromise;
+      orderPromise.finally(() => {
+        delete pendingOrderCreations[tempTrackingId];
+      });
+    }
+
+    return orderPromise;
   },
   updateOrder: async (id: string, payload: any) => {
     let resolvedId = tempIdMap[id] || id;
@@ -985,16 +1026,32 @@ export const api = {
   },
   
   createBill: async (payload: any) => {
+    const oList = memoryCache["/orders"] || [];
+    const bList = memoryCache["/bills"] || [];
+    const orderId = payload.order_id;
+    const orderIds = payload.order_ids || (orderId ? [orderId] : []);
+    const checkOids = orderIds.length > 0 ? orderIds : (orderId ? [orderId] : []);
+
+    if (checkOids.length > 0) {
+      const existingPaid = bList.find((b: any) =>
+        (b.status === "paid" || b.status === "completed") &&
+        (checkOids.includes(b.order_id) || (b.order_ids && b.order_ids.some((id: string) => checkOids.includes(id))))
+      );
+      if (existingPaid) return existingPaid;
+
+      const orderIsPaid = oList.some((o: any) => checkOids.includes(o.id) && (o.status === "paid" || o.status === "completed"));
+      if (orderIsPaid) {
+        const anyBill = bList.find((b: any) => checkOids.includes(b.order_id) || (b.order_ids && b.order_ids.some((id: string) => checkOids.includes(id))));
+        if (anyBill) return { ...anyBill, status: "paid" };
+      }
+    }
+
     const handleLocalBill = async () => {
       const localId = "bill_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const nowIso = new Date().toISOString();
 
       let items = payload.items;
       let tableNumber = payload.table_number;
-      const orderId = payload.order_id;
-      const orderIds = payload.order_ids || (orderId ? [orderId] : []);
-
-      const oList = memoryCache["/orders"] || [];
 
       if (!items || items.length === 0) {
         if (orderIds.length > 0) {
@@ -1028,6 +1085,8 @@ export const api = {
         serviceChargePercent
       });
 
+      const orderIsPaid = oList.some((o: any) => checkOids.includes(o.id) && (o.status === "paid" || o.status === "completed"));
+
       const localBill = {
         id: localId,
         bill_number: `EZ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1047,13 +1106,12 @@ export const api = {
         total: calc.total,
         gst_enabled: gstEnabled,
         tax_percent: taxPercent,
-        status: "unpaid",
+        status: orderIsPaid ? "paid" : "unpaid",
         created_at: nowIso,
         payment_method: payload.payment_method || "UPI",
         restaurant_snapshot: r,
       };
 
-      const bList = memoryCache["/bills"] || [];
       const filteredBills = bList.filter((b: any) => {
         if (orderId && b.order_id === orderId && b.status !== "paid") return false;
         return true;
@@ -1226,16 +1284,23 @@ export const api = {
     try {
       const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
       const bList = memoryCache["/bills"] || [];
-      const foundInBills = bList.some((b: any) => b.id === resolvedId || b.id === rawId || b.id === res.id);
+      const targetOids = res.order_ids || (res.order_id ? [res.order_id] : [resolvedId]);
+      const isMatchingBill = (b: any) =>
+        b.id === resolvedId ||
+        b.id === rawId ||
+        b.id === res.id ||
+        (b.order_id && targetOids.includes(b.order_id)) ||
+        (b.order_ids && b.order_ids.some((id: string) => targetOids.includes(id)));
+
+      const foundInBills = bList.some(isMatchingBill);
       const updatedBills = foundInBills
-        ? bList.map((b: any) => (b.id === resolvedId || b.id === rawId || b.id === res.id) ? { ...b, ...res, status: "paid" } : b)
+        ? bList.map((b: any) => isMatchingBill(b) ? { ...b, ...res, status: "paid" } : b)
         : [res, ...bList];
       memoryCache["/bills"] = updatedBills;
       setDiskCache("disk_cache_/bills", JSON.stringify(updatedBills)).catch(() => {});
       notifyCacheUpdate("/bills", updatedBills);
       
       const oList = memoryCache["/orders"] || [];
-      const targetOids = res.order_ids || (res.order_id ? [res.order_id] : [resolvedId]);
       const updatedOrders = oList.map((o: any) => {
         if (targetOids.includes(o.id) || o.id === resolvedId || o.id === rawId) {
           return { ...o, status: "paid" };
@@ -1651,12 +1716,41 @@ export const api = {
   setTempIdMapping: (tempId: string, realId: string) => {
     tempIdMap[tempId] = realId;
   },
+  resolvePendingOrder: async (tempId: string): Promise<any> => {
+    if (pendingOrderCreations[tempId] !== undefined) {
+      try {
+        return await pendingOrderCreations[tempId];
+      } catch {
+        return null;
+      }
+    }
+    const realId = tempIdMap[tempId];
+    if (realId && realId !== tempId) {
+      const orders = memoryCache["/orders"] || [];
+      return orders.find((o: any) => o.id === realId) || { id: realId };
+    }
+    return null;
+  },
   injectCachedOrder: (order: any) => {
     if (!order || !order.id) return;
     const list = memoryCache["/orders"] || [];
+    const bList = memoryCache["/bills"] || [];
+    
+    // Check if this order or any linked bill is already marked paid
+    const existingInCache = list.find((o: any) => o.id === order.id || (order.id && tempIdMap[o.id] === order.id));
+    const isPaidInCache = existingInCache && (existingInCache.status === "paid" || existingInCache.status === "completed");
+    const hasPaidBill = bList.some((b: any) => 
+      (b.status === "paid" || b.status === "completed") && 
+      (b.order_id === order.id || (b.order_ids && b.order_ids.includes(order.id)))
+    );
+
+    if ((isPaidInCache || hasPaidBill) && order.status !== "paid") {
+      order = { ...order, status: "paid" };
+    }
+
     let updated: any[];
     if (!String(order.id).startsWith("temp-")) {
-      updated = [order, ...list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== order.id)];
+      updated = [order, ...list.filter((o: any) => !String(o.id).startsWith("temp-") && o.id !== order.id && (!order.id || tempIdMap[o.id] !== order.id))];
     } else {
       updated = [order, ...list.filter((o: any) => o.id !== order.id)];
     }
@@ -1696,7 +1790,9 @@ export const api = {
       b.id === id ||
       b.id === realBill.id ||
       (realBill.order_id && b.order_id === realBill.order_id) ||
-      (realBill.order_ids && b.order_id && realBill.order_ids.includes(b.order_id));
+      (realBill.order_ids && b.order_id && realBill.order_ids.includes(b.order_id)) ||
+      (b.order_ids && realBill.order_id && b.order_ids.includes(realBill.order_id)) ||
+      (b.order_ids && realBill.order_ids && b.order_ids.some((x: string) => realBill.order_ids.includes(x)));
 
     const existing = list.find(isMatching);
     const finalBill = (existing && existing.status === "paid" && realBill.status !== "paid")
