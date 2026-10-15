@@ -455,7 +455,8 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     const headers: Record<string, string> = {
       ...((opts.headers as any) || {}),
     };
-    if (!(opts.body instanceof FormData)) {
+    const isFormData = opts.body instanceof FormData || (opts.body && typeof opts.body === "object" && "_parts" in (opts.body as any));
+    if (!isFormData) {
       headers["Content-Type"] = "application/json";
     }
     if (auth) {
@@ -1634,19 +1635,50 @@ export const api = {
   },
 
   // AI Menu OCR & Bulk Import
-  ocrProcessMenu: (images: string[]) => {
+  ocrProcessMenu: async (images: string[]) => {
     const formData = new FormData();
-    images.forEach((uri, idx) => {
-      const filename = uri.split("/").pop() || `menu_page_${idx}.jpg`;
-      const match = /\.(\w+)$/.exec(filename);
-      const ext = match ? match[1] : "jpg";
+    for (let idx = 0; idx < images.length; idx++) {
+      const uri = images[idx];
+      const cleanUri = uri.split("?")[0];
+      const rawName = cleanUri.split("/").pop() || `menu_page_${idx}.jpg`;
+      const match = /\.(\w+)$/.exec(rawName);
+      const ext = match ? match[1].toLowerCase() : "jpg";
+      const filename = rawName.includes(".") ? rawName : `${rawName}.${ext}`;
       const type = `image/${ext === "png" ? "png" : ext === "webp" ? "webp" : "jpeg"}`;
-      formData.append("images", {
-        uri,
-        name: filename,
-        type,
-      } as any);
-    });
+
+      if (Platform.OS === "web") {
+        try {
+          const res = await fetch(uri);
+          const blob = await res.blob();
+          formData.append("images", blob, filename);
+        } catch {
+          if (uri.startsWith("data:")) {
+            try {
+              const parts = uri.split(",");
+              const mime = parts[0].match(/:(.*?);/)?.[1] || "image/jpeg";
+              const bstr = atob(parts[1]);
+              const n = bstr.length;
+              const u8arr = new Uint8Array(n);
+              for (let i = 0; i < n; i++) {
+                u8arr[i] = bstr.charCodeAt(i);
+              }
+              const blob = new Blob([u8arr], { type: mime });
+              formData.append("images", blob, filename);
+            } catch {
+              formData.append("images", { uri, name: filename, type } as any);
+            }
+          } else {
+            formData.append("images", { uri, name: filename, type } as any);
+          }
+        }
+      } else {
+        formData.append("images", {
+          uri,
+          name: filename,
+          type,
+        } as any);
+      }
+    }
     return req("/menu/ocr-process", { method: "POST", body: formData });
   },
   bulkImportMenu: (categories: any[]) => {

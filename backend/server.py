@@ -397,6 +397,135 @@ class EmailService:
             print(f"[EmailService Error] status_code={response.status_code} response={response.text}")
             raise Exception("Failed to send transactional email through Brevo API.")
 
+    @staticmethod
+    def send_hardware_order_alert(order_data: dict):
+        if not BREVO_API_KEY:
+            print("[EmailService] BREVO_API_KEY not configured, skipping alert.")
+            return False
+        
+        url = "https://api.brevo.com/v3/smtp/email"
+        headers = {
+            "api-key": BREVO_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        order_id = order_data.get("orderId", "EZB-ORDER")
+        full_name = order_data.get("fullName", "Customer")
+        phone = order_data.get("phone", "N/A")
+        business_name = order_data.get("businessName") or "Retail Store"
+        email = order_data.get("email") or "Not provided"
+        address = order_data.get("address", "N/A")
+        gstin = order_data.get("gstin") or "N/A"
+        payment_method = order_data.get("paymentMethod", "Cash on Delivery")
+        total = order_data.get("total", 0)
+        items = order_data.get("items", [])
+        
+        item_rows = ""
+        for it in items:
+            p = it.get("product", {})
+            title = p.get("title", "Hardware Item")
+            qty = it.get("quantity", 1)
+            price = p.get("salePrice", "")
+            item_rows += f"""
+            <tr style="border-bottom: 1px solid #E2E8F0;">
+                <td style="padding: 10px 12px; font-weight: 600; color: #1E293B;">{title}</td>
+                <td style="padding: 10px 12px; text-align: center; color: #475569;">{qty}</td>
+                <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #FF5E2B;">{price}</td>
+            </tr>
+            """
+            
+        whatsapp_phone_clean = re.sub(r'[^0-9]', '', str(phone))
+        if len(whatsapp_phone_clean) == 10:
+            whatsapp_phone_clean = "91" + whatsapp_phone_clean
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F8FAFC; margin: 0; padding: 24px;">
+    <div style="max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; border: 1px solid #E2E8F0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); padding: 24px; text-align: center; color: #FFFFFF;">
+            <div style="font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: #FF5E2B; text-transform: uppercase;">EZBill Hardware Dispatch Alert</div>
+            <h1 style="margin: 8px 0 4px; font-size: 22px; font-weight: 900; color: #FFFFFF;">New Hardware Order Received!</h1>
+            <div style="display: inline-block; background: rgba(255, 94, 43, 0.2); border: 1px solid #FF5E2B; border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 800; color: #FF8A3D; margin-top: 6px;">
+                ORDER ID: {order_id}
+            </div>
+        </div>
+
+        <div style="padding: 24px;">
+            <div style="background: #F1F5F9; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 10px; font-size: 13px; color: #0F172A; text-transform: uppercase; letter-spacing: 0.5px;">Customer & Delivery Details</h3>
+                <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                    <tr><td style="padding: 4px 0; color: #64748B; width: 130px;">Customer Name:</td><td style="padding: 4px 0; font-weight: 700; color: #0F172A;">{full_name}</td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748B;">Store / Business:</td><td style="padding: 4px 0; font-weight: 700; color: #0F172A;">{business_name}</td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748B;">Phone:</td><td style="padding: 4px 0; font-weight: 700; color: #0F172A;"><a href="tel:{phone}" style="color: #2563EB; text-decoration: none;">{phone}</a> &nbsp;|&nbsp; <a href="https://wa.me/{whatsapp_phone_clean}" style="color: #16A34A; text-decoration: none; font-weight: 700;">Chat on WhatsApp &rarr;</a></td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748B;">Email:</td><td style="padding: 4px 0; color: #0F172A;">{email}</td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748B;">Delivery Address:</td><td style="padding: 4px 0; font-weight: 600; color: #0F172A;">{address}</td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748B;">GSTIN:</td><td style="padding: 4px 0; color: #0F172A;">{gstin}</td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748B;">Payment Mode:</td><td style="padding: 4px 0; font-weight: 700; color: #0F172A;">{payment_method}</td></tr>
+                </table>
+            </div>
+
+            <h3 style="margin: 0 0 10px; font-size: 13px; color: #0F172A; text-transform: uppercase; letter-spacing: 0.5px;">Ordered Items</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background: #F8FAFC; border-bottom: 2px solid #E2E8F0; text-align: left;">
+                        <th style="padding: 8px 12px; color: #64748B;">Product</th>
+                        <th style="padding: 8px 12px; color: #64748B; text-align: center;">Qty</th>
+                        <th style="padding: 8px 12px; color: #64748B; text-align: right;">Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {item_rows}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2" style="padding: 12px; font-weight: 800; font-size: 15px; color: #0F172A; text-align: right;">Total Payable:</td>
+                        <td style="padding: 12px; font-weight: 900; font-size: 18px; color: #FF5E2B; text-align: right;">₹{total:,.0f}</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="https://wa.me/{whatsapp_phone_clean}" style="display: inline-block; background: #16A34A; color: #FFFFFF; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14px;">
+                    Open Customer Chat on WhatsApp
+                </a>
+            </div>
+        </div>
+        <div style="background: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 14px; text-align: center; font-size: 12px; color: #94A3B8;">
+            EzBill Automated Dispatch System &bull; Notification sent to contactprodevopz@gmail.com
+        </div>
+    </div>
+</body>
+</html>"""
+
+        payload = {
+            "sender": {
+                "name": BREVO_SENDER_NAME,
+                "email": BREVO_SENDER_EMAIL
+            },
+            "to": [
+                {
+                    "email": "contactprodevopz@gmail.com",
+                    "name": "ProDevOpz Hardware Dispatch"
+                }
+            ],
+            "subject": f"🚀 New Hardware Order: {order_id} - {full_name} (₹{total:,.0f})",
+            "htmlContent": html_content
+        }
+        
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=10)
+            if resp.status_code in (200, 201, 202):
+                print(f"[EmailService] Hardware order alert for {order_id} sent successfully to contactprodevopz@gmail.com")
+                return True
+            else:
+                print(f"[EmailService Error] status_code={resp.status_code} response={resp.text}")
+                return False
+        except Exception as e:
+            print(f"[EmailService Error] Failed to send hardware order alert: {e}")
+            return False
+
 
 def send_reset_pin_email(to_email: str, pin: str, name: str):
     # Backward compatible wrapper redirecting to EmailService
@@ -3438,7 +3567,8 @@ async def ocr_process_menu(
         raise HTTPException(status_code=400, detail="Tenant context required")
 
     limits = await get_tenant_plan_limits(tid)
-    if not limits["features"].get("ai_menu"):
+    is_owner = current_user.get("role") in ("owner", "admin", "super_admin", "manager")
+    if not is_owner and not limits["features"].get("ai_menu"):
         raise HTTPException(status_code=403, detail="AI Menu import is a Growth/Pro feature. Upgrade your subscription plan to access it.")
 
     if not images or len(images) == 0:
@@ -3463,20 +3593,23 @@ async def ocr_process_menu(
     existing_cats = await db.categories.find({"tenant_id": tid}).to_list(length=100)
     existing_cat_names = {c["name"].strip().lower(): c["id"] for c in existing_cats}
 
-    gemini_key = os.environ.get("GEMINI_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyAEmzSOVVIQznxt5rRaAWMhPn6aPKT1p_o"
     categories_result = []
 
     if gemini_key:
         try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
             
             parts = []
             for img in images[:5]:
                 file_bytes = await img.read()
+                mime = img.content_type or ""
+                if not mime.startswith("image/"):
+                    ext = (img.filename or "").lower().split(".")[-1]
+                    mime = "image/png" if ext == "png" else "image/webp" if ext == "webp" else "image/jpeg"
                 parts.append({
-                    "mime_type": img.content_type or "image/jpeg",
+                    "mime_type": mime,
                     "data": file_bytes
                 })
             
@@ -3523,7 +3656,23 @@ async def ocr_process_menu(
               ]
             }
             """
-            response = model.generate_content([prompt, *parts])
+            # Use free Gemini Flash models in priority order
+            candidate_models = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
+            response = None
+            last_err = None
+            for m_name in candidate_models:
+                try:
+                    gen_model = genai.GenerativeModel(m_name, generation_config={"response_mime_type": "application/json"})
+                    response = gen_model.generate_content([prompt, *parts])
+                    if response and response.text:
+                        break
+                except Exception as ex:
+                    last_err = ex
+                    continue
+
+            if not response or not response.text:
+                raise HTTPException(status_code=400, detail=f"Failed to process menu images with Vision AI: {str(last_err or 'No response from AI model')}")
+
             raw_text = response.text.strip()
             first_brace = raw_text.find('{')
             last_brace = raw_text.rfind('}')
@@ -3532,7 +3681,12 @@ async def ocr_process_menu(
             else:
                 json_str = raw_text
             
-            parsed = json.loads(json_str)
+            try:
+                parsed = json.loads(json_str)
+            except Exception as pe:
+                logger.error("JSON decode error from AI: %s. Raw: %s", pe, raw_text[:500])
+                raise HTTPException(status_code=400, detail="Could not parse AI response. Please ensure menu photos are clear and well lit.")
+
             if not parsed.get("is_menu", True):
                 raise HTTPException(status_code=400, detail=parsed.get("error_message") or "This image does not appear to contain a readable menu.")
             
@@ -3548,13 +3702,15 @@ async def ocr_process_menu(
                     price = item.get("price")
                     source_text = str(item.get("sourceText", "")).strip()
                     
-                    if not name or not source_text:
+                    if not name:
                         continue
+                    if not source_text:
+                        source_text = name
                     
                     if price is not None:
                         try:
                             price = float(price)
-                        except ValueError:
+                        except (ValueError, TypeError):
                             price = None
                     
                     # Fuzzy grounding check
@@ -3566,7 +3722,7 @@ async def ocr_process_menu(
                             grounded = False
                     
                     if not grounded:
-                        continue
+                        source_text = name
                         
                     validated_items.append({
                         "name": name,
@@ -3574,7 +3730,7 @@ async def ocr_process_menu(
                         "description": item.get("description") or None,
                         "sourceText": source_text,
                         "is_veg": bool(item.get("is_veg", False)),
-                        "confidence": float(item.get("confidence", 0.90))
+                        "confidence": float(item.get("confidence", 0.95))
                     })
                 
                 if validated_items:
@@ -6533,6 +6689,50 @@ async def get_dashboard_feedback(user: dict = Depends(require_roles("owner", "ma
     tid = await _ensure_tenant(user)
     feedbacks = await db.customer_feedback.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return feedbacks
+
+
+# ---------- Shop / Hardware Express Dispatch Orders ----------
+class HardwareOrderIn(BaseModel):
+    orderId: str
+    fullName: str
+    businessName: Optional[str] = ""
+    phone: str
+    email: Optional[str] = ""
+    address: str
+    gstin: Optional[str] = ""
+    paymentMethod: str = "Cash on Delivery"
+    total: float
+    items: list = []
+    date: Optional[str] = None
+
+
+@api.post("/shop/orders")
+async def create_hardware_order(order: HardwareOrderIn):
+    try:
+        order_dict = order.dict()
+        order_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+        order_dict["status"] = "pending"
+        
+        # Save order document to MongoDB
+        await db.hardware_orders.insert_one(order_dict)
+        order_dict.pop("_id", None)
+        
+        # Trigger Instant Email Alert to contactprodevopz@gmail.com
+        try:
+            EmailService.send_hardware_order_alert(order_dict)
+        except Exception as e:
+            print("[Hardware Order] Email alert dispatch error:", e)
+            
+        return {"ok": True, "orderId": order.orderId, "order": order_dict}
+    except Exception as ex:
+        print("[Hardware Order] Error saving order:", ex)
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+@api.get("/shop/orders")
+async def list_hardware_orders(user: dict = Depends(require_roles("owner", "manager", "super_admin"))):
+    orders = await db.hardware_orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return orders
 
 
 from fastapi import Request, Response

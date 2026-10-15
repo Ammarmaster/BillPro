@@ -563,13 +563,13 @@ export default function Index() {
             activeOpacity={0.8}
           >
             <View style={styles.navLogoBox}>
-              <Ionicons name="receipt" size={22} color="#FFFFFF" />
+              <Ionicons name="receipt" size={20} color="#FFFFFF" />
             </View>
-            <View>
+            <View style={styles.brandTextCol}>
               <Text style={styles.navBrandTitle}>
                 EzBill <Text style={styles.navBrandHighlight}>POS</Text>
               </Text>
-              <Text style={styles.navBrandSubtitle}>BY PRODEVOPZ · RESTAURANT ERP</Text>
+              <Text style={styles.navBrandSubtitle} numberOfLines={1}>BY PRODEVOPZ · RESTAURANT ERP</Text>
             </View>
           </TouchableOpacity>
 
@@ -1718,6 +1718,8 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: "#08090C",
+    width: "100%",
+    overflow: "hidden",
   },
   center: {
     flex: 1,
@@ -1733,9 +1735,12 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    width: "100%",
+    backgroundColor: "#08090C",
   },
   scrollContent: {
     flexGrow: 1,
+    width: "100%",
   },
 
   // ===== NAVBAR =====
@@ -1744,13 +1749,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.08)",
     zIndex: 100,
+    width: "100%",
   },
   navContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    width: "100%",
+    boxSizing: "border-box" as any,
   },
   navContainerDesktop: {
     maxWidth: 1280,
@@ -1762,11 +1770,18 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
+    marginRight: 6,
+  },
+  brandTextCol: {
+    flex: 1,
+    minWidth: 0,
   },
   navLogoBox: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     backgroundColor: "#FF5E2B",
     justifyContent: "center",
@@ -1776,9 +1791,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 4,
+    flexShrink: 0,
   },
   navBrandTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: -0.5,
@@ -1809,7 +1825,8 @@ const styles = StyleSheet.create({
   navRightActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   navCartBtn: {
     flexDirection: "row",
@@ -2337,7 +2354,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    flexWrap: "wrap",
+    gap: 8,
     marginBottom: 24,
   },
   deviceViewLabel: {
@@ -2348,9 +2366,11 @@ const styles = StyleSheet.create({
   },
   deviceViewPillGroup: {
     flexDirection: "row",
+    flexWrap: "wrap",
     backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderRadius: 20,
     padding: 3,
+    justifyContent: "center",
   },
   deviceViewPill: {
     paddingHorizontal: 12,
@@ -2378,6 +2398,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.5,
     shadowRadius: 30,
+    overflow: "hidden",
   },
   showcaseContentRow: {
     gap: 32,
@@ -2390,6 +2411,8 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+    maxWidth: "100%",
   },
   desktopDisplayFrame: {
     width: "100%",
@@ -2915,7 +2938,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: "rgba(255, 94, 43, 0.3)",
-    padding: 32,
+    padding: 20,
+    maxWidth: "100%",
     shadowColor: "#FF5E2B",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
@@ -2948,7 +2972,7 @@ const styles = StyleSheet.create({
   },
   portalLoginBtn: {
     flex: 1,
-    minWidth: 200,
+    minWidth: 130,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2963,7 +2987,7 @@ const styles = StyleSheet.create({
   },
   portalStaffBtn: {
     flex: 1,
-    minWidth: 200,
+    minWidth: 130,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2980,7 +3004,7 @@ const styles = StyleSheet.create({
   },
   portalRegisterBtn: {
     flex: 1,
-    minWidth: 200,
+    minWidth: 130,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -3255,8 +3279,8 @@ const styles = StyleSheet.create({
   floatingCartBar: {
     position: "absolute",
     bottom: 20,
-    left: 16,
-    right: 16,
+    left: 12,
+    right: 12,
     maxWidth: 580,
     alignSelf: "center",
     zIndex: 999,

@@ -111,6 +111,24 @@ export default function More() {
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
+            {/* 2.5. AI Photo to Menu */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/menu-ai-import")} testID="manage-menu-ai-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="camera" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.rowTitle, { color: theme.onSurface }]}>AI Photo to Menu</Text>
+                  <View style={{ backgroundColor: "#8B5CF620", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 9, fontWeight: "800", color: "#8B5CF6" }}>AI MAGIC</Text>
+                  </View>
+                </View>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Snap or upload menu photo to auto-add items</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
             {/* 3. Table Management */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/tables")} testID="manage-tables-btn">
               <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable,
-  ActivityIndicator, SafeAreaView, StatusBar, Alert, FlatList
+  ActivityIndicator, SafeAreaView, StatusBar, Alert, FlatList, Platform
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -54,44 +54,54 @@ export default function MenuAiImportScreen() {
   // -------------------------------------------------------------
   const takePhoto = async () => {
     try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert("Permission Required", "Camera access is needed to capture menu pages.");
-        return;
+      if (Platform.OS !== "web") {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert("Permission Required", "Camera access is needed to capture menu pages.");
+          return;
+        }
       }
 
       const res = await ImagePicker.launchCameraAsync({
-        quality: 0.7,
-        allowsEditing: true,
+        quality: 0.8,
+        allowsEditing: false,
       });
 
-      if (!res.canceled && res.assets[0]?.uri) {
+      if (!res.canceled && res.assets && res.assets[0]?.uri) {
         setImages(prev => [...prev, res.assets[0].uri]);
       }
     } catch (e: any) {
-      Alert.alert("Camera Error", e.message);
+      if (Platform.OS === "web") {
+        // Fall back gracefully to gallery/file picker on web if camera is unavailable
+        pickGallery();
+      } else {
+        Alert.alert("Camera Error", e.message || "Failed to open camera.");
+      }
     }
   };
 
   const pickGallery = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert("Permission Required", "Gallery access is needed to upload menu photos.");
-        return;
+      if (Platform.OS !== "web") {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert("Permission Required", "Gallery access is needed to upload menu photos.");
+          return;
+        }
       }
 
       const res = await ImagePicker.launchImageLibraryAsync({
-        quality: 0.7,
+        quality: 0.8,
         allowsMultipleSelection: true,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
       });
 
-      if (!res.canceled && res.assets) {
+      if (!res.canceled && res.assets && res.assets.length > 0) {
         const newImages = res.assets.map(a => a.uri);
         setImages(prev => [...prev, ...newImages]);
       }
     } catch (e: any) {
-      Alert.alert("Gallery Error", e.message);
+      Alert.alert("Upload Error", e.message || "Failed to choose images.");
     }
   };
 
@@ -113,7 +123,7 @@ export default function MenuAiImportScreen() {
 
     const steps = [
       "1. Uploading menu pages...",
-      "2. Reading text & layout...",
+      "2. Reading text & layout with Vision AI...",
       "3. Detecting categories...",
       "4. Extracting food items & prices...",
       "5. Checking prices & confidence..."
@@ -131,7 +141,7 @@ export default function MenuAiImportScreen() {
       const res = await api.ocrProcessMenu(images);
       clearInterval(progressTimer);
 
-      if (res && res.categories) {
+      if (res && res.categories && res.categories.length > 0) {
         // Fetch existing menu items to match duplicates
         let existing: any[] = [];
         try {
@@ -141,13 +151,12 @@ export default function MenuAiImportScreen() {
         const normalizeName = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
 
         const normalCategories: any[] = [];
-        const uncertainItems: any[] = [];
 
         for (const c of res.categories) {
-          const keepItems: any[] = [];
+          const processedItems: any[] = [];
           for (const it of (c.items || [])) {
-            const normalizedExtracted = normalizeName(it.name);
-            const matchedItem = existing.find(e => normalizeName(e.name) === normalizedExtracted);
+            const normalizedExtracted = normalizeName(it.name || "");
+            const matchedItem = existing.find(e => normalizeName(e.name || "") === normalizedExtracted);
             const processedItem = {
               ...it,
               action: matchedItem ? "skip" : "create",
@@ -155,33 +164,21 @@ export default function MenuAiImportScreen() {
               duplicate_name: matchedItem ? matchedItem.name : null,
               original_price: matchedItem ? matchedItem.price : null
             };
-
-            if ((it.confidence ?? 1.0) < 0.70) {
-              uncertainItems.push(processedItem);
-            } else {
-              keepItems.push(processedItem);
-            }
+            processedItems.push(processedItem);
           }
 
-          if (keepItems.length > 0) {
+          if (processedItems.length > 0) {
             normalCategories.push({
               ...c,
-              items: keepItems
+              items: processedItems
             });
           }
-        }
-
-        if (uncertainItems.length > 0) {
-          normalCategories.push({
-            name: "Uncertain Items",
-            items: uncertainItems
-          });
         }
 
         setCategories(normalCategories);
         setStep("review");
       } else {
-        throw new Error("Could not parse menu structure.");
+        throw new Error(res?.detail || "No items or categories were detected in the photos. Please ensure the menu card text is clear and readable.");
       }
     } catch (e: any) {
       clearInterval(progressTimer);

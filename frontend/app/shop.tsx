@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useCart, ProductItem } from "@/src/context/CartContext";
+import { useCart, ProductItem, parsePriceToNumber } from "@/src/context/CartContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import CartDrawerModal from "@/src/components/CartDrawerModal";
 
@@ -428,13 +428,13 @@ export default function Shop() {
         p.shortDesc.toLowerCase().includes(searchQuery.toLowerCase());
       return matchCat && matchSearch;
     }).sort((a, b) => {
-      const pA = parseFloat(a.salePrice.replace(/[^0-9.]/g, "")) || 0;
-      const pB = parseFloat(b.salePrice.replace(/[^0-9.]/g, "")) || 0;
+      const pA = parsePriceToNumber(a.salePrice);
+      const pB = parsePriceToNumber(b.salePrice);
       if (sortBy === "price_asc") return pA - pB;
       if (sortBy === "price_desc") return pB - pA;
       if (sortBy === "discount") {
-        const dA = parseFloat(a.discount.replace(/[^0-9.]/g, "")) || 0;
-        const dB = parseFloat(b.discount.replace(/[^0-9.]/g, "")) || 0;
+        const dA = parsePriceToNumber(a.discount);
+        const dB = parsePriceToNumber(b.discount);
         return dB - dA;
       }
       return 0;

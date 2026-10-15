@@ -44,11 +44,19 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 const CART_STORAGE_KEY = "ezbill_prodevopz_cart_v1";
 
 // Helper to parse price string like "Rs. 3,999" or "₹3,999" to number 3999
-export function parsePriceToNumber(priceStr: string): number {
+export function parsePriceToNumber(priceStr: any): number {
+  if (typeof priceStr === "number") return isNaN(priceStr) ? 0 : priceStr;
   if (!priceStr) return 0;
-  const cleaned = priceStr.replace(/[^0-9.]/g, "");
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  let str = String(priceStr).trim();
+  // Strip any currency symbols or prefixes like Rs., Rs, INR, ₹, $
+  str = str.replace(/^(?:Rs\.?|INR|₹|\$)\s*/i, "");
+  // Remove all commas
+  str = str.replace(/,/g, "");
+  // Match numeric portion
+  const match = str.match(/[-+]?[0-9]*\.?[0-9]+/);
+  if (!match) return 0;
+  const num = parseFloat(match[0]);
+  return isNaN(num) ? 0 : Math.round(num * 100) / 100;
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {

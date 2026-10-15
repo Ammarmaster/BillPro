@@ -145,7 +145,12 @@ export default function MenuScreen() {
             </Pressable>
             <Text style={styles.title} numberOfLines={1}>Menu</Text>
           </View>
-          <View style={styles.headerRight}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.headerRightScroll}
+            style={styles.headerRightWrap}
+          >
             <Pressable
               style={styles.iconBtn}
               onPress={handleAutoAssignImages}
@@ -160,6 +165,10 @@ export default function MenuScreen() {
                   <Text style={styles.iconBtnText}>AI Photos</Text>
                 </>
               )}
+            </Pressable>
+            <Pressable style={styles.iconBtn} onPress={() => router.push("/(app)/menu-ai-import")} testID="menu-photo-import-btn">
+              <Ionicons name="camera" size={15} color={colors.brand} />
+              <Text style={styles.iconBtnText}>Photo to Menu</Text>
             </Pressable>
             <Pressable style={styles.iconBtn} onPress={() => setJsonImportModal(true)} testID="menu-json-import-btn">
               <Ionicons name="code-working" size={15} color={colors.brand} />
@@ -183,7 +192,7 @@ export default function MenuScreen() {
               <Ionicons name="add" size={16} color={colors.onBrand} />
               <Text style={styles.iconBtnPrimaryText}>Item</Text>
             </Pressable>
-          </View>
+          </ScrollView>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsWrap}>
@@ -388,13 +397,14 @@ function Chip({ label, active, onPress, testID }: { label: string; active: boole
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
-  headerRight: { flexDirection: "row", gap: spacing.sm, alignItems: "center", flexShrink: 0 },
-  title: { color: colors.onSurface, fontSize: 22, fontWeight: "700" },
-  iconBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 },
+  headerRightWrap: { flex: 1, marginLeft: spacing.sm },
+  headerRightScroll: { flexDirection: "row", gap: spacing.sm, alignItems: "center", paddingRight: spacing.md },
+  title: { color: colors.onSurface, fontSize: 20, fontWeight: "700" },
+  iconBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, flexShrink: 0 },
   iconBtnText: { color: colors.onSurface, fontSize: 13, fontWeight: "600" },
-  iconBtnPrimary: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, backgroundColor: colors.brand },
+  iconBtnPrimary: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, backgroundColor: colors.brand, flexShrink: 0 },
   iconBtnPrimaryText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
   chipsWrap: { maxHeight: 56, minHeight: 56 },
   chipsRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center" },

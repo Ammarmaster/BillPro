@@ -40,11 +40,13 @@ export default function CartDrawerModal() {
       onRequestClose={() => setIsCartOpen(false)}
     >
       <View style={styles.backdrop}>
-        <TouchableOpacity
-          style={styles.backdropTouch}
-          activeOpacity={1}
-          onPress={() => setIsCartOpen(false)}
-        />
+        {isDesktop && (
+          <TouchableOpacity
+            style={styles.backdropTouch}
+            activeOpacity={1}
+            onPress={() => setIsCartOpen(false)}
+          />
+        )}
 
         <View
           style={[

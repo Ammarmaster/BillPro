@@ -21,6 +21,8 @@ import { useResponsive } from "@/src/hooks/useResponsive";
 const WHATSAPP_NUMBER = "918152075375";
 const WHATSAPP_BASE_URL = `https://api.whatsapp.com/send/?phone=${WHATSAPP_NUMBER}&text=`;
 
+const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+
 export default function Checkout() {
   const router = useRouter();
   const { cartItems, cartCount, cartTotal, clearCart } = useCart();
@@ -45,7 +47,7 @@ export default function Checkout() {
 
   const getImgUri = (imgName: string) => `/assets/images/${imgName}`;
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!fullName.trim() || !phone.trim() || !addressLine1.trim() || !pincode.trim() || !city.trim()) {
       Alert.alert(
         "Missing Information",
@@ -56,30 +58,77 @@ export default function Checkout() {
 
     setSubmitting(true);
 
-    setTimeout(() => {
-      const orderId = `EZB-${Math.floor(100000 + Math.random() * 900000)}`;
-      const orderData = {
-        orderId,
-        date: new Date().toLocaleDateString("en-IN", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        }),
-        fullName,
-        businessName,
-        phone,
-        email,
-        address: `${addressLine1}, ${city}, ${stateName} - ${pincode}`,
-        gstin,
-        paymentMethod: paymentMethod === "cod" ? "Cash on Delivery" : paymentMethod === "upi" ? "Instant UPI QR" : "Online Payment",
-        items: [...cartItems],
-        total: cartTotal,
-      };
+    const orderId = `EZB-${Math.floor(100000 + Math.random() * 900000)}`;
+    const orderData = {
+      orderId,
+      date: new Date().toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+      fullName,
+      businessName,
+      phone,
+      email,
+      address: `${addressLine1}, ${city}, ${stateName} - ${pincode}`,
+      gstin,
+      paymentMethod: paymentMethod === "cod" ? "Cash on Delivery" : paymentMethod === "upi" ? "Instant UPI QR" : "Online Payment",
+      items: [...cartItems],
+      total: cartTotal,
+    };
 
-      setOrderSuccess(orderData);
-      clearCart();
-      setSubmitting(false);
-    }, 1200);
+    // 1. Submit to Backend API (MongoDB order persistence + Brevo email alert to contactprodevopz@gmail.com)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      await fetch(`${BACKEND_BASE}/api/shop/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(orderData),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (err) {
+      console.warn("[Checkout] Backend notification warning:", err);
+    }
+
+    // 2. Dual redundancy email alert to contactprodevopz@gmail.com
+    try {
+      const itemsList = orderData.items
+        .map((i: any) => `${i.product.title} (Qty: ${i.quantity}) - ${i.product.salePrice}`)
+        .join("; ");
+
+      fetch("https://formsubmit.co/ajax/contactprodevopz@gmail.com", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({
+          _subject: `🚀 New Hardware Order: ${orderId} - ₹${orderData.total} (${fullName})`,
+          OrderId: orderId,
+          CustomerName: fullName,
+          StoreBusiness: businessName || "Retail Store",
+          Phone: phone,
+          Email: email || "Not provided",
+          DeliveryAddress: orderData.address,
+          GSTIN: gstin || "N/A",
+          PaymentMode: orderData.paymentMethod,
+          Items: itemsList,
+          TotalPayable: `₹${orderData.total}`,
+        }),
+      }).catch(() => {});
+    } catch (e) {}
+
+    // 3. Update order state & clear cart
+    setOrderSuccess(orderData);
+    clearCart();
+    setSubmitting(false);
+
+    // 4. Automatically trigger WhatsApp message to +91 81520 75375
+    handleWhatsAppConfirm(orderData);
   };
 
   const handleWhatsAppConfirm = (order: any) => {
@@ -111,17 +160,19 @@ export default function Checkout() {
             <View style={styles.navLogoBox}>
               <Ionicons name="receipt" size={20} color="#FFFFFF" />
             </View>
-            <View>
+            <View style={styles.navBrandTextCol}>
               <Text style={styles.navBrandTitle}>
                 EzBill <Text style={styles.navBrandHighlight}>Checkout</Text>
               </Text>
-              <Text style={styles.navBrandSubtitle}>100% SECURE DISPATCH BY PRODEVOPZ</Text>
+              <Text style={styles.navBrandSubtitle} numberOfLines={1}>
+                {isDesktop ? "100% SECURE DISPATCH BY PRODEVOPZ" : "SECURE DISPATCH"}
+              </Text>
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.backShopBtn} onPress={() => router.push("/shop" as any)}>
             <Ionicons name="storefront-outline" size={16} color="#CBD5E1" />
-            <Text style={styles.backShopBtnText}>Back to Store</Text>
+            <Text style={styles.backShopBtnText}>{isDesktop ? "Back to Store" : "Store"}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -249,8 +300,8 @@ export default function Checkout() {
                     />
                   </View>
 
-                  <View style={styles.inputRow}>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <View style={[styles.inputRow, !isDesktop && styles.inputRowMobile]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 1 }]}>
                       <Text style={styles.inputLabel}>Restaurant / Store Name</Text>
                       <TextInput
                         style={styles.input}
@@ -261,7 +312,7 @@ export default function Checkout() {
                       />
                     </View>
 
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 1 }]}>
                       <Text style={styles.inputLabel}>WhatsApp Phone Number *</Text>
                       <TextInput
                         style={styles.input}
@@ -274,8 +325,8 @@ export default function Checkout() {
                     </View>
                   </View>
 
-                  <View style={styles.inputRow}>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <View style={[styles.inputRow, !isDesktop && styles.inputRowMobile]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 1 }]}>
                       <Text style={styles.inputLabel}>Email (for Tax Invoice)</Text>
                       <TextInput
                         style={styles.input}
@@ -287,7 +338,7 @@ export default function Checkout() {
                       />
                     </View>
 
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 1 }]}>
                       <Text style={styles.inputLabel}>GSTIN (Optional, for Input Credit)</Text>
                       <TextInput
                         style={styles.input}
@@ -321,8 +372,8 @@ export default function Checkout() {
                     />
                   </View>
 
-                  <View style={styles.inputRow}>
-                    <View style={[styles.inputGroup, { flex: 1.2 }]}>
+                  <View style={[styles.inputRow, !isDesktop && styles.inputRowMobile]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 1.2 }]}>
                       <Text style={styles.inputLabel}>City / Town *</Text>
                       <TextInput
                         style={styles.input}
@@ -333,7 +384,7 @@ export default function Checkout() {
                       />
                     </View>
 
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 1 }]}>
                       <Text style={styles.inputLabel}>State *</Text>
                       <TextInput
                         style={styles.input}
@@ -344,7 +395,7 @@ export default function Checkout() {
                       />
                     </View>
 
-                    <View style={[styles.inputGroup, { flex: 0.9 }]}>
+                    <View style={[styles.inputGroup, isDesktop && { flex: 0.9 }]}>
                       <Text style={styles.inputLabel}>PIN Code *</Text>
                       <TextInput
                         style={styles.input}
@@ -514,17 +565,22 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: "#08090C",
+    width: "100%",
   },
   scrollView: {
     flex: 1,
+    width: "100%",
+    backgroundColor: "#08090C",
   },
   scrollContent: {
     paddingBottom: 60,
+    width: "100%",
   },
   navbar: {
     backgroundColor: "#08090C",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    width: "100%",
   },
   navContainer: {
     paddingHorizontal: 16,
@@ -532,6 +588,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    width: "100%",
   },
   navContainerDesktop: {
     maxWidth: 1280,
@@ -543,6 +600,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  navBrandTextCol: {
+    flex: 1,
+    minWidth: 0,
   },
   navLogoBox: {
     width: 36,
@@ -551,6 +615,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF5E2B",
     justifyContent: "center",
     alignItems: "center",
+    flexShrink: 0,
   },
   navBrandTitle: {
     fontSize: 18,
@@ -576,6 +641,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
+    flexShrink: 0,
   },
   backShopBtnText: {
     color: "#CBD5E1",
@@ -603,6 +669,7 @@ const styles = StyleSheet.create({
   },
   checkoutGrid: {
     gap: 24,
+    width: "100%",
   },
   checkoutGridDesktop: {
     flexDirection: "row",
@@ -610,6 +677,8 @@ const styles = StyleSheet.create({
   },
   formCol: {
     gap: 20,
+    width: "100%",
+    minWidth: 0,
   },
   formSectionCard: {
     backgroundColor: "#10141D",
@@ -618,6 +687,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     gap: 14,
+    width: "100%",
   },
   formSectionHeader: {
     flexDirection: "row",
@@ -645,9 +715,17 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     gap: 6,
+    width: "100%",
+    minWidth: 0,
   },
   inputRow: {
     flexDirection: "row",
+    gap: 12,
+    width: "100%",
+    minWidth: 0,
+  },
+  inputRowMobile: {
+    flexDirection: "column",
     gap: 12,
   },
   inputLabel: {
@@ -664,6 +742,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: "#FFFFFF",
     fontSize: 14,
+    width: "100%",
+    minWidth: 0,
   },
   deliveryBadge: {
     flexDirection: "row",
@@ -721,7 +801,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  summaryCol: {},
+  summaryCol: {
+    width: "100%",
+    minWidth: 0,
+  },
   summaryCard: {
     backgroundColor: "#10141D",
     borderWidth: 1,
@@ -729,6 +812,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     gap: 12,
+    width: "100%",
   },
   summaryCardTitle: {
     color: "#FFFFFF",
@@ -852,6 +936,7 @@ const styles = StyleSheet.create({
     color: "#CBD5E1",
     fontSize: 11,
     fontWeight: "600",
+    flex: 1,
   },
   emptyCard: {
     backgroundColor: "#10141D",
@@ -862,6 +947,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
     marginTop: 40,
+    width: "100%",
   },
   emptyHeading: {
     color: "#FFFFFF",
@@ -956,7 +1042,8 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     fontSize: 13,
     fontWeight: "600",
-    width: 140,
+    maxWidth: "45%",
+    flexShrink: 0,
   },
   detailValue: {
     color: "#FFFFFF",
