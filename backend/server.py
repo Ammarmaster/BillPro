@@ -836,6 +836,10 @@ class AutoAssignImagesIn(BaseModel):
     force_all: bool = False
 
 
+class GenerateMenuImageIn(BaseModel):
+    name: str
+
+
 class TableIn(BaseModel):
     label: str
     seats: int = 4
@@ -1689,12 +1693,86 @@ async def delete_category(cid: str, user: dict = Depends(require_roles("owner", 
     return {"ok": True}
 
 
-# ---------- accurate food image helper (100% free model API) ----------
+# ---------- accurate food image helper with Gemini AI ----------
+_gemini_image_cache: dict[str, dict] = {}
+
+async def generate_dish_image_with_gemini(name: str) -> dict:
+    from urllib.parse import quote_plus
+    clean_name = (name or "").strip()
+    if not clean_name:
+        return {
+            "image_url": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&h=600&fit=crop",
+            "image_base64": None,
+            "success": True,
+            "source": "default"
+        }
+    
+    cache_key = clean_name.lower()
+    if cache_key in _gemini_image_cache:
+        return _gemini_image_cache[cache_key]
+
+    gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyAEmzSOVVIQznxt5rRaAWMhPn6aPKT1p_o"
+
+    # 1. Attempt direct Gemini Image Generation models (if accessible/billed)
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        for img_model_name in ["gemini-2.5-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image"]:
+            try:
+                img_model = genai.GenerativeModel(img_model_name)
+                res = img_model.generate_content(f"A gourmet food photograph of {clean_name}, appetizing restaurant presentation, plate dish, studio lighting")
+                if res and hasattr(res, "candidates") and res.candidates:
+                    for part in getattr(res.candidates[0].content, "parts", []):
+                        inline_data = getattr(part, "inline_data", None)
+                        if inline_data and getattr(inline_data, "data", None):
+                            b64 = inline_data.data
+                            mime = getattr(inline_data, "mime_type", "image/jpeg")
+                            data_uri = f"data:{mime};base64,{b64}"
+                            result = {"image_url": data_uri, "image_base64": b64, "success": True, "source": "gemini_direct"}
+                            _gemini_image_cache[cache_key] = result
+                            return result
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"Direct Gemini image generation attempt failed: {e}")
+
+    # 2. Use Gemini Flash to synthesize an authentic culinary photography prompt from dish name
+    gemini_prompt = None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        flash_model = genai.GenerativeModel("gemini-2.5-flash")
+        ai_resp = flash_model.generate_content(
+            f"You are a professional culinary food photographer AI. For the restaurant menu dish '{clean_name}', "
+            f"describe what this dish looks like in 1 appetizing, vivid sentence. Include authentic garnishes, plate or bowl presentation, vibrant colors, and warm restaurant lighting. "
+            f"Return ONLY the prompt text, no quotes or intro."
+        )
+        if ai_resp and ai_resp.text:
+            text = ai_resp.text.strip().replace('"', '').replace('\n', ' ')
+            if len(text) > 10:
+                gemini_prompt = text
+    except Exception as ex:
+        logger.warning(f"Gemini prompt generation failed: {ex}")
+
+    if not gemini_prompt:
+        gemini_prompt = f"{clean_name} delicious appetizing gourmet restaurant food photography plate dish 4k studio lighting"
+
+    final_url = f"https://image.pollinations.ai/prompt/{quote_plus(gemini_prompt)}?width=600&height=600&nologo=true"
+    result = {"image_url": final_url, "image_base64": None, "gemini_prompt": gemini_prompt, "success": True, "source": "gemini_flash"}
+    _gemini_image_cache[cache_key] = result
+    return result
+
+
 def get_accurate_food_image_url(name: str) -> str:
     from urllib.parse import quote_plus
     clean_name = (name or "").strip().lower()
     if not clean_name:
         return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=400&fit=crop"
+
+    # Consult Gemini cache if already computed
+    if clean_name in _gemini_image_cache:
+        cached = _gemini_image_cache[clean_name]
+        return cached.get("image_url") or cached.get("image_base64")
 
     dish_map = [
         # Biryani & Rice
@@ -1767,6 +1845,14 @@ def get_accurate_food_image_url(name: str) -> str:
     return f"https://image.pollinations.ai/prompt/{quote_plus(prompt)}?width=400&height=400&nologo=true"
 
 
+@api.post("/menu/generate-image")
+async def generate_menu_item_image_endpoint(payload: GenerateMenuImageIn, user: dict = Depends(get_current_user)):
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Dish name is required to generate photo")
+    return await generate_dish_image_with_gemini(name)
+
+
 # ---------- menu items ----------
 @api.post("/menu-items")
 async def create_menu_item(payload: MenuItemIn, user: dict = Depends(require_roles("owner", "manager"))):
@@ -1820,10 +1906,16 @@ async def auto_assign_menu_images(payload: AutoAssignImagesIn = AutoAssignImages
     items = await db.menu_items.find(query).to_list(5000)
     updated = 0
     for item in items:
-        new_img = get_accurate_food_image_url(item.get("name", ""))
-        await db.menu_items.update_one({"id": item["id"], "tenant_id": tid}, {"$set": {"image_url": new_img}})
+        dish_name = item.get("name", "")
+        gem_res = await generate_dish_image_with_gemini(dish_name)
+        new_img = gem_res.get("image_url") or get_accurate_food_image_url(dish_name)
+        new_b64 = gem_res.get("image_base64")
+        set_data = {"image_url": new_img}
+        if new_b64:
+            set_data["image_base64"] = new_b64
+        await db.menu_items.update_one({"id": item["id"], "tenant_id": tid}, {"$set": set_data})
         updated += 1
-    return {"success": True, "updated_count": updated, "message": f"Successfully auto-assigned accurate images to {updated} dishes."}
+    return {"success": True, "updated_count": updated, "message": f"Successfully auto-assigned Gemini AI images to {updated} dishes."}
 
 
 # ---------- BULK JSON MENU IMPORT (SUPER ADMIN & OWNER) ----------
@@ -2066,10 +2158,16 @@ async def admin_auto_assign_menu_images(target_tid: str, payload: AutoAssignImag
     items = await db.menu_items.find(query).to_list(5000)
     updated = 0
     for item in items:
-        new_img = get_accurate_food_image_url(item.get("name", ""))
-        await db.menu_items.update_one({"id": item["id"], "tenant_id": target_tid}, {"$set": {"image_url": new_img}})
+        dish_name = item.get("name", "")
+        gem_res = await generate_dish_image_with_gemini(dish_name)
+        new_img = gem_res.get("image_url") or get_accurate_food_image_url(dish_name)
+        new_b64 = gem_res.get("image_base64")
+        set_data = {"image_url": new_img}
+        if new_b64:
+            set_data["image_base64"] = new_b64
+        await db.menu_items.update_one({"id": item["id"], "tenant_id": target_tid}, {"$set": set_data})
         updated += 1
-    return {"success": True, "updated_count": updated, "message": f"Assigned accurate images to {updated} dishes for restaurant {target_tid}."}
+    return {"success": True, "updated_count": updated, "message": f"Assigned Gemini AI images to {updated} dishes for restaurant {target_tid}."}
 
 
 

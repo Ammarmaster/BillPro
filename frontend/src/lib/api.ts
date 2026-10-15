@@ -712,6 +712,9 @@ export const api = {
     clearCachePrefix("/menu-items");
     return req("/menu/auto-assign-images", { method: "POST", body: JSON.stringify({ force_all: forceAll }) });
   },
+  generateMenuImage: async (name: string) => {
+    return req("/menu/generate-image", { method: "POST", body: JSON.stringify({ name }) });
+  },
   listTables: async () => {
     try {
       const res = await req("/tables");

@@ -44,6 +44,7 @@ export default function MenuScreen() {
   const [iImg, setIImg] = useState<string>("");
   const [iImgUrl, setIImgUrl] = useState<string>("");
   const [autoAssigning, setAutoAssigning] = useState(false);
+  const [aiImgLoading, setAiImgLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const { subscribeToCache } = require("@/src/lib/api");
@@ -319,18 +320,45 @@ export default function MenuScreen() {
                     borderColor: "#635BFF",
                     borderWidth: 1,
                   }}
-                  onPress={() => {
+                  onPress={async () => {
                     if (!iName.trim()) {
                       setErr("Enter dish name first to generate AI photo.");
                       return;
                     }
-                    const aiUrl = generateAiDishImageUrl(iName.trim());
-                    setIImgUrl(aiUrl);
-                    setIImg("");
+                    setAiImgLoading(true);
+                    setErr(null);
+                    try {
+                      const res = await api.generateMenuImage(iName.trim());
+                      if (res?.image_base64) {
+                        setIImg(res.image_base64);
+                        setIImgUrl("");
+                      } else if (res?.image_url) {
+                        setIImgUrl(res.image_url);
+                        setIImg("");
+                      } else {
+                        const fallbackUrl = generateAiDishImageUrl(iName.trim());
+                        setIImgUrl(fallbackUrl);
+                        setIImg("");
+                      }
+                    } catch (e: any) {
+                      const fallbackUrl = generateAiDishImageUrl(iName.trim());
+                      setIImgUrl(fallbackUrl);
+                      setIImg("");
+                    } finally {
+                      setAiImgLoading(false);
+                    }
                   }}
+                  disabled={aiImgLoading}
+                  testID="generate-gemini-image-btn"
                 >
-                  <Ionicons name="sparkles" size={14} color="#635BFF" />
-                  <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "700" }}>Generate AI Photo</Text>
+                  {aiImgLoading ? (
+                    <ActivityIndicator size="small" color="#635BFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles" size={14} color="#635BFF" />
+                      <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "700" }}>Generate with Gemini AI</Text>
+                    </>
+                  )}
                 </Pressable>
 
                 {iImgUrl || iImg ? (
