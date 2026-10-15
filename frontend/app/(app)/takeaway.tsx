@@ -469,16 +469,23 @@ export default function TakeawayScreen() {
               <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]}>Walk-in / pickup orders</Text>
             </View>
 
-            <View style={styles.tabToggle}>
+            <View style={[styles.tabToggle, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
               <Pressable
-                style={[styles.tabBtn, activeTab === "menu" && styles.tabBtnActive]}
+                style={[
+                  styles.tabBtn,
+                  activeTab === "menu" ? styles.tabBtnActive : { backgroundColor: "transparent" }
+                ]}
                 onPress={() => setActiveTab("menu")}
               >
                 <Ionicons name="restaurant" size={14} color={activeTab === "menu" ? "#FFF" : theme.onSurfaceSecondary} />
                 <Text style={[styles.tabBtnText, { color: activeTab === "menu" ? "#FFF" : theme.onSurfaceSecondary }]}>New Order</Text>
               </Pressable>
               <Pressable
-                style={[styles.tabBtn, activeTab === "unpaid" && styles.tabBtnActive, { position: "relative" }]}
+                style={[
+                  styles.tabBtn,
+                  activeTab === "unpaid" ? styles.tabBtnActive : { backgroundColor: "transparent" },
+                  { position: "relative" }
+                ]}
                 onPress={() => setActiveTab("unpaid")}
               >
                 <Ionicons name="receipt" size={14} color={activeTab === "unpaid" ? "#FFF" : theme.onSurfaceSecondary} />
@@ -504,18 +511,21 @@ export default function TakeawayScreen() {
                 {/* Quick Unpaid Alert Banner if any pending today */}
                 {todaysUnpaidTakeaways.length > 0 && (
                   <Pressable
-                    style={styles.unpaidBanner}
+                    style={[
+                      styles.unpaidBanner,
+                      isDark && { backgroundColor: "#2A1F0D", borderColor: "#78350F" }
+                    ]}
                     onPress={() => setActiveTab("unpaid")}
                   >
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
-                      <Ionicons name="time" size={16} color="#D97706" />
-                      <Text style={{ color: "#92400E", fontWeight: "700", fontSize: 13 }}>
+                      <Ionicons name="time" size={16} color={isDark ? "#FBBF24" : "#D97706"} />
+                      <Text style={{ color: isDark ? "#FDE68A" : "#92400E", fontWeight: "700", fontSize: 13 }}>
                         {todaysUnpaidTakeaways.length} Unpaid Takeaway Bill{todaysUnpaidTakeaways.length > 1 ? "s" : ""} Today
                       </Text>
                     </View>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                      <Text style={{ color: "#B45309", fontWeight: "800", fontSize: 12 }}>View & Settle</Text>
-                      <Ionicons name="chevron-forward" size={14} color="#B45309" />
+                      <Text style={{ color: isDark ? "#FBBF24" : "#B45309", fontWeight: "800", fontSize: 12 }}>View & Settle</Text>
+                      <Ionicons name="chevron-forward" size={14} color={isDark ? "#FBBF24" : "#B45309"} />
                     </View>
                   </Pressable>
                 )}
@@ -697,16 +707,23 @@ export default function TakeawayScreen() {
             <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]}>Walk-in / pickup orders</Text>
           </View>
 
-          <View style={styles.tabToggle}>
+          <View style={[styles.tabToggle, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
             <Pressable
-              style={[styles.tabBtn, activeTab === "menu" && styles.tabBtnActive]}
+              style={[
+                styles.tabBtn,
+                activeTab === "menu" ? styles.tabBtnActive : { backgroundColor: "transparent" }
+              ]}
               onPress={() => setActiveTab("menu")}
             >
               <Ionicons name="restaurant" size={13} color={activeTab === "menu" ? "#FFF" : theme.onSurfaceSecondary} />
               <Text style={[styles.tabBtnText, { color: activeTab === "menu" ? "#FFF" : theme.onSurfaceSecondary }]}>New Order</Text>
             </Pressable>
             <Pressable
-              style={[styles.tabBtn, activeTab === "unpaid" && styles.tabBtnActive, { position: "relative" }]}
+              style={[
+                styles.tabBtn,
+                activeTab === "unpaid" ? styles.tabBtnActive : { backgroundColor: "transparent" },
+                { position: "relative" }
+              ]}
               onPress={() => setActiveTab("unpaid")}
             >
               <Ionicons name="receipt" size={13} color={activeTab === "unpaid" ? "#FFF" : theme.onSurfaceSecondary} />
@@ -729,18 +746,21 @@ export default function TakeawayScreen() {
             {/* Quick Unpaid Alert Banner if any pending today */}
             {todaysUnpaidTakeaways.length > 0 && (
               <Pressable
-                style={styles.unpaidBanner}
+                style={[
+                  styles.unpaidBanner,
+                  isDark && { backgroundColor: "#2A1F0D", borderColor: "#78350F" }
+                ]}
                 onPress={() => setActiveTab("unpaid")}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
-                  <Ionicons name="time" size={16} color="#D97706" />
-                  <Text style={{ color: "#92400E", fontWeight: "700", fontSize: 13 }}>
+                  <Ionicons name="time" size={16} color={isDark ? "#FBBF24" : "#D97706"} />
+                  <Text style={{ color: isDark ? "#FDE68A" : "#92400E", fontWeight: "700", fontSize: 13 }}>
                     {todaysUnpaidTakeaways.length} Unpaid Takeaway Bill{todaysUnpaidTakeaways.length > 1 ? "s" : ""} Today
                   </Text>
                 </View>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Text style={{ color: "#B45309", fontWeight: "800", fontSize: 12 }}>View & Settle</Text>
-                  <Ionicons name="chevron-forward" size={14} color="#B45309" />
+                  <Text style={{ color: isDark ? "#FBBF24" : "#B45309", fontWeight: "800", fontSize: 12 }}>View & Settle</Text>
+                  <Ionicons name="chevron-forward" size={14} color={isDark ? "#FBBF24" : "#B45309"} />
                 </View>
               </Pressable>
             )}
@@ -874,11 +894,9 @@ const styles = StyleSheet.create({
   tabToggle: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F1F5F9",
     padding: 3,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
   },
   tabBtn: {
     flexDirection: "row",
