@@ -204,6 +204,7 @@ export default function AppLayout() {
       <Tabs.Screen name="notifications" options={{ href: null, title: "Notifications" }} />
       <Tabs.Screen name="notification-preferences" options={{ href: null, title: "Notification Settings" }} />
       <Tabs.Screen name="menu-ai-import" options={{ href: null, title: "Scan Physical Menu" }} />
+      <Tabs.Screen name="promo-poster" options={{ href: null, title: "Status Poster AI" }} />
     </Tabs>
   );
 

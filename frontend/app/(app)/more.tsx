@@ -129,6 +129,24 @@ export default function More() {
             </Pressable>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
+            {/* 2.7. WhatsApp Status Poster AI */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/promo-poster" as any)} testID="manage-promo-poster-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="megaphone" size={20} color="#FF5E2B" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.rowTitle, { color: theme.onSurface }]}>WhatsApp Status Poster AI</Text>
+                  <View style={{ backgroundColor: "#FF5E2B20", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 9, fontWeight: "800", color: "#FF5E2B" }}>2 / DAY FREE</Text>
+                  </View>
+                </View>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Create viral social & status posters with your dishes & prices</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
             {/* 3. Table Management */}
             <Pressable style={styles.rowItem} onPress={() => router.push("/(app)/tables")} testID="manage-tables-btn">
               <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
@@ -181,6 +199,24 @@ export default function More() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Subscription</Text>
                 <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Plan, billing, auto-pay</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* 5.5. Explore Demo Playground */}
+            <Pressable style={styles.rowItem} onPress={() => router.push("/demo-billing")} testID="manage-demo-playground-btn">
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name="game-controller-outline" size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Explore Demo Playground</Text>
+                  <View style={{ backgroundColor: "#10B98120", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 9, fontWeight: "800", color: "#10B981" }}>FREE DEMO</Text>
+                  </View>
+                </View>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>Test tables, takeaway, fast billing & thermal receipts</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.onSurfaceTertiary} />
             </Pressable>

@@ -71,7 +71,8 @@ export default function DesktopSidebar() {
       { name: "Table Setup", route: "/(app)/tables", icon: "grid-outline", iconActive: "grid" },
       { name: "Waiters & Staff", route: "/(app)/staff", icon: "people-outline", iconActive: "people" },
       { name: "Sales Analytics", route: "/(app)/analytics", icon: "bar-chart-outline", iconActive: "bar-chart" },
-      { name: "AI Menu Scanner", route: "/(app)/menu-ai-import", icon: "sparkles-outline", iconActive: "sparkles" }
+      { name: "AI Menu Scanner", route: "/(app)/menu-ai-import", icon: "sparkles-outline", iconActive: "sparkles" },
+      { name: "Status Poster AI", route: "/(app)/promo-poster", icon: "megaphone-outline", iconActive: "megaphone" }
     );
 
     systemNav.push(

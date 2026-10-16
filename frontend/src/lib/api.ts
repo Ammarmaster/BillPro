@@ -715,6 +715,12 @@ export const api = {
   generateMenuImage: async (name: string) => {
     return req("/menu/generate-image", { method: "POST", body: JSON.stringify({ name }) });
   },
+  getPromoQuota: async () => {
+    return req("/marketing/promo-quota");
+  },
+  generatePromoPoster: async (payload: { dish_name: string; price?: number; restaurant_name?: string; tagline?: string }) => {
+    return req("/marketing/generate-promo-poster", { method: "POST", body: JSON.stringify(payload) });
+  },
   listTables: async () => {
     try {
       const res = await req("/tables");

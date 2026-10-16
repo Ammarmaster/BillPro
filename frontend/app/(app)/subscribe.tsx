@@ -250,12 +250,12 @@ export default function Subscribe() {
         <View style={styles.header}>
           <Pressable 
             onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else if (sub?.status === "active") {
-                router.replace("/(app)/more");
-              } else {
+              if (sub?.status !== "active") {
                 router.replace("/demo-billing");
+              } else if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/(app)/more");
               }
             }} 
             testID="subscribe-back-btn" 
@@ -265,7 +265,23 @@ export default function Subscribe() {
             <Ionicons name="chevron-back" size={24} color={theme.onSurface} />
           </Pressable>
           <Text style={[styles.title, { color: theme.onSurface }]}>EZBill Plans</Text>
-          <View style={{ width: 40 }} />
+          <Pressable
+            onPress={() => router.push("/demo-billing")}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF",
+              borderWidth: 1,
+              borderColor: "#635BFF",
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 16,
+            }}
+          >
+            <Ionicons name="game-controller-outline" size={14} color="#635BFF" />
+            <Text style={{ color: "#635BFF", fontSize: 12, fontWeight: "700" }}>Explore Demo</Text>
+          </Pressable>
         </View>
 
         <ScrollView 
@@ -289,31 +305,43 @@ export default function Subscribe() {
           {/* Interactive Playground Discovery Banner */}
           <Pressable
             style={{
-              backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
-              borderColor: isDark ? "#635BFF" : "#C7D2FE",
-              borderWidth: 1,
-              borderRadius: radius.md,
+              backgroundColor: isDark ? "#1E1B4B" : "#EEF2FF",
+              borderColor: "#635BFF",
+              borderWidth: 1.5,
+              borderRadius: radius.lg,
               padding: spacing.md,
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
+              shadowColor: "#635BFF",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.2,
+              shadowRadius: 6,
+              elevation: 4,
             }}
             onPress={() => router.push("/demo-billing")}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#635BFF", justifyContent: "center", alignItems: "center" }}>
-                <Ionicons name="game-controller-outline" size={20} color="#FFFFFF" />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#635BFF", justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="game-controller-outline" size={22} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 14 }}>
-                  Want to explore before subscribing?
-                </Text>
-                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, marginTop: 2 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 14 }}>
+                    Want to explore before subscribing?
+                  </Text>
+                  <View style={{ backgroundColor: "#10B98125", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                    <Text style={{ color: "#10B981", fontSize: 10, fontWeight: "800" }}>FREE DEMO</Text>
+                  </View>
+                </View>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 }}>
                   Test-drive live tables, superfast billing & thermal prints in our playground
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#635BFF" />
+            <View style={{ backgroundColor: "#635BFF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md, marginLeft: 8 }}>
+              <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>Try Demo →</Text>
+            </View>
           </Pressable>
 
           {/* Monthly / Yearly Toggle */}

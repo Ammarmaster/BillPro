@@ -840,6 +840,13 @@ class GenerateMenuImageIn(BaseModel):
     name: str
 
 
+class PromoPosterIn(BaseModel):
+    dish_name: str
+    price: Optional[float] = None
+    restaurant_name: Optional[str] = None
+    tagline: Optional[str] = "Today's Special"
+
+
 class TableIn(BaseModel):
     label: str
     seats: int = 4
@@ -1741,24 +1748,36 @@ async def generate_dish_image_with_gemini(name: str) -> dict:
     try:
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
-        flash_model = genai.GenerativeModel("gemini-2.5-flash")
-        ai_resp = flash_model.generate_content(
-            f"You are a professional culinary food photographer AI. For the restaurant menu dish '{clean_name}', "
-            f"describe what this dish looks like in 1 appetizing, vivid sentence. Include authentic garnishes, plate or bowl presentation, vibrant colors, and warm restaurant lighting. "
-            f"Return ONLY the prompt text, no quotes or intro."
-        )
-        if ai_resp and ai_resp.text:
-            text = ai_resp.text.strip().replace('"', '').replace('\n', ' ')
-            if len(text) > 10:
-                gemini_prompt = text
+        for m_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest"]:
+            try:
+                flash_model = genai.GenerativeModel(m_name)
+                ai_resp = flash_model.generate_content(
+                    f"You are an award-winning Michelin-star culinary food photographer. For the restaurant menu dish '{clean_name}', "
+                    f"write a single-sentence macro food photography prompt describing an ultra-realistic, mouthwatering, extreme closeup of the authentic dish. "
+                    f"Specify authentic textures, glistening rich gravy or glaze, tender ingredients, delicate steam rising, authentic garnishes like fresh coriander, sesame, microgreens or melting butter swirl, professional restaurant plating in a dark ceramic bowl or rustic plate. "
+                    f"Include camera details: 85mm f/1.8 macro lens, shallow depth of field, soft warm bokeh, warm restaurant lighting, 8k realistic photo. "
+                    f"Strictly NO cartoon, NO CGI, NO illustration, NO artificial rendering, NO text. Return ONLY the prompt text, no quotes or intro."
+                )
+                if ai_resp and ai_resp.text:
+                    text = ai_resp.text.strip().replace('"', '').replace('\n', ' ')
+                    if len(text) > 15:
+                        gemini_prompt = text
+                        break
+            except Exception:
+                continue
     except Exception as ex:
         logger.warning(f"Gemini prompt generation failed: {ex}")
 
     if not gemini_prompt:
-        gemini_prompt = f"{clean_name} delicious appetizing gourmet restaurant food photography plate dish 4k studio lighting"
+        gemini_prompt = (
+            f"Ultra-realistic macro closeup food photography of authentic {clean_name}, "
+            f"mouthwatering restaurant dish presentation, glistening sauce, fresh garnishes, "
+            f"85mm f1.8 lens, shallow depth of field, 8k realistic photo, no cartoon, no cgi"
+        )
 
-    final_url = f"https://image.pollinations.ai/prompt/{quote_plus(gemini_prompt)}?width=600&height=600&nologo=true"
-    result = {"image_url": final_url, "image_base64": None, "gemini_prompt": gemini_prompt, "success": True, "source": "gemini_flash"}
+    seed = abs(hash(clean_name)) % 100000
+    final_url = f"https://image.pollinations.ai/prompt/{quote_plus(gemini_prompt)}?width=800&height=800&model=flux&enhance=true&nologo=true&seed={seed}"
+    result = {"image_url": final_url, "image_base64": None, "gemini_prompt": gemini_prompt, "success": True, "source": "gemini_flux_macro"}
     _gemini_image_cache[cache_key] = result
     return result
 
@@ -1841,8 +1860,9 @@ def get_accurate_food_image_url(name: str) -> str:
 
     clean_prompt = re.sub(r"[^\w\s]", " ", clean_name)
     clean_prompt = re.sub(r"\s+", " ", clean_prompt).strip()
-    prompt = f"{clean_prompt} delicious appetizing gourmet restaurant food photography plate dish 4k"
-    return f"https://image.pollinations.ai/prompt/{quote_plus(prompt)}?width=400&height=400&nologo=true"
+    prompt = f"Ultra-realistic macro closeup food photography of authentic {clean_prompt}, mouthwatering restaurant dish presentation, glistening sauce, fresh garnishes, 85mm f1.8 lens, shallow depth of field, 8k realistic photo, no cartoon, no cgi"
+    seed = abs(hash(clean_name)) % 100000
+    return f"https://image.pollinations.ai/prompt/{quote_plus(prompt)}?width=800&height=800&model=flux&enhance=true&nologo=true&seed={seed}"
 
 
 @api.post("/menu/generate-image")
@@ -1851,6 +1871,137 @@ async def generate_menu_item_image_endpoint(payload: GenerateMenuImageIn, user: 
     if not name:
         raise HTTPException(status_code=400, detail="Dish name is required to generate photo")
     return await generate_dish_image_with_gemini(name)
+
+
+# ---------- promotional marketing poster AI (max 2 per day) ----------
+@api.get("/marketing/promo-quota")
+async def get_promo_quota(user: dict = Depends(get_current_user)):
+    tid = user.get("tenant_id")
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.now(timezone(ist_offset))
+    today_str = now_ist.strftime("%Y-%m-%d")
+    doc = await db.promo_posters.find_one({"tenant_id": tid, "date": today_str})
+    used = doc.get("count", 0) if doc else 0
+    return {
+        "date": today_str,
+        "used": used,
+        "limit": 2,
+        "remaining": max(0, 2 - used),
+        "history": doc.get("history", []) if doc else []
+    }
+
+
+@api.post("/marketing/generate-promo-poster")
+async def generate_promo_poster_endpoint(payload: PromoPosterIn, user: dict = Depends(get_current_user)):
+    tid = user.get("tenant_id")
+    ist_offset = timedelta(hours=5, minutes=30)
+    now_ist = datetime.now(timezone(ist_offset))
+    today_str = now_ist.strftime("%Y-%m-%d")
+
+    # Strictly enforce 2 images per calendar day limit
+    doc = await db.promo_posters.find_one({"tenant_id": tid, "date": today_str})
+    used = doc.get("count", 0) if doc else 0
+    if used >= 2:
+        raise HTTPException(
+            status_code=429,
+            detail="Daily limit reached! You can generate a maximum of 2 promotional posters per day. Quota resets at midnight."
+        )
+
+    dish_clean = (payload.dish_name or "Chef Special").strip()
+    if not dish_clean:
+        raise HTTPException(status_code=400, detail="Dish name is required to generate promotional poster")
+
+    r_name = payload.restaurant_name
+    if not r_name:
+        t_doc = await db.tenants.find_one({"id": tid})
+        r_name = (t_doc.get("name") if t_doc else None) or "Our Restaurant"
+
+    price_val = payload.price
+    price_str = f"Rs. {int(price_val) if price_val == int(price_val) else price_val}" if price_val else ""
+    tagline_clean = (payload.tagline or "Today's Special").strip()
+
+    # Generate advertising poster prompt with Gemini
+    gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyAEmzSOVVIQznxt5rRaAWMhPn6aPKT1p_o"
+    poster_prompt = None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        for m_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest"]:
+            try:
+                flash_model = genai.GenerativeModel(m_name)
+                ai_resp = flash_model.generate_content(
+                    f"You are an expert restaurant marketing art director creating a vertical promotional poster for WhatsApp status and social media. "
+                    f"Restaurant: {r_name}, Dish: {dish_clean}, Price: {price_str}, Offer/Headline: {tagline_clean}. "
+                    f"Write a vivid 2-sentence prompt for an image generator to create a vertical 9:16 promotional food advertising poster. "
+                    f"Include: an irresistible closeup macro photo of {dish_clean} with steam, rich vibrant colors, authentic garnishes, professional food styling; "
+                    f"commercial graphic design elements: stylish restaurant banner layout, modern typography featuring the dish name '{dish_clean}', "
+                    f"a promotional discount badge with '{tagline_clean}', price tag '{price_str}', and restaurant branding '{r_name}'. "
+                    f"Cinematic warm lighting, award-winning social media advertisement poster design. "
+                    f"Return ONLY the image prompt, no quotes, no extra chat."
+                )
+                if ai_resp and ai_resp.text and len(ai_resp.text.strip()) > 20:
+                    poster_prompt = ai_resp.text.strip().replace('"', '').replace('\n', ' ')
+                    break
+            except Exception:
+                continue
+    except Exception as ex:
+        logger.warning(f"Poster Gemini prompt generation failed: {ex}")
+
+    if not poster_prompt:
+        poster_prompt = (
+            f"Vertical 9:16 promotional food advertising poster for {dish_clean} at {r_name}. "
+            f"Irresistible closeup macro photo of steaming {dish_clean} with authentic garnishes and rich colors, "
+            f"commercial food advertisement layout, modern typography '{dish_clean}', promotional badge '{tagline_clean}', "
+            f"price tag '{price_str}', restaurant branding '{r_name}', cinematic warm lighting, 8k resolution, award-winning poster design."
+        )
+
+    import random
+    seed = random.randint(1000, 999999)
+    from urllib.parse import quote_plus
+    poster_url = f"https://image.pollinations.ai/prompt/{quote_plus(poster_prompt)}?width=720&height=1280&model=flux&enhance=true&nologo=true&seed={seed}"
+
+    # Ready-to-share WhatsApp status caption
+    clean_dish_tag = re.sub(r"[^\w]", "", dish_clean)
+    caption = (
+        f"🔥 *{dish_clean}* at *{r_name}*!\n\n"
+        f"{('🏷️ Price: ' + price_str + chr(10)) if price_str else ''}"
+        f"✨ {tagline_clean}\n\n"
+        f"📍 Visit us or order today!\n"
+        f"#{clean_dish_tag} #Foodie #SpecialOffer #EzBill"
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    poster_entry = {
+        "dish_name": dish_clean,
+        "price": price_val,
+        "tagline": tagline_clean,
+        "image_url": poster_url,
+        "caption": caption,
+        "created_at": now_iso
+    }
+
+    await db.promo_posters.update_one(
+        {"tenant_id": tid, "date": today_str},
+        {
+            "$inc": {"count": 1},
+            "$set": {"last_generated_at": now_iso, "tenant_id": tid, "date": today_str},
+            "$push": {"history": {"$each": [poster_entry], "$slice": -10}}
+        },
+        upsert=True
+    )
+
+    new_count = used + 1
+    return {
+        "ok": True,
+        "image_url": poster_url,
+        "caption": caption,
+        "used_today": new_count,
+        "limit": 2,
+        "remaining_today": max(0, 2 - new_count),
+        "dish_name": dish_clean,
+        "price": price_val,
+        "tagline": tagline_clean
+    }
 
 
 # ---------- menu items ----------

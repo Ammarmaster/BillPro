@@ -194,8 +194,8 @@ export function generateAiDishImageUrl(name: string): string {
     .replace(/[^\w\s]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const prompt = `${clean} delicious appetizing gourmet restaurant food photography plate dish 4k`;
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=400&height=400&nologo=true`;
+  const prompt = `Ultra-realistic macro closeup food photography of authentic ${clean}, mouth-watering restaurant dish presentation, glistening sauce, fresh garnishes, 85mm f1.8 lens, shallow depth of field, 8k realistic photo, no cartoon, no cgi`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=800&model=flux&enhance=true&nologo=true`;
 }
 
 /**
