@@ -7034,6 +7034,18 @@ async def idempotency_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+@app.get("/")
+@app.get("/health")
+@api.get("/health")
+async def root_health_ping():
+    return {
+        "status": "online",
+        "service": "EzBill Backend API",
+        "message": "Server is active 24/7 without sleep",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
 from fastapi.middleware.gzip import GZipMiddleware
 
 app.include_router(api)
