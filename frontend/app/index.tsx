@@ -517,13 +517,18 @@ export default function Index() {
 
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Auto redirect logged-in users to active dashboard/waiter
+  // Auto redirect: in native app (APK / iOS), open login screen when unauthenticated.
+  // On website (browser), open landing page. Logged-in users route to active dashboard/waiter.
   useEffect(() => {
-    if (!loading && user) {
-      if (user.role === "waiter" || user.role === "kitchen") {
-        router.replace("/(app)/waiter");
-      } else {
-        router.replace("/(app)/dashboard");
+    if (!loading) {
+      if (user) {
+        if (user.role === "waiter" || user.role === "kitchen") {
+          router.replace("/(app)/waiter");
+        } else {
+          router.replace("/(app)/dashboard");
+        }
+      } else if (Platform.OS !== "web") {
+        router.replace("/login");
       }
     }
   }, [user, loading, router]);

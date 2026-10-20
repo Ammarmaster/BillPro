@@ -20,7 +20,20 @@ export default function Analytics() {
   const { isDesktop } = useResponsive();
 
   const [period, setPeriod] = useState<"today" | "yesterday" | "7days" | "monthly" | "yearly" | "custom">("today");
-  const [selectedCustomDate, setSelectedCustomDate] = useState<Date>(new Date());
+  const [customStartDate, setCustomStartDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d;
+  });
+  const [customEndDate, setCustomEndDate] = useState<Date>(() => new Date());
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
+  const [tempStart, setTempStart] = useState<Date | null>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d;
+  });
+  const [tempEnd, setTempEnd] = useState<Date | null>(() => new Date());
   const [bills, setBills] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [restaurant, setRestaurant] = useState<any>(null);
@@ -56,6 +69,32 @@ export default function Analytics() {
            date1.getDate() === date2.getDate();
   };
 
+  const toMidnightMs = (d: Date) => {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  };
+
+  const isDateInRange = (d: Date, start: Date, end: Date) => {
+    const startMs = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
+    const endMs = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
+    const min = Math.min(startMs, endMs);
+    const max = Math.max(startMs, endMs);
+    const t = d.getTime();
+    return t >= min && t <= max;
+  };
+
+  const formatDateRange = (start: Date, end: Date) => {
+    if (isSameDayLocal(start, end)) {
+      return start.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    }
+    return `${start.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`;
+  };
+
+  const getDayCount = (start: Date, end: Date) => {
+    const s = toMidnightMs(start);
+    const e = toMidnightMs(end);
+    return Math.max(1, Math.round(Math.abs(e - s) / (1000 * 60 * 60 * 24)) + 1);
+  };
+
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -83,7 +122,7 @@ export default function Analytics() {
     
     if (period === "today") return isSameDayLocal(bDate, today);
     if (period === "yesterday") return isSameDayLocal(bDate, yesterday);
-    if (period === "custom") return isSameDayLocal(bDate, selectedCustomDate);
+    if (period === "custom") return isDateInRange(bDate, customStartDate, customEndDate);
     
     const isPaid = b.status === "paid" || b.status === "PAID";
     if (!isPaid) return false;
@@ -137,17 +176,23 @@ export default function Analytics() {
   const upiPct = Math.round((upiCount / totalPaidCount) * 100);
   const cashPct = Math.round((cashCount / totalPaidCount) * 100);
 
-  const isSingleDay = ["today", "yesterday", "custom"].includes(period);
-  
-  const chartData = isSingleDay
-    ? Array.from({ length: 24 }, (_, hour) => {
+  const isSingleDay =
+    period === "today" ||
+    period === "yesterday" ||
+    (period === "custom" && isSameDayLocal(customStartDate, customEndDate));
+
+  const chartData = useMemo(() => {
+    if (isSingleDay) {
+      return Array.from({ length: 24 }, (_, hour) => {
         const hourlyBills = activeBills.filter((b: any) => new Date(b.created_at).getHours() === hour);
         const rev = hourlyBills.reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         const label = hour === 0 ? "12a" : hour === 12 ? "12p" : hour > 12 ? `${hour - 12}p` : `${hour}a`;
         return { label, val: rev };
-      }).filter(h => h.val > 0)
-    : period === "7days"
-    ? [6, 5, 4, 3, 2, 1, 0].map(daysAgo => {
+      }).filter(h => h.val > 0);
+    }
+
+    if (period === "7days") {
+      return [6, 5, 4, 3, 2, 1, 0].map(daysAgo => {
         const d = new Date(); d.setDate(d.getDate() - daysAgo);
         const dateStr = d.toISOString().slice(0, 10);
         const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
@@ -155,9 +200,11 @@ export default function Analytics() {
           .filter((b: any) => b && b.created_at && (b.status === "paid" || b.status === "PAID") && String(b.created_at).slice(0, 10) === dateStr)
           .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         return { label: dayName, val: dayRev };
-      })
-    : period === "monthly"
-    ? [3, 2, 1, 0].map(weeksAgo => {
+      });
+    }
+
+    if (period === "monthly") {
+      return [3, 2, 1, 0].map(weeksAgo => {
         const start = new Date(); start.setDate(start.getDate() - (weeksAgo + 1) * 7);
         const end = new Date(); end.setDate(end.getDate() - weeksAgo * 7);
         const weekRev = uniqueBills
@@ -168,13 +215,72 @@ export default function Analytics() {
           })
           .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         return { label: `W${4 - weeksAgo}`, val: weekRev };
-      })
-    : [
-        { label: "Q1", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() <= 2).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-        { label: "Q2", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-        { label: "Q3", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-        { label: "Q4", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 9).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-      ];
+      });
+    }
+
+    if (period === "custom") {
+      const s = new Date(customStartDate.getFullYear(), customStartDate.getMonth(), customStartDate.getDate());
+      const e = new Date(customEndDate.getFullYear(), customEndDate.getMonth(), customEndDate.getDate());
+      const dayDiff = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+
+      if (dayDiff <= 14) {
+        const daysArr: { label: string; val: number }[] = [];
+        for (let i = 0; i < dayDiff; i++) {
+          const cur = new Date(s);
+          cur.setDate(cur.getDate() + i);
+          const curDateStr = cur.toISOString().slice(0, 10);
+          const label = `${cur.getDate()} ${cur.toLocaleDateString("en-US", { month: "short" })}`;
+          const dayRev = activeBills
+            .filter((b: any) => b?.created_at && String(b.created_at).slice(0, 10) === curDateStr)
+            .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
+          daysArr.push({ label, val: dayRev });
+        }
+        return daysArr;
+      } else if (dayDiff <= 31) {
+        const daysArr: { label: string; val: number }[] = [];
+        for (let i = 0; i < dayDiff; i++) {
+          const cur = new Date(s);
+          cur.setDate(cur.getDate() + i);
+          const curDateStr = cur.toISOString().slice(0, 10);
+          const label = `${cur.getDate()}`;
+          const dayRev = activeBills
+            .filter((b: any) => b?.created_at && String(b.created_at).slice(0, 10) === curDateStr)
+            .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
+          daysArr.push({ label, val: dayRev });
+        }
+        return daysArr;
+      } else {
+        const chunks = 5;
+        const chunkDays = Math.ceil(dayDiff / chunks);
+        const result: { label: string; val: number }[] = [];
+        for (let c = 0; c < chunks; c++) {
+          const cStart = new Date(s);
+          cStart.setDate(cStart.getDate() + c * chunkDays);
+          const cEnd = new Date(s);
+          cEnd.setDate(Math.min(e.getDate(), cEnd.getDate() + (c + 1) * chunkDays - 1));
+          const val = activeBills
+            .filter((b: any) => {
+              if (!b?.created_at) return false;
+              const bd = new Date(b.created_at);
+              return bd >= cStart && bd <= cEnd;
+            })
+            .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
+          result.push({
+            label: `${cStart.getDate()}/${cStart.getMonth() + 1}`,
+            val,
+          });
+        }
+        return result;
+      }
+    }
+
+    return [
+      { label: "Q1", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() <= 2).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q2", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q3", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q4", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 9).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+    ];
+  }, [period, activeBills, uniqueBills, isSingleDay, customStartDate, customEndDate]);
 
   const maxVal = Math.max(...chartData.map(d => d.val), 100);
 
@@ -201,7 +307,118 @@ export default function Analytics() {
 
   const maxDishAmt = realTopDishes.length > 0 ? realTopDishes[0].amt : 1;
 
+  const heroTitle = useMemo(() => {
+    if (period === "today") return "TODAY'S REVENUE";
+    if (period === "yesterday") return "YESTERDAY'S REVENUE";
+    if (period === "7days") return "7-DAY REVENUE";
+    if (period === "monthly") return "30-DAY MONTHLY REVENUE";
+    if (period === "yearly") return "TOTAL ANNUAL REVENUE";
+    if (period === "custom") {
+      if (isSameDayLocal(customStartDate, customEndDate)) {
+        return `REVENUE FOR ${customStartDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" }).toUpperCase()}`;
+      }
+      return `REVENUE (${customStartDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${customEndDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })})`.toUpperCase();
+    }
+    return "TOTAL REVENUE";
+  }, [period, customStartDate, customEndDate]);
+
+  const calendarWeeks = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const firstDayOfWeek = firstDay.getDay(); // 0 for Sunday
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+    const days: { date: Date; dayNumber: number; isCurrentMonth: boolean }[] = [];
+
+    // Previous month overflow days
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      days.push({
+        date: new Date(year, month - 1, dayNum, 0, 0, 0, 0),
+        dayNumber: dayNum,
+        isCurrentMonth: false,
+      });
+    }
+
+    // Current month days
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({
+        date: new Date(year, month, i, 0, 0, 0, 0),
+        dayNumber: i,
+        isCurrentMonth: true,
+      });
+    }
+
+    // Next month overflow days (fill to multiple of 7, at least 35 cells)
+    let nextMonthDay = 1;
+    while (days.length % 7 !== 0 || days.length < 35) {
+      days.push({
+        date: new Date(year, month + 1, nextMonthDay, 0, 0, 0, 0),
+        dayNumber: nextMonthDay,
+        isCurrentMonth: false,
+      });
+      nextMonthDay++;
+    }
+
+    const weeks: { date: Date; dayNumber: number; isCurrentMonth: boolean }[][] = [];
+    for (let i = 0; i < days.length; i += 7) {
+      weeks.push(days.slice(i, i + 7));
+    }
+    return weeks;
+  }, [calendarMonth]);
+
+  const handlePrevMonth = () => {
+    setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const handleDayPress = (d: Date) => {
+    const clickedTime = toMidnightMs(d);
+    if (!tempStart || (tempStart && tempEnd)) {
+      setTempStart(d);
+      setTempEnd(null);
+    } else {
+      const startTime = toMidnightMs(tempStart);
+      if (clickedTime < startTime) {
+        setTempStart(d);
+        setTempEnd(null);
+      } else {
+        setTempEnd(d);
+      }
+    }
+  };
+
+  const handleApplyCustomRange = () => {
+    const finalStart = tempStart || new Date();
+    const finalEnd = tempEnd || tempStart || new Date();
+    if (toMidnightMs(finalStart) > toMidnightMs(finalEnd)) {
+      setCustomStartDate(finalEnd);
+      setCustomEndDate(finalStart);
+    } else {
+      setCustomStartDate(finalStart);
+      setCustomEndDate(finalEnd);
+    }
+    setPeriod("custom");
+    setShowCalendarModal(false);
+  };
+
+  const handleOpenCalendar = () => {
+    setTempStart(customStartDate);
+    setTempEnd(customEndDate);
+    setCalendarMonth(new Date(customStartDate.getFullYear(), customStartDate.getMonth(), 1));
+    setShowCalendarModal(true);
+  };
+
   const handleBack = () => {
+    if (showCalendarModal) {
+      setShowCalendarModal(false);
+      return;
+    }
     if (exportModal) {
       setExportModal(false);
       return;
@@ -221,7 +438,7 @@ export default function Analytics() {
       };
       const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => subscription.remove();
-    }, [exportModal])
+    }, [showCalendarModal, exportModal])
   );
 
   const handleExport = async (format: "pdf" | "excel" | "docx") => {
@@ -317,13 +534,18 @@ export default function Analytics() {
               { id: "7days", label: "7 Days" },
               { id: "monthly", label: "Monthly" },
               { id: "yearly", label: "Yearly" },
-              { id: "custom", label: "Custom Date" },
+              { id: "custom", label: "Custom Range" },
             ].map(tab => {
               const active = period === tab.id;
               return (
                 <Pressable
                   key={tab.id}
-                  onPress={() => setPeriod(tab.id as any)}
+                  onPress={() => {
+                    setPeriod(tab.id as any);
+                    if (tab.id === "custom") {
+                      handleOpenCalendar();
+                    }
+                  }}
                   style={[
                     styles.filterTabPill,
                     active ? { backgroundColor: "#635BFF", borderColor: "#635BFF" } : { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }
@@ -337,31 +559,30 @@ export default function Analytics() {
             })}
           </ScrollView>
 
-          {/* Custom Date selection horizontal scroller */}
+          {/* Custom Date selection banner */}
           {period === "custom" && (
-            <View style={{ flexDirection: "row", gap: 10, marginBottom: spacing.md }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {Array.from({ length: 14 }, (_, idx) => {
-                  const d = new Date();
-                  d.setDate(d.getDate() - idx);
-                  const isSelected = isSameDayLocal(d, selectedCustomDate);
-                  return (
-                    <Pressable
-                      key={idx}
-                      onPress={() => setSelectedCustomDate(d)}
-                      style={[
-                        styles.dateSelectTab,
-                        isSelected ? { backgroundColor: "#635BFF", borderColor: "#635BFF" } : { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }
-                      ]}
-                    >
-                      <Text style={[styles.dateSelectText, isSelected ? { color: "#FFFFFF" } : { color: theme.onSurface }]}>
-                        {d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+            <Pressable
+              onPress={handleOpenCalendar}
+              style={[styles.customDateBanner, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+            >
+              <View style={styles.customDateBannerLeft}>
+                <View style={styles.calendarIconCircle}>
+                  <Ionicons name="calendar-outline" size={20} color="#635BFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.customDateBannerTitle, { color: theme.onSurface }]}>
+                    {formatDateRange(customStartDate, customEndDate)}
+                  </Text>
+                  <Text style={[styles.customDateBannerSub, { color: theme.onSurfaceSecondary }]}>
+                    {isSameDayLocal(customStartDate, customEndDate) ? "Single day selected" : `${getDayCount(customStartDate, customEndDate)} days range`} • Tap to change
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.customDateBannerBtn}>
+                <Text style={styles.customDateBannerBtnText}>Change</Text>
+                <Ionicons name="chevron-forward" size={14} color="#635BFF" />
+              </View>
+            </Pressable>
           )}
 
           {/* Hero Sales Overview Card */}
@@ -372,7 +593,7 @@ export default function Analytics() {
             style={styles.heroCard}
           >
             <Text style={styles.heroLabel}>
-              {period === "today" ? "TODAY'S REVENUE" : period === "yesterday" ? "YESTERDAY'S REVENUE" : period === "custom" ? `REVENUE FOR ${selectedCustomDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : period === "7days" ? "7-DAY REVENUE" : period === "monthly" ? "30-DAY MONTHLY REVENUE" : "TOTAL ANNUAL REVENUE"}
+              {heroTitle}
             </Text>
             <Text style={styles.heroValue}>
               ₹{currentHeroRev.toLocaleString()}
@@ -391,47 +612,47 @@ export default function Analytics() {
             </View>
           </LinearGradient>
 
-          {/* Daily Sales Details Card (displayed only for single days) */}
-          {isSingleDay && (
-            <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, marginTop: spacing.xs, marginBottom: spacing.md }]}>
-              <Text style={[styles.cardTitle, { color: theme.onSurface, marginBottom: spacing.md }]}>Daily Sales Summary</Text>
-              
-              <View style={styles.metricBreakdownRow}>
-                <View style={styles.metricDetailItem}>
-                  <Text style={[styles.metricDetailVal, { color: theme.onSurface }]}>{totalOrders}</Text>
-                  <Text style={[styles.metricDetailLbl, { color: theme.onSurfaceSecondary }]}>Bills Finalized</Text>
-                </View>
-                <View style={styles.metricDetailDivider} />
-                <View style={styles.metricDetailItem}>
-                  <Text style={[styles.metricDetailVal, { color: theme.onSurface }]}>{totalItemsSold}</Text>
-                  <Text style={[styles.metricDetailLbl, { color: theme.onSurfaceSecondary }]}>Items Sold</Text>
-                </View>
+          {/* Sales Breakdown Details Card */}
+          <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, marginTop: spacing.xs, marginBottom: spacing.md }]}>
+            <Text style={[styles.cardTitle, { color: theme.onSurface, marginBottom: spacing.md }]}>
+              {isSingleDay ? "Daily Sales Summary" : "Sales Breakdown Summary"}
+            </Text>
+            
+            <View style={styles.metricBreakdownRow}>
+              <View style={styles.metricDetailItem}>
+                <Text style={[styles.metricDetailVal, { color: theme.onSurface }]}>{totalOrders}</Text>
+                <Text style={[styles.metricDetailLbl, { color: theme.onSurfaceSecondary }]}>Bills Finalized</Text>
               </View>
-
-              <View style={styles.metricsListTable}>
-                <View style={styles.metricsListRow}>
-                  <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Gross Sales</Text>
-                  <Text style={[styles.metricsListVal, { color: theme.onSurface }]}>₹{grossSales.toLocaleString("en-IN")}</Text>
-                </View>
-                <View style={styles.metricsListRow}>
-                  <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Discounts</Text>
-                  <Text style={[styles.metricsListVal, { color: theme.onSurface }]}>-₹{totalDiscounts.toLocaleString("en-IN")}</Text>
-                </View>
-                <View style={styles.metricsListRow}>
-                  <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Taxes (CGST/SGST)</Text>
-                  <Text style={[styles.metricsListVal, { color: theme.onSurface }]}>₹{totalTaxes.toLocaleString("en-IN")}</Text>
-                </View>
-                <View style={styles.metricsListRow}>
-                  <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Refunds / Voids</Text>
-                  <Text style={[styles.metricsListVal, { color: "#EF4444" }]}>₹{totalRefunds.toLocaleString("en-IN")}</Text>
-                </View>
-                <View style={[styles.metricsListRow, { borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10, marginTop: 4 }]}>
-                  <Text style={[styles.metricsListLbl, { color: theme.onSurface, fontWeight: "800" }]}>Net Sales</Text>
-                  <Text style={[styles.metricsListVal, { color: "#10B981", fontWeight: "800", fontSize: 16 }]}>₹{netSales.toLocaleString("en-IN")}</Text>
-                </View>
+              <View style={styles.metricDetailDivider} />
+              <View style={styles.metricDetailItem}>
+                <Text style={[styles.metricDetailVal, { color: theme.onSurface }]}>{totalItemsSold}</Text>
+                <Text style={[styles.metricDetailLbl, { color: theme.onSurfaceSecondary }]}>Items Sold</Text>
               </View>
             </View>
-          )}
+
+            <View style={styles.metricsListTable}>
+              <View style={styles.metricsListRow}>
+                <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Gross Sales</Text>
+                <Text style={[styles.metricsListVal, { color: theme.onSurface }]}>₹{grossSales.toLocaleString("en-IN")}</Text>
+              </View>
+              <View style={styles.metricsListRow}>
+                <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Discounts</Text>
+                <Text style={[styles.metricsListVal, { color: theme.onSurface }]}>-₹{totalDiscounts.toLocaleString("en-IN")}</Text>
+              </View>
+              <View style={styles.metricsListRow}>
+                <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Taxes (CGST/SGST)</Text>
+                <Text style={[styles.metricsListVal, { color: theme.onSurface }]}>₹{totalTaxes.toLocaleString("en-IN")}</Text>
+              </View>
+              <View style={styles.metricsListRow}>
+                <Text style={[styles.metricsListLbl, { color: theme.onSurfaceSecondary }]}>Refunds / Voids</Text>
+                <Text style={[styles.metricsListVal, { color: "#EF4444" }]}>₹{totalRefunds.toLocaleString("en-IN")}</Text>
+              </View>
+              <View style={[styles.metricsListRow, { borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10, marginTop: 4 }]}>
+                <Text style={[styles.metricsListLbl, { color: theme.onSurface, fontWeight: "800" }]}>Net Sales</Text>
+                <Text style={[styles.metricsListVal, { color: "#10B981", fontWeight: "800", fontSize: 16 }]}>₹{netSales.toLocaleString("en-IN")}</Text>
+              </View>
+            </View>
+          </View>
 
           {/* Sales Growth / Hourly Sales Bar Chart */}
           <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
@@ -584,6 +805,195 @@ export default function Analytics() {
           </Pressable>
         </Modal>
 
+        {/* Custom Calendar Date Range Modal (Matching Screenshot) */}
+        <Modal visible={showCalendarModal} transparent animationType="fade">
+          <Pressable 
+            style={styles.calModalBackdrop} 
+            onPress={() => setShowCalendarModal(false)}
+          >
+            <Pressable 
+              style={[
+                styles.calModalCard, 
+                { 
+                  backgroundColor: theme.surfaceSecondary, 
+                  borderColor: theme.border,
+                  width: isDesktop ? 420 : "92%",
+                  maxWidth: 420,
+                }
+              ]} 
+              onPress={() => {}}
+            >
+              {/* Top Header: Close ✕ on Left, Month & Year in Center */}
+              <View style={styles.calHeaderRow}>
+                <Pressable onPress={() => setShowCalendarModal(false)} hitSlop={12} style={styles.calCloseBtn}>
+                  <Ionicons name="close" size={24} color={theme.onSurface} />
+                </Pressable>
+
+                <View style={styles.calMonthNav}>
+                  <Pressable onPress={handlePrevMonth} hitSlop={10} style={styles.calNavArrow}>
+                    <Ionicons name="chevron-back" size={20} color={theme.onSurface} />
+                  </Pressable>
+                  <Text style={[styles.calMonthTitle, { color: theme.onSurface }]}>
+                    {calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                  </Text>
+                  <Pressable onPress={handleNextMonth} hitSlop={10} style={styles.calNavArrow}>
+                    <Ionicons name="chevron-forward" size={20} color={theme.onSurface} />
+                  </Pressable>
+                </View>
+
+                <View style={{ width: 36 }} />
+              </View>
+
+              {/* Weekday Row: S M T W T F S */}
+              <View style={styles.weekdaysRow}>
+                {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+                  <View key={i} style={styles.weekdayCol}>
+                    <Text style={[styles.weekdayText, { color: theme.onSurfaceSecondary }]}>
+                      {d}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Calendar Weeks & Days Grid */}
+              <View style={styles.calGrid}>
+                {calendarWeeks.map((week, wIdx) => (
+                  <View key={wIdx} style={styles.calWeekRow}>
+                    {week.map((cell, colIdx) => {
+                      const cellTime = toMidnightMs(cell.date);
+                      const sTime = tempStart ? toMidnightMs(tempStart) : null;
+                      const eTime = tempEnd ? toMidnightMs(tempEnd) : null;
+
+                      const isStart = sTime !== null && cellTime === sTime;
+                      const isEnd = eTime !== null && cellTime === eTime;
+                      const hasBoth = sTime !== null && eTime !== null;
+                      const minTime = hasBoth ? Math.min(sTime, eTime) : sTime;
+                      const maxTime = hasBoth ? Math.max(sTime, eTime) : sTime;
+                      const inRange = hasBoth && minTime !== null && maxTime !== null && cellTime >= minTime && cellTime <= maxTime;
+                      const isSingle = (isStart && isEnd) || (isStart && !hasBoth);
+
+                      let borderTopLeftRadius = 0;
+                      let borderBottomLeftRadius = 0;
+                      let borderTopRightRadius = 0;
+                      let borderBottomRightRadius = 0;
+
+                      if (isSingle) {
+                        borderTopLeftRadius = 20;
+                        borderBottomLeftRadius = 20;
+                        borderTopRightRadius = 20;
+                        borderBottomRightRadius = 20;
+                      } else if (isStart) {
+                        borderTopLeftRadius = 20;
+                        borderBottomLeftRadius = 20;
+                        if (colIdx === 6) {
+                          borderTopRightRadius = 10;
+                          borderBottomRightRadius = 10;
+                        }
+                      } else if (isEnd) {
+                        borderTopRightRadius = 20;
+                        borderBottomRightRadius = 20;
+                        if (colIdx === 0) {
+                          borderTopLeftRadius = 10;
+                          borderBottomLeftRadius = 10;
+                        }
+                      } else if (inRange) {
+                        if (colIdx === 0) {
+                          borderTopLeftRadius = 8;
+                          borderBottomLeftRadius = 8;
+                        }
+                        if (colIdx === 6) {
+                          borderTopRightRadius = 8;
+                          borderBottomRightRadius = 8;
+                        }
+                      }
+
+                      const isSelected = inRange || isStart || isEnd;
+
+                      return (
+                        <Pressable
+                          key={colIdx}
+                          onPress={() => handleDayPress(cell.date)}
+                          style={[
+                            styles.calDayCell,
+                            {
+                              backgroundColor: isSelected ? "#635BFF" : "transparent",
+                              borderTopLeftRadius,
+                              borderBottomLeftRadius,
+                              borderTopRightRadius,
+                              borderBottomRightRadius,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.calDayText,
+                              isSelected
+                                ? { color: "#FFFFFF", fontWeight: "800" }
+                                : !cell.isCurrentMonth
+                                ? { color: isDark ? "#475569" : "#94A3B8", fontWeight: "500" }
+                                : { color: theme.onSurface, fontWeight: "600" },
+                            ]}
+                          >
+                            {cell.dayNumber}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+
+              {/* Quick Presets */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.presetsList}
+              >
+                {[
+                  { label: "Today", get: () => [new Date(), new Date()] },
+                  { label: "Yesterday", get: () => { const d = new Date(); d.setDate(d.getDate() - 1); return [d, d]; } },
+                  { label: "Last 7 Days", get: () => { const s = new Date(); s.setDate(s.getDate() - 6); return [s, new Date()]; } },
+                  { label: "Last 30 Days", get: () => { const s = new Date(); s.setDate(s.getDate() - 29); return [s, new Date()]; } },
+                  { label: "This Month", get: () => { const now = new Date(); return [new Date(now.getFullYear(), now.getMonth(), 1), now]; } },
+                  { label: "Last Month", get: () => { const now = new Date(); return [new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 0)]; } },
+                ].map((p, pIdx) => (
+                  <Pressable
+                    key={pIdx}
+                    onPress={() => {
+                      const [s, e] = p.get();
+                      setTempStart(s);
+                      setTempEnd(e);
+                      setCalendarMonth(new Date(s.getFullYear(), s.getMonth(), 1));
+                    }}
+                    style={[styles.presetChip, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  >
+                    <Text style={[styles.presetChipText, { color: theme.onSurface }]}>{p.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              {/* Footer Info & Apply Button */}
+              <View style={[styles.calFooter, { borderTopColor: theme.border }]}>
+                <View style={styles.calSelectionSummary}>
+                  <Text style={[styles.calSelectionLabel, { color: theme.onSurfaceSecondary }]}>Selected Range</Text>
+                  <Text style={[styles.calSelectionValue, { color: theme.onSurface }]} numberOfLines={1}>
+                    {tempStart
+                      ? tempEnd
+                        ? isSameDayLocal(tempStart, tempEnd)
+                          ? tempStart.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                          : `${tempStart.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${tempEnd.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
+                        : `${tempStart.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} (Choose end date)`
+                      : "Select dates"}
+                  </Text>
+                </View>
+                <Pressable onPress={handleApplyCustomRange} style={styles.applyBtn}>
+                  <Text style={styles.applyBtnText}>Apply</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         </View>
       </View>
     </SafeAreaView>
@@ -670,4 +1080,36 @@ const styles = StyleSheet.create({
   lockDescription: { fontSize: 14, fontWeight: "500", textAlign: "center", lineHeight: 20, paddingHorizontal: spacing.md },
   upgradeBtn: { backgroundColor: "#FF5E2B", paddingHorizontal: 24, paddingVertical: 14, borderRadius: radius.lg, marginTop: spacing.md },
   upgradeBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+
+  customDateBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 14, borderRadius: 20, borderWidth: 1.5, marginBottom: spacing.md },
+  customDateBannerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  calendarIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(99,91,255,0.12)", justifyContent: "center", alignItems: "center" },
+  customDateBannerTitle: { fontSize: 15, fontWeight: "800" },
+  customDateBannerSub: { fontSize: 12, marginTop: 2, fontWeight: "500" },
+  customDateBannerBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: "rgba(99,91,255,0.12)" },
+  customDateBannerBtnText: { fontSize: 12, fontWeight: "800", color: "#635BFF" },
+
+  calModalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 16 },
+  calModalCard: { borderRadius: 24, borderWidth: 1.5, padding: spacing.lg, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
+  calHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  calCloseBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  calMonthNav: { flexDirection: "row", alignItems: "center", gap: 12 },
+  calNavArrow: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  calMonthTitle: { fontSize: 18, fontWeight: "900" },
+  weekdaysRow: { flexDirection: "row", marginBottom: spacing.sm },
+  weekdayCol: { flex: 1, alignItems: "center", justifyContent: "center" },
+  weekdayText: { fontSize: 14, fontWeight: "700" },
+  calGrid: { gap: 4, marginBottom: spacing.md },
+  calWeekRow: { flexDirection: "row", height: 40 },
+  calDayCell: { flex: 1, height: 40, justifyContent: "center", alignItems: "center" },
+  calDayText: { fontSize: 15 },
+  presetsList: { gap: 8, paddingVertical: 4, marginBottom: spacing.md },
+  presetChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1 },
+  presetChipText: { fontSize: 12, fontWeight: "700" },
+  calFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: spacing.md, borderTopWidth: 1 },
+  calSelectionSummary: { flex: 1, marginRight: 12 },
+  calSelectionLabel: { fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  calSelectionValue: { fontSize: 14, fontWeight: "800", marginTop: 2 },
+  applyBtn: { backgroundColor: "#635BFF", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 16 },
+  applyBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
 });

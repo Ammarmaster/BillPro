@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
   Platform, ActivityIndicator, ScrollView, SafeAreaView, StatusBar,
@@ -24,6 +24,7 @@ export default function Login() {
   const insets = useSafeAreaInsets();
   const { resetSuccess } = useLocalSearchParams<{ resetSuccess?: string }>();
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (resetSuccess === "true") {
@@ -63,8 +64,13 @@ export default function Login() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#FF5E2B" }]}>
       <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#FF5E2B"} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"} 
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}
+      >
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={[
             styles.scrollContainer,
             {
@@ -72,10 +78,13 @@ export default function Login() {
               alignItems: isDesktop ? "center" : undefined,
               justifyContent: isDesktop ? "center" : undefined,
               paddingVertical: isDesktop ? 48 : 0,
+              paddingBottom: isDesktop ? 48 : 220,
             },
           ]}
           bounces={false}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           <View style={[isDesktop && styles.desktopCardWrapper]}>
             {/* Solid Orange Header Section */}
@@ -117,11 +126,12 @@ export default function Login() {
                     value={email}
                     onChangeText={setEmail}
                     style={[styles.input, { color: "#FFFFFF" }]}
-                    placeholder="owner@yourplace.com or 9876543210"
+                    placeholder="email/phone"
                     placeholderTextColor="#64748B"
                     keyboardType="default"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    numberOfLines={1}
                     testID="login-email-input"
                   />
                 </View>
@@ -140,6 +150,12 @@ export default function Login() {
                     placeholderTextColor="#64748B"
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
+                    numberOfLines={1}
+                    onFocus={() => {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollTo({ y: 160, animated: true });
+                      }, 150);
+                    }}
                     testID="login-password-input"
                   />
                   <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>

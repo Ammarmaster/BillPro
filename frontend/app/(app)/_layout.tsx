@@ -68,7 +68,11 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace("/");
+      if (Platform.OS !== "web") {
+        router.replace("/login");
+      } else {
+        router.replace("/");
+      }
     } else if (!loading && user) {
       checkSubscription();
     }
