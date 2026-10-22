@@ -403,8 +403,20 @@ export default function Billing() {
   payModalRef.current = payModal;
   const backToRef = useRef(backTo);
   backToRef.current = backTo;
+  const redirectTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleBack = useCallback(() => {
+    if (redirectTimeoutRef.current) {
+      clearTimeout(redirectTimeoutRef.current);
+    }
     if (payModalRef.current) {
       setPayModal(false);
       return true;
@@ -414,10 +426,14 @@ export default function Billing() {
     } else if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(app)/waiter");
+      const isTakeaway =
+        String(tableNumber || "").trim().toLowerCase() === "takeaway" ||
+        String(bill?.table_number || "").trim().toLowerCase() === "takeaway" ||
+        String(order?.table_number || "").trim().toLowerCase() === "takeaway";
+      router.replace(isTakeaway ? "/(app)/takeaway" : "/(app)/waiter");
     }
     return true;
-  }, [router]);
+  }, [router, tableNumber, bill?.table_number, order?.table_number]);
 
   useEffect(() => {
     const onBackPress = () => {
@@ -564,6 +580,22 @@ export default function Billing() {
         await printBill(updatedLocalBill);
       }
     }).catch(() => {});
+
+    // Redirect to Takeaway (for next billing) or Tables section
+    const isTakeawayBill =
+      String(targetTbl || "").trim().toLowerCase() === "takeaway" ||
+      String(bill?.table_number || "").trim().toLowerCase() === "takeaway" ||
+      String(order?.table_number || "").trim().toLowerCase() === "takeaway" ||
+      String(tableNumber || "").trim().toLowerCase() === "takeaway" ||
+      backTo === "/(app)/takeaway" ||
+      (typeof backTo === "string" && backTo.includes("takeaway"));
+
+    const targetRoute = isTakeawayBill ? "/(app)/takeaway" : (backTo ? (backTo as any) : "/(app)/waiter");
+
+    if (redirectTimeoutRef.current) clearTimeout(redirectTimeoutRef.current);
+    redirectTimeoutRef.current = setTimeout(() => {
+      router.replace(targetRoute as any);
+    }, 400);
   };
 
   const doPrint = async () => {
@@ -832,10 +864,22 @@ export default function Billing() {
                 <Text style={styles.markPaidBtnText}>Mark Paid  ✓</Text>
               </Pressable>
             ) : (
-              <View style={[styles.alreadyPaidBadge, { backgroundColor: theme.success }]}>
+              <Pressable 
+                style={[styles.alreadyPaidBadge, { backgroundColor: theme.success }]}
+                onPress={() => {
+                  if (redirectTimeoutRef.current) clearTimeout(redirectTimeoutRef.current);
+                  const isTakeaway =
+                    String(bill?.table_number || order?.table_number || tableNumber || "").trim().toLowerCase() === "takeaway" ||
+                    backTo === "/(app)/takeaway" ||
+                    (typeof backTo === "string" && backTo.includes("takeaway"));
+                  const targetRoute = isTakeaway ? "/(app)/takeaway" : (backTo ? (backTo as any) : "/(app)/waiter");
+                  router.replace(targetRoute as any);
+                }}
+                testID="bill-already-paid-btn"
+              >
                 <Ionicons name="checkmark-circle" size={20} color={theme.onSuccess} />
                 <Text style={[styles.alreadyPaidText, { color: theme.onSuccess }]}>Payment Complete</Text>
-              </View>
+              </Pressable>
             )}
           </View>
         </View>

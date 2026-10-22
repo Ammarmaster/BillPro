@@ -182,6 +182,7 @@ export default function WaiterScreen() {
 
     load();
     setViewMode("tables");
+    setSelectedTableObj(null);
   }, [load]));
 
   // Auto-handle table route param if passed
