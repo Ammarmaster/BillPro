@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
-  Platform, ActivityIndicator, ScrollView, SafeAreaView, StatusBar,
+  Platform, ActivityIndicator, ScrollView, StatusBar,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -62,11 +62,15 @@ export default function Login() {
   const forgotStyle = { color: "#FF5E2B", fontSize: 13, fontWeight: "600" as const };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#FF5E2B" }]}>
-      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#FF5E2B"} />
+    <View style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#FF5E2B" />
+      {/* Top orange status bar backdrop for iOS & overscroll */}
+      {!isDesktop && (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: insets.top + 160, backgroundColor: "#FF5E2B" }} />
+      )}
       <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        behavior={Platform.OS === "ios" ? "padding" : undefined} 
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
         style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}
       >
         <ScrollView
@@ -78,7 +82,7 @@ export default function Login() {
               alignItems: isDesktop ? "center" : undefined,
               justifyContent: isDesktop ? "center" : undefined,
               paddingVertical: isDesktop ? 48 : 0,
-              paddingBottom: isDesktop ? 48 : 220,
+              paddingBottom: isDesktop ? 48 : Math.max(insets.bottom, 24) + 20,
             },
           ]}
           bounces={false}
@@ -86,7 +90,7 @@ export default function Login() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <View style={[isDesktop && styles.desktopCardWrapper]}>
+          <View style={[{ flex: 1, backgroundColor: "#0D0D0D" }, isDesktop && styles.desktopCardWrapper]}>
             {/* Solid Orange Header Section */}
             <View style={[styles.headerSection, { paddingTop: isDesktop ? 36 : insets.top + 32, backgroundColor: "#FF5E2B" }]}>
               {/* Cutlery Plate Logo box */}
@@ -207,12 +211,12 @@ export default function Login() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#FF5E2B" },
+  safe: { flex: 1, backgroundColor: "#0D0D0D" },
   wrap: { flex: 1, backgroundColor: "#0D0D0D" },
   scrollContainer: { flexGrow: 1, backgroundColor: "#0D0D0D" },
   desktopCardWrapper: {
@@ -260,6 +264,7 @@ const styles = StyleSheet.create({
 
   cardSection: {
     flex: 1,
+    minHeight: 480,
     backgroundColor: "#0D0D0D",
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
