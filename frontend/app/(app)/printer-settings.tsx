@@ -35,6 +35,9 @@ export default function PrinterSettingsScreen() {
   const [devices, setDevices] = useState<{ name: string; address: string; type: PrinterConnectionType; brand?: string }[]>([]);
   const [testingPrint, setTestingPrint] = useState(false);
   const [testingDrawer, setTestingDrawer] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Live status from persistent printer manager
   const [cashierConnStatus, setCashierConnStatus] = useState<PrinterConnectionStatus>("none");
@@ -325,6 +328,7 @@ export default function PrinterSettingsScreen() {
 
   const handleSaveManual = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setIsSaving(true);
     try {
       const cashierSettings: PrinterSettings = {
         type: cashierType,
@@ -354,9 +358,22 @@ export default function PrinterSettingsScreen() {
       };
       await savePrinterSettings("kitchen", kitchenSettings);
 
-      Alert.alert("Success", "Printer settings saved! Automatic printing and auto-reconnect are active.");
+      await checkPrinterConnection("cashier").catch(() => {});
+      await checkPrinterConnection("kitchen").catch(() => {});
+
+      setIsSaving(false);
+      setSaveSuccess(true);
+      setToastMessage("✓ Printer settings saved! Auto-connect & instant printing active.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+
+      setTimeout(() => {
+        setSaveSuccess(false);
+        setToastMessage(null);
+      }, 3500);
     } catch (e: any) {
-      Alert.alert("Error", `Failed to save printer settings: ${e.message}`);
+      setIsSaving(false);
+      setToastMessage(`Error: ${e.message || "Failed to save printer settings"}`);
+      setTimeout(() => setToastMessage(null), 4000);
     }
   };
 
@@ -454,6 +471,14 @@ export default function PrinterSettingsScreen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 900, alignSelf: "center" }]}>
         
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <View style={[styles.floatingToast, { backgroundColor: toastMessage.startsWith("Error") ? "#EF4444" : "#10B981" }]}>
+          <Ionicons name={toastMessage.startsWith("Error") ? "alert-circle" : "checkmark-circle"} size={20} color="#FFFFFF" />
+          <Text style={styles.floatingToastText}>{toastMessage}</Text>
+        </View>
+      )}
+
       {/* Header Matching More & Dashboard */}
       <View style={styles.header}>
         <Pressable 
@@ -1091,9 +1116,27 @@ export default function PrinterSettingsScreen() {
             <Text style={[styles.testBtnText, { color: "#635BFF" }]}>Test Ticket</Text>
           </Pressable>
 
-          <Pressable style={styles.saveMainBtn} onPress={handleSaveManual}>
-            <Ionicons name="save-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.saveMainBtnText}>Save & Auto-Connect</Text>
+          <Pressable 
+            style={[
+              styles.saveMainBtn, 
+              saveSuccess && { backgroundColor: "#10B981", shadowColor: "#10B981" }
+            ]} 
+            onPress={handleSaveManual}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+            ) : (
+              <Ionicons 
+                name={saveSuccess ? "checkmark-circle" : "save-outline"} 
+                size={18} 
+                color="#FFFFFF" 
+                style={{ marginRight: 6 }} 
+              />
+            )}
+            <Text style={styles.saveMainBtnText}>
+              {isSaving ? "Saving..." : saveSuccess ? "✓ Settings Saved & Connected!" : "Save & Auto-Connect"}
+            </Text>
           </Pressable>
         </View>
 
@@ -1458,5 +1501,29 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
+  },
+  floatingToast: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  floatingToastText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+    flex: 1,
   },
 });

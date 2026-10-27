@@ -900,8 +900,8 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
   bytes.push(0x1D, 0x21, 0x00);
   bytes.push(0x1B, 0x61, 0x00);
 
-  // Feed 7 lines for complete clearance before cut
-  bytes.push(0x1B, 0x64, 0x07);
+  // Minimal paper feed (2 lines) to reach manual tear bar or cutter with zero waste
+  bytes.push(0x1B, 0x64, 0x02);
   // Cut paper (partial)
   bytes.push(0x1D, 0x56, 0x42, 0x00);
 
@@ -1056,7 +1056,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
 
     lines.push(`[C]${divider}\n`);
     lines.push(`[L]<b>Total Items: ${totalQty}</b>[R]Dishes: ${items.length}\n`);
-    lines.push(`\n\n\n\n\n`);
+    lines.push(`\n\n`);
   } else {
     // ==========================================
     // CUSTOMER BILL RECEIPT — COMPACT & ELEGANT
@@ -1206,8 +1206,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     }
 
     lines.push(`[C]Thank you! Visit again.\n`);
-    lines.push(`[C]EzBill POS\n`);
-    lines.push(`\n\n\n\n\n\n\n`);
+    lines.push(`[C]EzBill POS\n\n`);
   }
 
   return lines.join("");
@@ -1639,7 +1638,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       return false;
     }
 
-    const mmFeed = isKitchen ? 25 : 32;
+    const mmFeed = 10;
 
     try {
       if (settings.type === "network") {
@@ -1761,7 +1760,7 @@ export function kotHtml(order: any): string {
           @page { size: 58mm auto; margin: 2mm 0; }
           html, body { width: 58mm !important; max-width: 58mm !important; margin: 0 auto !important; padding: 2mm 1mm !important; }
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #000; padding: 6px; padding-bottom: 25px; max-width: 280px; margin: 0 auto; font-size: 13px; line-height: 1.25; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #000; padding: 6px; padding-bottom: 6px; max-width: 280px; margin: 0 auto; font-size: 13px; line-height: 1.25; }
         .center { text-align: center; }
         .title { font-size: 17px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
         .meta { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #333; margin: 3px 0 5px; }
@@ -1773,7 +1772,7 @@ export function kotHtml(order: any): string {
         .name { font-size: 13.5px; font-weight: 700; }
         .note { font-size: 11px; font-weight: 600; color: #444; margin-top: 1px; }
         .footer { text-align: center; font-size: 12px; font-weight: 800; margin-top: 6px; border-top: 1px dashed #000; padding-top: 5px; }
-        .tear-spacer { height: 40px; width: 100%; }
+        .tear-spacer { height: 10px; width: 100%; }
       </style>
     </head>
     <body>
@@ -1864,7 +1863,7 @@ export function billHtml(bill: any): string {
           padding: 2mm 1mm !important;
         }
       }
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #111; padding: 6px; padding-bottom: 20px; max-width: 290px; margin: 0 auto; font-size: 12px; line-height: 1.3; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #111; padding: 6px; padding-bottom: 6px; max-width: 290px; margin: 0 auto; font-size: 12px; line-height: 1.3; }
       .center { text-align: center; }
       .l { text-align: left; }
       .r { text-align: right; }
@@ -1947,7 +1946,7 @@ export function billHtml(bill: any): string {
       <hr />
       
       <p class="footer">Thank you! Visit again. · EzBill</p>
-      <div style="height: 35px; width: 100%;"></div>
+      <div style="height: 10px; width: 100%;"></div>
     </body></html>
   `;
 }
