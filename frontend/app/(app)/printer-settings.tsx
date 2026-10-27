@@ -54,7 +54,7 @@ export default function PrinterSettingsScreen() {
   const [cashierAuto, setCashierAuto] = useState(true);
   const [cashierPrintKOT, setCashierPrintKOT] = useState(false);
   const [cashierOpenDrawer, setCashierOpenDrawer] = useState(true);
-  const [cashierAutoCut, setCashierAutoCut] = useState(true);
+  const [cashierAutoCut, setCashierAutoCut] = useState(false);
   const [cashierCopies, setCashierCopies] = useState<number>(1);
 
   // Kitchen printer states
@@ -64,9 +64,9 @@ export default function PrinterSettingsScreen() {
   const [kitchenMAC, setKitchenMAC] = useState("");
   const [kitchenName, setKitchenName] = useState("Kitchen Thermal Printer");
   const [kitchenBrand, setKitchenBrand] = useState("Epson");
-  const [kitchenWidth, setKitchenWidth] = useState<58 | 80>(80);
+  const [kitchenWidth, setKitchenWidth] = useState<58 | 80>(58);
   const [kitchenAuto, setKitchenAuto] = useState(true);
-  const [kitchenAutoCut, setKitchenAutoCut] = useState(true);
+  const [kitchenAutoCut, setKitchenAutoCut] = useState(false);
   const [kitchenCopies, setKitchenCopies] = useState<number>(1);
 
   useEffect(() => {
@@ -93,11 +93,12 @@ export default function PrinterSettingsScreen() {
       }
       setCashierName(cashier.name);
       setCashierBrand(cashier.brand || "Generic");
-      setCashierWidth(cashier.width);
+      const isMptC = (cashier.name && cashier.name.toUpperCase().includes("MPT")) || (cashier.address && cashier.address.toUpperCase().includes("MPT"));
+      setCashierWidth(isMptC ? 58 : (cashier.width || 58));
       setCashierAuto(cashier.auto_print ?? true);
       setCashierPrintKOT(cashier.print_kot ?? false);
       setCashierOpenDrawer(cashier.open_drawer ?? true);
-      setCashierAutoCut(cashier.auto_cut ?? true);
+      setCashierAutoCut(isMptC ? false : (cashier.auto_cut ?? false));
       setCashierCopies(cashier.copies || 1);
     }
 
@@ -112,9 +113,10 @@ export default function PrinterSettingsScreen() {
       }
       setKitchenName(kitchen.name);
       setKitchenBrand(kitchen.brand || "Generic");
-      setKitchenWidth(kitchen.width);
+      const isMptK = (kitchen.name && kitchen.name.toUpperCase().includes("MPT")) || (kitchen.address && kitchen.address.toUpperCase().includes("MPT"));
+      setKitchenWidth(isMptK ? 58 : (kitchen.width || (cashier?.width === 58 ? 58 : 80)));
       setKitchenAuto(kitchen.auto_print ?? true);
-      setKitchenAutoCut(kitchen.auto_cut ?? true);
+      setKitchenAutoCut(isMptK ? false : (kitchen.auto_cut ?? false));
       setKitchenCopies(kitchen.copies || 1);
     }
     if (Platform.OS === "web") {
@@ -202,8 +204,11 @@ export default function PrinterSettingsScreen() {
       width: preset.defaultWidth,
       auto_print: true,
       open_drawer: isCashier,
-      auto_cut: true
+      auto_cut: preset.defaultWidth === 80
     });
+
+    setToastMessage(`✓ ${preset.name} applied with auto-print!`);
+    setTimeout(() => setToastMessage(null), 3500);
 
     Alert.alert(
       `${preset.brand} Preset Applied`,

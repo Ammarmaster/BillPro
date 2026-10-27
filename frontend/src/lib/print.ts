@@ -646,7 +646,9 @@ export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cas
       name: devName,
       address: devAddress,
       type: existing?.type || "bluetooth",
-      brand: "Generic"
+      brand: "Generic",
+      width: 58,
+      auto_cut: false
     });
     setPrinterStatus(role, "connected");
     Alert.alert("Thermal Printer Connected", "Connected to MPT-II thermal printer! Auto-reconnect is now active. You can now tap 'Test Ticket' or print bills.");
@@ -773,7 +775,7 @@ function encodeUtf8(str: string): Uint8Array {
   return new Uint8Array(utf8);
 }
 
-export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 80): Uint8Array {
+export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 58, autoCut: boolean = false): Uint8Array {
   const maxChars = width === 58 ? 32 : 48;
   const bytes: number[] = [];
 
@@ -900,10 +902,17 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
   bytes.push(0x1D, 0x21, 0x00);
   bytes.push(0x1B, 0x61, 0x00);
 
-  // Minimal paper feed (2 lines) to reach manual tear bar or cutter with zero waste
-  bytes.push(0x1B, 0x64, 0x02);
-  // Cut paper (partial)
-  bytes.push(0x1D, 0x56, 0x42, 0x00);
+  // Paper feed & Cut logic tailored to width:
+  // For 58mm portable printers (like MPT-II): manual tear bar only needs 1 single line feed. NO cut command!
+  if (width === 58) {
+    bytes.push(0x1B, 0x64, 0x01);
+  } else {
+    bytes.push(0x1B, 0x64, 0x02);
+    if (autoCut) {
+      // Use GS V 1 (0x1D, 0x56, 0x01) for instant partial cut without feeding extra blank paper
+      bytes.push(0x1D, 0x56, 0x01);
+    }
+  }
 
   return new Uint8Array(bytes);
 }
@@ -1022,7 +1031,7 @@ function formatThermalMoney(val: number): string {
   return num.toFixed(2);
 }
 
-export async function formatReceipt(data: any, width: number = 80, isKitchen: boolean = false): Promise<string> {
+export async function formatReceipt(data: any, width: number = 58, isKitchen: boolean = false): Promise<string> {
   const maxChars = width === 58 ? 32 : 48;
   const divider = "-".repeat(maxChars);
   const lines: string[] = [];
@@ -1040,23 +1049,45 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     const items = data.items || [];
     const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0);
 
-    lines.push(`[C]<b><font size='big'>KOT · ${tableLabel}</font></b>\n`);
+    // Header: Tall font fits perfectly on 58mm without double-width wrapping
+    lines.push(`[C]<b><font size='tall'>KOT · ${tableLabel}</font></b>\n`);
     lines.push(`[L]#${orderNo}[R]${timeStr}\n`);
     lines.push(`[C]${divider}\n`);
     lines.push(`[L]<b>QTY  ITEM</b>\n`);
+    lines.push(`[C]${divider}\n`);
 
     items.forEach((it: any) => {
-      const q = it.quantity || 1;
-      const name = it.name || "Item";
-      lines.push(`[L]<b>${q}x</b>  ${name}\n`);
+      const q = Number(it.quantity || 1);
+      const name = String(it.name || "Item").trim();
+      const qPrefix = `${q}x`.padEnd(4, " ");
+
+      const availNameWidth = maxChars - 5;
+      if (name.length <= availNameWidth) {
+        lines.push(`[L]<b>${qPrefix}</b> ${name}\n`);
+      } else {
+        const words = name.split(" ");
+        let l1 = "";
+        let l2 = "";
+        for (const w of words) {
+          if ((l1 + " " + w).trim().length <= availNameWidth && !l2) {
+            l1 = (l1 + " " + w).trim();
+          } else if ((l2 + " " + w).trim().length <= availNameWidth) {
+            l2 = (l2 + " " + w).trim();
+          }
+        }
+        lines.push(`[L]<b>${qPrefix}</b> ${l1 || name.slice(0, availNameWidth)}\n`);
+        if (l2) {
+          lines.push(`[L]     ${l2}\n`);
+        }
+      }
+
       if (it.notes && String(it.notes).trim()) {
-        lines.push(`[L]   * Note: ${String(it.notes).trim()}\n`);
+        lines.push(`[L]     * Note: ${String(it.notes).trim()}\n`);
       }
     });
 
     lines.push(`[C]${divider}\n`);
     lines.push(`[L]<b>Total Items: ${totalQty}</b>[R]Dishes: ${items.length}\n`);
-    lines.push(`\n\n`);
   } else {
     // ==========================================
     // CUSTOMER BILL RECEIPT — COMPACT & ELEGANT
@@ -1070,7 +1101,11 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
       lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     }
 
-    lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
+    if (width === 58) {
+      lines.push(`[C]<b><font size='tall'>${restaurantName}</font></b>\n`);
+    } else {
+      lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
+    }
 
     if (r.address) {
       const cleanAddr = String(r.address).replace(/\s+/g, " ").trim();
@@ -1206,7 +1241,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     }
 
     lines.push(`[C]Thank you! Visit again.\n`);
-    lines.push(`[C]EzBill POS\n\n`);
+    lines.push(`[C]EzBill POS\n`);
   }
 
   return lines.join("");
@@ -1489,17 +1524,25 @@ export async function autoConnectPrinter(
   const existing = await getPrinterSettings(role);
   const inferredType: PrinterConnectionType = printer.type || (isNetwork ? "network" : "bluetooth");
   
+  const is58 = printer.width === 58 ||
+    (printer.name && printer.name.toUpperCase().includes("MPT")) ||
+    (printer.address && printer.address.toUpperCase().includes("MPT")) ||
+    (printer.name && printer.name.includes("58")) ||
+    (existing && existing.width === 58);
+  const resolvedWidth: 58 | 80 = is58 ? 58 : (printer.width || existing?.width || 58);
+  const resolvedAutoCut = resolvedWidth === 58 ? false : (printer.auto_cut ?? (existing ? existing.auto_cut : false));
+
   const settings: PrinterSettings = {
     type: inferredType,
     name: printer.name || (isNetwork ? "Network Printer" : "Thermal Printer"),
     address: printer.address.trim(),
     port: isNetwork ? "9100" : undefined,
     brand: printer.brand || (existing ? existing.brand : "Generic"),
-    width: printer.width || (existing ? existing.width : (printer.name.includes("58") ? 58 : 80)),
+    width: resolvedWidth,
     auto_print: printer.auto_print ?? (existing ? existing.auto_print : true),
     print_kot: printer.print_kot ?? (existing ? existing.print_kot : false),
     open_drawer: printer.open_drawer ?? (existing ? existing.open_drawer : true),
-    auto_cut: printer.auto_cut ?? (existing ? existing.auto_cut : true),
+    auto_cut: resolvedAutoCut,
     copies: printer.copies ?? (existing ? existing.copies : 1),
   };
 
@@ -1509,7 +1552,17 @@ export async function autoConnectPrinter(
 }
 
 export async function printThermalDirect(role: "cashier" | "kitchen", data: any, isKitchen = false): Promise<boolean> {
-  const settings = await getPrinterSettings(role);
+  let settings = await getPrinterSettings(role);
+
+  // If kitchen printer is not configured or disabled, fallback to cashier printer
+  if ((!settings || settings.type === "none") && role === "kitchen") {
+    const cashierSettings = await getPrinterSettings("cashier");
+    if (cashierSettings && cashierSettings.type !== "none") {
+      settings = cashierSettings;
+      role = "cashier";
+    }
+  }
+
   if (!settings || settings.type === "none") {
     if (Platform.OS === "web") {
       Alert.alert(
@@ -1521,6 +1574,14 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     return false;
   }
 
+  // Detect 58mm hardware (MPT-II, POS-58, etc.) to guarantee 58mm formatting even if accidentally saved as 80
+  const is58 = (settings.width === 58) ||
+    (settings.name && settings.name.toUpperCase().includes("MPT")) ||
+    (settings.address && settings.address.toUpperCase().includes("MPT")) ||
+    (settings.name && settings.name.includes("58"));
+  const effectiveWidth: 58 | 80 = is58 ? 58 : (settings.width || 58);
+  const effectiveAutoCut = effectiveWidth === 58 ? false : (settings.auto_cut !== false);
+
   if (settings.type === "system") {
     if (isKitchen) {
       await printKOTLegacy(data);
@@ -1530,7 +1591,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     return true;
   }
 
-  const payload = await formatReceipt(data, settings.width, isKitchen);
+  const payload = await formatReceipt(data, effectiveWidth, isKitchen);
   const copiesCount = Math.max(1, Math.min(3, settings.copies || 1));
 
   // Auto-Kick Cash Drawer on Cash Payments
@@ -1553,7 +1614,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       if (settings.type === "bluetooth") {
         if (activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1576,7 +1637,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1589,7 +1650,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebBluetoothCharacteristic) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
             const success = await sendWebBluetoothPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1611,7 +1672,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebUsbDevice || activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1638,7 +1699,8 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       return false;
     }
 
-    const mmFeed = 10;
+    const mmFeed = effectiveWidth === 58 ? 3 : 10;
+    const shouldCut = effectiveWidth === 58 ? false : (settings.auto_cut !== false);
 
     try {
       if (settings.type === "network") {
@@ -1646,7 +1708,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           payload,
           ip: (settings.address || "").trim(),
           port: parseInt(settings.port || "9100"),
-          autoCut: settings.auto_cut !== false,
+          autoCut: shouldCut,
           mmFeedPaper: mmFeed,
         });
       } else if (settings.type === "bluetooth" || settings.type === "sunmi" || settings.type === "usb") {
@@ -1681,10 +1743,10 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           await ThermalPrinterModule.printBluetooth({
             payload,
             macAddress: targetMac,
-            printerWidthMM: settings.width || 58,
-            printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+            printerWidthMM: effectiveWidth,
+            printerNbrCharactersPerLine: effectiveWidth === 80 ? 48 : 32,
             mmFeedPaper: mmFeed,
-            autoCut: settings.auto_cut !== false,
+            autoCut: shouldCut,
           });
         } catch (directErr: any) {
           console.warn("Direct MAC print error, trying default paired device:", directErr);
@@ -1692,10 +1754,10 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
             await ThermalPrinterModule.printBluetooth({
               payload,
               macAddress: "",
-              printerWidthMM: settings.width || 58,
-              printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+              printerWidthMM: effectiveWidth,
+              printerNbrCharactersPerLine: effectiveWidth === 80 ? 48 : 32,
               mmFeedPaper: mmFeed,
-              autoCut: settings.auto_cut !== false,
+              autoCut: shouldCut,
             });
           } catch (fallbackErr: any) {
             console.warn("Fallback bluetooth print also failed:", fallbackErr);
