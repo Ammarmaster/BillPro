@@ -3,6 +3,7 @@ import * as Sharing from "expo-sharing";
 import { Platform, Alert, PermissionsAndroid } from "react-native";
 import { storage } from "@/src/utils/storage";
 import * as Haptics from "expo-haptics";
+import QRCode from "qrcode";
 import { api } from "./api";
 
 let ThermalPrinterModule: any = null;
@@ -716,15 +717,26 @@ export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cas
   }
 }
 
+async function writeSerialChunks(writer: any, bytes: Uint8Array): Promise<void> {
+  const chunkSize = 256;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, i + chunkSize);
+    await writer.write(chunk);
+    if (i + chunkSize < bytes.length) {
+      await new Promise(r => setTimeout(r, 12));
+    }
+  }
+}
+
 export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
   if (activeWebSerialPort?.writable) {
     try {
       if (activeWebSerialWriter) {
-        await activeWebSerialWriter.write(bytes);
+        await writeSerialChunks(activeWebSerialWriter, bytes);
         return true;
       } else if (!activeWebSerialPort.writable.locked) {
         activeWebSerialWriter = activeWebSerialPort.writable.getWriter();
-        await activeWebSerialWriter.write(bytes);
+        await writeSerialChunks(activeWebSerialWriter, bytes);
         return true;
       }
     } catch (e) {
@@ -736,7 +748,7 @@ export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
         }
         if (activeWebSerialPort?.writable && !activeWebSerialPort.writable.locked) {
           activeWebSerialWriter = activeWebSerialPort.writable.getWriter();
-          await activeWebSerialWriter.write(bytes);
+          await writeSerialChunks(activeWebSerialWriter, bytes);
           return true;
         }
       } catch (retryErr) {
@@ -772,7 +784,14 @@ export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
         }
       } catch {}
 
-      await activeWebUsbDevice.transferOut(outEndpoint, bytes);
+      const chunkSize = 512;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.slice(i, i + chunkSize);
+        await activeWebUsbDevice.transferOut(outEndpoint, chunk);
+        if (i + chunkSize < bytes.length) {
+          await new Promise(r => setTimeout(r, 10));
+        }
+      }
       return true;
     } catch (e) {
       console.warn("WebUSB transferOut error:", e);
@@ -861,6 +880,59 @@ function encodeUtf8(str: string): Uint8Array {
   return new Uint8Array(utf8);
 }
 
+export function generateEscPosRasterQr(text: string, paperWidth: 58 | 80 = 58): number[] {
+  if (!text || !text.trim()) return [];
+  try {
+    const qr = QRCode.create(text.trim(), { errorCorrectionLevel: "M" });
+    const qrSize = qr.modules.size;
+    const quietZone = 2; // 2 modules quiet margin
+    const totalQrModules = qrSize + quietZone * 2;
+
+    const totalPaperDots = paperWidth === 58 ? 384 : 576;
+    const maxQrDots = paperWidth === 58 ? 220 : 360;
+    const scale = Math.max(2, Math.floor(maxQrDots / totalQrModules));
+    const qrPixelWidth = totalQrModules * scale;
+
+    const bytesPerRow = Math.floor(totalPaperDots / 8); // 48 bytes for 58mm, 72 bytes for 80mm
+    const leftOffsetDots = Math.max(0, Math.floor((totalPaperDots - qrPixelWidth) / 2));
+    const totalRows = qrPixelWidth;
+
+    const bytes: number[] = [];
+    // ESC/POS GS v 0 0 xL xH yL yH
+    const xL = bytesPerRow % 256;
+    const xH = Math.floor(bytesPerRow / 256);
+    const yL = totalRows % 256;
+    const yH = Math.floor(totalRows / 256);
+
+    bytes.push(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH);
+
+    for (let y = 0; y < totalRows; y++) {
+      const rowModY = Math.floor(y / scale) - quietZone;
+      for (let byteIdx = 0; byteIdx < bytesPerRow; byteIdx++) {
+        let byteVal = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const dotX = byteIdx * 8 + bit;
+          const relX = dotX - leftOffsetDots;
+          if (relX >= 0 && relX < qrPixelWidth) {
+            const modX = Math.floor(relX / scale) - quietZone;
+            if (rowModY >= 0 && rowModY < qrSize && modX >= 0 && modX < qrSize) {
+              if (qr.modules.get(rowModY, modX)) {
+                byteVal |= (1 << (7 - bit));
+              }
+            }
+          }
+        }
+        bytes.push(byteVal);
+      }
+    }
+
+    return bytes;
+  } catch (err) {
+    console.warn("[PRINT] Raster QR generation failed:", err);
+    return [];
+  }
+}
+
 export function convertThermalPayloadToEscPos(
   payload: string,
   width: 58 | 80 = 58,
@@ -879,9 +951,7 @@ export function convertThermalPayloadToEscPos(
     bytes.push(0x12, 0x37, 0x09, 0xE6, 0x02);
     // 2. Double-strike mode ON: ESC G 1 (double heating pass for high contrast)
     bytes.push(0x1B, 0x47, 0x01);
-    // 3. Density Setting: GS ( K (level +4)
-    bytes.push(0x1D, 0x28, 0x6B, 0x02, 0x00, 0x31, 0x04);
-    // 4. GS ~ 4: Thermal density maximum
+    // 3. GS ~ 4: Thermal density maximum
     bytes.push(0x1D, 0x7E, 0x04);
   } else if (darkness === "dark") {
     // Heating time: 180=1.8ms
@@ -903,29 +973,18 @@ export function convertThermalPayloadToEscPos(
     // Check for QR code tag: <qrcode size='...'>data</qrcode>
     const qrMatch = rawLine.match(/<qrcode[^>]*>(.*?)<\/qrcode>/i);
     if (qrMatch) {
-      const qrData = qrMatch[1];
-      const qrBytes = encodeUtf8(qrData);
-      const len = qrBytes.length + 3;
-      const pL = len % 256;
-      const pH = Math.floor(len / 256);
-      const moduleSize = width === 58 ? 0x07 : 0x08;
-
-      // Align Center
-      bytes.push(0x1B, 0x61, 0x01);
-      // QR Model 2: GS ( k 4 0 49 65 50 0
-      bytes.push(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
-      // QR Module size: GS ( k 3 0 49 67 moduleSize
-      bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleSize);
-      // Error correction L: GS ( k 3 0 49 69 48
-      bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x30);
-      // Store QR data: GS ( k pL pH 49 80 48 ...
-      bytes.push(0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30);
-      for (const b of qrBytes) bytes.push(b);
-      // Print QR: GS ( k 3 0 49 81 48
-      bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
-      bytes.push(0x0A);
-      // Reset align to Left
-      bytes.push(0x1B, 0x61, 0x00);
+      const qrData = (qrMatch[1] || "").trim();
+      if (qrData) {
+        try {
+          const qrBytes = generateEscPosRasterQr(qrData, width);
+          if (qrBytes.length > 0) {
+            for (const b of qrBytes) bytes.push(b);
+            bytes.push(0x0A);
+          }
+        } catch (qrErr) {
+          console.warn("[PRINT] Raster QR error:", qrErr);
+        }
+      }
       continue;
     }
 
@@ -957,6 +1016,8 @@ export function convertThermalPayloadToEscPos(
     let align = 0; // 0: Left, 1: Center, 2: Right
     let formattedText = "";
 
+    const lineCols = isDoubleSize ? Math.floor(maxChars / 2) : maxChars;
+
     if (clean.includes("[L]") && clean.includes("[C]") && clean.includes("[R]")) {
       const parts = clean.split(/\[L\]|\[C\]|\[R\]/).filter(p => p !== "");
       const colL = (parts[0] || "").trim();
@@ -976,10 +1037,24 @@ export function convertThermalPayloadToEscPos(
       align = 0;
     } else if (clean.startsWith("[C]")) {
       align = 1;
-      formattedText = clean.replace("[C]", "").trim();
+      const rawText = clean.replace("[C]", "").trim();
+      if (rawText.length < lineCols) {
+        const padTotal = lineCols - rawText.length;
+        const leftPad = Math.floor(padTotal / 2);
+        const rightPad = padTotal - leftPad;
+        formattedText = " ".repeat(leftPad) + rawText + " ".repeat(rightPad);
+      } else {
+        formattedText = rawText;
+      }
     } else if (clean.startsWith("[R]")) {
       align = 2;
-      formattedText = clean.replace("[R]", "").trim();
+      const rawText = clean.replace("[R]", "").trim();
+      if (rawText.length < lineCols) {
+        const padLeft = lineCols - rawText.length;
+        formattedText = " ".repeat(padLeft) + rawText;
+      } else {
+        formattedText = rawText;
+      }
     } else if (clean.startsWith("[L]")) {
       align = 0;
       formattedText = clean.replace("[L]", "").trim();
@@ -987,14 +1062,7 @@ export function convertThermalPayloadToEscPos(
       formattedText = clean.trim();
     }
 
-    // Alignment: ESC a n
-    bytes.push(0x1B, 0x61, align);
-
-    // Bold / Emphasized: ESC E n
-    const shouldEmphasize = isBold || darkness === "extra_dark" || darkness === "dark";
-    bytes.push(0x1B, 0x45, shouldEmphasize ? 0x01 : 0x00);
-
-    // Font size: GS ! n
+    // 1. Font size: GS ! n (MUST be sent before ESC a or text)
     if (isDoubleSize) {
       bytes.push(0x1D, 0x21, 0x11);
     } else if (isTall) {
@@ -1003,9 +1071,26 @@ export function convertThermalPayloadToEscPos(
       bytes.push(0x1D, 0x21, 0x00);
     }
 
+    // 2. Bold / Emphasized: ESC E n
+    const shouldEmphasize = isBold || darkness === "extra_dark" || darkness === "dark";
+    bytes.push(0x1B, 0x45, shouldEmphasize ? 0x01 : 0x00);
+
+    // 3. Alignment: ESC a n
+    bytes.push(0x1B, 0x61, align);
+
+    // 4. Output text bytes
     const textEncoded = encodeUtf8(formattedText);
     for (const b of textEncoded) bytes.push(b);
     bytes.push(0x0A);
+
+    // 5. Reset line alignment back to left immediately after line feed
+    if (align !== 0) {
+      bytes.push(0x1B, 0x61, 0x00);
+    }
+    // 6. Reset font size back to normal
+    if (isDoubleSize || isTall) {
+      bytes.push(0x1D, 0x21, 0x00);
+    }
   }
 
   // Reset styles
@@ -1146,36 +1231,41 @@ function formatThermalMoney(val: number): string {
 export async function formatReceipt(data: any, width: number = 58, isKitchen: boolean = false): Promise<string> {
   const maxChars = width === 58 ? 32 : 48;
   const divider = "-".repeat(maxChars);
+  const doubleDivider = "=".repeat(maxChars);
   const lines: string[] = [];
 
   if (isKitchen) {
     // ==========================================
-    // CLEAN, COMPACT KITCHEN ORDER TICKET (KOT)
+    // CLEAN, BEAUTIFULLY DESIGNED KITCHEN ORDER TICKET (KOT)
     // ==========================================
     const isTakeaway = String(data.table_number || "").toLowerCase() === "takeaway" || String(data.order_type || "").toLowerCase() === "takeaway";
     const rawTable = String(data.table_number || "").trim();
     const tableLabel = isTakeaway ? "TAKEAWAY" : (rawTable ? (rawTable.toUpperCase().startsWith("TABLE") ? rawTable.toUpperCase() : `TABLE ${rawTable.toUpperCase()}`) : "TAKEAWAY");
     const orderNo = data.order_number || (data.id ? data.id.slice(0, 6).toUpperCase() : "1");
     const dateObj = new Date(data.created_at || Date.now());
+    const dateStr = dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' });
     const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
     const items = data.items || [];
     const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0);
 
-    // Header: Tall font fits perfectly on 58mm without double-width wrapping
-    lines.push(`[C]<b><font size='tall'>KOT · ${tableLabel}</font></b>\n`);
-    lines.push(`[L]#${orderNo}[R]${timeStr}\n`);
+    lines.push(`[C]${doubleDivider}\n`);
+    lines.push(`[C]<b><font size='tall'>KITCHEN ORDER TICKET</font></b>\n`);
+    lines.push(`[C]<b><font size='tall'>${tableLabel}</font></b>\n`);
+    lines.push(`[C]${doubleDivider}\n`);
+    lines.push(`[L]Order: #${orderNo}[R]Time: ${timeStr}\n`);
+    lines.push(`[L]Date: ${dateStr}[R]Type: ${isTakeaway ? "TAKEAWAY" : "DINE-IN"}\n`);
     lines.push(`[C]${divider}\n`);
-    lines.push(`[L]<b>QTY  ITEM</b>\n`);
+    lines.push(`[L]<b>QTY   ITEM / DISH</b>\n`);
     lines.push(`[C]${divider}\n`);
 
     items.forEach((it: any) => {
       const q = Number(it.quantity || 1);
       const name = String(it.name || "Item").trim();
-      const qPrefix = `${q}x`.padEnd(4, " ");
-
+      const qPrefix = `${q}x`.padStart(3, " ") + "  "; // 5 chars: "  1x  " or " 12x  "
       const availNameWidth = maxChars - 5;
+
       if (name.length <= availNameWidth) {
-        lines.push(`[L]<b>${qPrefix}</b> ${name}\n`);
+        lines.push(`[L]<b>${qPrefix}</b>${name}\n`);
       } else {
         const words = name.split(" ");
         let l1 = "";
@@ -1187,7 +1277,7 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
             l2 = (l2 + " " + w).trim();
           }
         }
-        lines.push(`[L]<b>${qPrefix}</b> ${l1 || name.slice(0, availNameWidth)}\n`);
+        lines.push(`[L]<b>${qPrefix}</b>${l1 || name.slice(0, availNameWidth)}\n`);
         if (l2) {
           lines.push(`[L]     ${l2}\n`);
         }
@@ -1199,7 +1289,9 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
     });
 
     lines.push(`[C]${divider}\n`);
-    lines.push(`[L]<b>Total Items: ${totalQty}</b>[R]Dishes: ${items.length}\n`);
+    lines.push(`[L]<b>Total Quantity: ${totalQty} Item${totalQty > 1 ? "s" : ""}</b>\n`);
+    lines.push(`[L]Total Dishes:   ${items.length} Dish${items.length > 1 ? "es" : ""}\n`);
+    lines.push(`[C]${doubleDivider}\n`);
   } else {
     // ==========================================
     // CUSTOMER BILL RECEIPT — COMPACT & ELEGANT
@@ -1335,22 +1427,27 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
     const isPaid = data.status === "paid";
     if (isPaid) {
       const payMethod = (data.payment_method || "CASH").toUpperCase();
-      lines.push(`[C]<b>PAID (${payMethod})</b>\n`);
+      lines.push(`[C]<b>*** PAID (${payMethod}) ***</b>\n`);
       lines.push(`[C]${divider}\n`);
     } else {
-      const upiId = r.upi_id || r.upi || "8152075375-2@ybl";
-      const merchant = r.merchant_name || r.name || "Restaurant";
-      const totalAmount = Number(totalVal).toFixed(2);
-      const upiUrl = data.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR`;
-      const qrSize = width === 58 ? 35 : 44;
-      if (upiId) {
-        lines.push(`[C]<b>Scan & Pay (UPI)</b>\n`);
-        lines.push(`[C]<b>Amount: Rs.${formatThermalMoney(totalVal)}</b>\n`);
-        lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
-        lines.push(`[C]${upiId}\n`);
-        lines.push(`[C]${divider}\n`);
-      }
+      lines.push(`[C]<b>Scan & Pay with UPI</b>\n`);
+      lines.push(`[C]<b>Amount: Rs.${formatThermalMoney(totalVal)}</b>\n`);
     }
+
+    const upiId = r.upi_id || r.upi || "8152075375-2@ybl";
+    const merchant = r.merchant_name || r.name || "Restaurant";
+    const totalAmount = Number(totalVal).toFixed(2);
+    const upiUrl = data.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR`;
+    const qrSize = width === 58 ? 35 : 44;
+
+    // Always output the QR code on the bill!
+    lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
+    if (!isPaid) {
+      lines.push(`[C]GPay / PhonePe / Paytm / UPI\n`);
+    } else {
+      lines.push(`[C]UPI: ${upiId}\n`);
+    }
+    lines.push(`[C]${divider}\n`);
 
     lines.push(`[C]Thank you! Visit again.\n`);
     lines.push(`[C]EzBill POS\n`);
@@ -1675,10 +1772,10 @@ export async function autoConnectPrinter(
 
 export async function printThermalDirect(role: "cashier" | "kitchen", data: any, isKitchen = false): Promise<boolean> {
   let settings = await getPrinterSettings(role);
+  const cashierSettings = await getPrinterSettings("cashier");
 
   // If kitchen printer is not configured or disabled, fallback to cashier printer
   if ((!settings || settings.type === "none") && role === "kitchen") {
-    const cashierSettings = await getPrinterSettings("cashier");
     if (cashierSettings && cashierSettings.type !== "none") {
       settings = cashierSettings;
       role = "cashier";
@@ -1698,12 +1795,19 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
   // Detect 58mm hardware (MPT-II, POS-58, etc.) to guarantee 58mm formatting even if accidentally saved as 80
   const is58 = (settings.width === 58) ||
+    (cashierSettings?.width === 58) ||
     (settings.name && settings.name.toUpperCase().includes("MPT")) ||
+    (cashierSettings?.name && cashierSettings.name.toUpperCase().includes("MPT")) ||
     (settings.address && settings.address.toUpperCase().includes("MPT")) ||
-    (settings.name && settings.name.includes("58"));
+    (cashierSettings?.address && cashierSettings.address.toUpperCase().includes("MPT")) ||
+    (settings.name && settings.name.includes("58")) ||
+    (cashierSettings?.name && cashierSettings.name.includes("58")) ||
+    !!activeWebSerialPort ||
+    (activeWebUsbDevice && (activeWebUsbDevice.productName || "").toUpperCase().includes("MPT")) ||
+    (activeWebBluetoothDevice && (activeWebBluetoothDevice.name || "").toUpperCase().includes("MPT"));
   const effectiveWidth: 58 | 80 = is58 ? 58 : (settings.width || 58);
   const effectiveAutoCut = effectiveWidth === 58 ? false : (settings.auto_cut !== false);
-  const effectiveDarkness = settings.darkness || "extra_dark";
+  const effectiveDarkness = settings.darkness || cashierSettings?.darkness || "extra_dark";
 
   if (settings.type === "system") {
     if (isKitchen) {
@@ -2142,14 +2246,15 @@ export function billHtml(bill: any): string {
       
       ${isPaid ? `
         <div class="status-pill">PAID (${(bill.payment_method || "CASH").toUpperCase()})</div>
-      ` : (upiId ? `
+      ` : ""}
+      ${upiId ? `
         <div class="qr-block" style="text-align: center; margin: 12px auto; padding: 10px; background: #fafafa; border: 1px dashed #cbd5e1; border-radius: 8px; width: 220px;">
-          <div style="font-size: 13px; font-weight: 800; color: #1e293b; margin-bottom: 4px;">Scan & Pay (UPI)</div>
+          <div style="font-size: 13px; font-weight: 800; color: #1e293b; margin-bottom: 4px;">${isPaid ? "UPI / Restaurant QR" : "Scan & Pay (UPI)"}</div>
           <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}" style="width: 180px; height: 180px; display: block; margin: 0 auto;" />
           <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 6px;">${escapeHtml(upiId)}</div>
-          <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 2px;">Auto-fills ${formatCurrency(totalVal)}</div>
+          ${!isPaid ? `<div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 2px;">Auto-fills ${formatCurrency(totalVal)}</div>` : ""}
         </div>
-      ` : "")}
+      ` : ""}
       <hr />
       
       <p class="footer">Thank you! Visit again. · EzBill</p>
