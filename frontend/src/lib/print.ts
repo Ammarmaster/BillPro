@@ -138,6 +138,12 @@ const statusListeners: Record<string, Set<(status: PrinterConnectionStatus) => v
   kitchen: new Set()
 };
 
+let activeWebBluetoothDevice: any = null;
+let activeWebBluetoothCharacteristic: any = null;
+let activeWebUsbDevice: any = null;
+let activeWebSerialPort: any = null;
+let activeWebSerialWriter: any = null;
+
 export function subscribePrinterStatus(role: "cashier" | "kitchen", listener: (status: PrinterConnectionStatus) => void) {
   statusListeners[role].add(listener);
   listener(printerStatuses[role]);
@@ -193,24 +199,16 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
 
   try {
     if (Platform.OS === "web") {
-      if (settings.type === "bluetooth") {
-        if (activeWebBluetoothCharacteristic || activeWebBluetoothDevice?.gatt?.connected || activeWebSerialWriter) {
-          setPrinterStatus(role, "connected");
-          return "connected";
-        }
-        const reconnected = await tryAutoReconnectWebBluetooth(role);
-        if (reconnected) {
-          setPrinterStatus(role, "connected");
-          return "connected";
-        }
-        setPrinterStatus(role, "unavailable");
-        return "unavailable";
+      if (activeWebSerialWriter || activeWebBluetoothCharacteristic || (activeWebUsbDevice && activeWebUsbDevice.opened)) {
+        setPrinterStatus(role, "connected");
+        return "connected";
       }
-      if (settings.type === "usb") {
-        if (activeWebUsbDevice || activeWebSerialWriter) {
-          setPrinterStatus(role, "connected");
-          return "connected";
-        }
+      const reconnected = await autoReconnectAllWebPrinters(role);
+      if (reconnected) {
+        setPrinterStatus(role, "connected");
+        return "connected";
+      }
+      if (settings.type === "bluetooth" || settings.type === "usb") {
         setPrinterStatus(role, "unavailable");
         return "unavailable";
       }
@@ -283,9 +281,6 @@ const BLUETOOTH_PRINTER_SERVICES = [
   "00001801-0000-1000-8000-00805f9b34fb",
   "0000180a-0000-1000-8000-00805f9b34fb",
 ];
-
-let activeWebBluetoothDevice: any = null;
-let activeWebBluetoothCharacteristic: any = null;
 
 export function isWebBluetoothSupported(): boolean {
   return Platform.OS === "web" && typeof navigator !== "undefined" && !!(navigator as any).bluetooth;
@@ -465,16 +460,126 @@ export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean>
 // ============================================================================
 // WEB USB & WEB SERIAL THERMAL PRINTER DRIVERS (ESC/POS)
 // ============================================================================
-let activeWebUsbDevice: any = null;
-let activeWebSerialPort: any = null;
-let activeWebSerialWriter: any = null;
-
 export function isWebUsbSupported(): boolean {
   return Platform.OS === "web" && typeof navigator !== "undefined" && "usb" in navigator;
 }
 
 export function isWebSerialSupported(): boolean {
   return Platform.OS === "web" && typeof navigator !== "undefined" && "serial" in navigator;
+}
+
+export async function tryAutoReconnectWebSerial(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  if (!isWebSerialSupported() || !(navigator as any).serial?.getPorts) return false;
+  try {
+    const ports = await (navigator as any).serial.getPorts();
+    if (ports && ports.length > 0) {
+      for (const port of ports) {
+        try {
+          if (!port.readable || !port.writable) {
+            const baudRates = [9600, 115200, 38400, 19200];
+            for (const baud of baudRates) {
+              try {
+                await port.open({ baudRate: baud });
+                break;
+              } catch (e: any) {
+                if (e?.message?.includes("already open")) break;
+              }
+            }
+          }
+          if (port.writable) {
+            activeWebSerialPort = port;
+            if (activeWebSerialWriter) {
+              try { activeWebSerialWriter.releaseLock(); } catch {}
+              activeWebSerialWriter = null;
+            }
+            activeWebSerialWriter = port.writable.getWriter();
+            setPrinterStatus(role, "connected");
+            return true;
+          }
+        } catch (portErr) {
+          console.warn("Error opening remembered serial port:", portErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Web Serial auto-reconnect error:", err);
+  }
+  return false;
+}
+
+export async function tryAutoReconnectWebUsb(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  if (!isWebUsbSupported() || !(navigator as any).usb?.getDevices) return false;
+  try {
+    const devices = await (navigator as any).usb.getDevices();
+    if (devices && devices.length > 0) {
+      for (const device of devices) {
+        try {
+          if (!device.opened) {
+            await device.open();
+            await device.selectConfiguration(1);
+            await device.claimInterface(0);
+          }
+          activeWebUsbDevice = device;
+          setPrinterStatus(role, "connected");
+          return true;
+        } catch (usbErr) {
+          console.warn("Error opening remembered usb device:", usbErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Web USB auto-reconnect error:", err);
+  }
+  return false;
+}
+
+export async function autoReconnectAllWebPrinters(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  if (Platform.OS !== "web") return false;
+  if (activeWebSerialWriter || activeWebBluetoothCharacteristic || (activeWebUsbDevice && activeWebUsbDevice.opened)) {
+    setPrinterStatus(role, "connected");
+    return true;
+  }
+  const serialOk = await tryAutoReconnectWebSerial(role);
+  if (serialOk) return true;
+
+  const btOk = await tryAutoReconnectWebBluetooth(role);
+  if (btOk) return true;
+
+  const usbOk = await tryAutoReconnectWebUsb(role);
+  if (usbOk) return true;
+
+  return false;
+}
+
+// Global browser connect/disconnect listeners
+if (Platform.OS === "web" && typeof navigator !== "undefined") {
+  if ("serial" in navigator) {
+    try {
+      (navigator as any).serial.addEventListener("connect", () => {
+        autoReconnectAllWebPrinters("cashier").catch(() => {});
+        autoReconnectAllWebPrinters("kitchen").catch(() => {});
+      });
+      (navigator as any).serial.addEventListener("disconnect", () => {
+        activeWebSerialWriter = null;
+        activeWebSerialPort = null;
+        checkPrinterConnection("cashier").catch(() => {});
+        checkPrinterConnection("kitchen").catch(() => {});
+      });
+    } catch {}
+  }
+  if ("usb" in navigator) {
+    try {
+      (navigator as any).usb.addEventListener("connect", () => {
+        autoReconnectAllWebPrinters("cashier").catch(() => {});
+        autoReconnectAllWebPrinters("kitchen").catch(() => {});
+      });
+      (navigator as any).usb.addEventListener("disconnect", () => {
+        activeWebUsbDevice = null;
+        checkPrinterConnection("cashier").catch(() => {});
+        checkPrinterConnection("kitchen").catch(() => {});
+      });
+    } catch {}
+  }
 }
 
 export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
@@ -504,20 +609,36 @@ export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashie
 }
 
 export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
-  if (!isWebSerialSupported()) return false;
+  if (!isWebSerialSupported()) {
+    Alert.alert("Web Serial Not Supported", "Web Serial requires a Chromium browser (Chrome or Edge).");
+    return false;
+  }
   try {
     const navSerial = (navigator as any).serial;
     const port = await navSerial.requestPort();
     if (!port) return false;
-    try {
-      await port.open({ baudRate: 9600 });
-    } catch {
-      try {
-        await port.open({ baudRate: 115200 });
-      } catch {}
+
+    if (!port.readable || !port.writable) {
+      const baudRates = [9600, 115200, 38400, 19200];
+      for (const baud of baudRates) {
+        try {
+          await port.open({ baudRate: baud });
+          break;
+        } catch (e: any) {
+          if (e?.message?.includes("already open")) break;
+        }
+      }
     }
+
     activeWebSerialPort = port;
-    activeWebSerialWriter = port.writable.getWriter();
+    if (activeWebSerialWriter) {
+      try { activeWebSerialWriter.releaseLock(); } catch {}
+      activeWebSerialWriter = null;
+    }
+    if (port.writable) {
+      activeWebSerialWriter = port.writable.getWriter();
+    }
+
     const existing = await getPrinterSettings(role);
     const devName = "MPT-II Thermal Printer";
     const devAddress = "MPT-II";
@@ -528,10 +649,13 @@ export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cas
       brand: "Generic"
     });
     setPrinterStatus(role, "connected");
-    Alert.alert("Thermal Printer Connected", "Connected to MPT-II thermal printer! You can now tap 'Test Ticket' or print bills.");
+    Alert.alert("Thermal Printer Connected", "Connected to MPT-II thermal printer! Auto-reconnect is now active. You can now tap 'Test Ticket' or print bills.");
     return true;
   } catch (err: any) {
-    console.warn("Web Serial connect error:", err);
+    if (err.name !== "NotFoundError") {
+      console.warn("Web Serial connect error:", err);
+      Alert.alert("Serial Connection", err.message || "Could not connect to serial port.");
+    }
     return false;
   }
 }
@@ -543,6 +667,14 @@ export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
       return true;
     } catch (e) {
       console.warn("Web Serial write error:", e);
+      try {
+        if (activeWebSerialPort?.writable) {
+          activeWebSerialWriter.releaseLock();
+          activeWebSerialWriter = activeWebSerialPort.writable.getWriter();
+          await activeWebSerialWriter.write(bytes);
+          return true;
+        }
+      } catch {}
     }
   }
   if (activeWebUsbDevice) {
@@ -1162,6 +1294,10 @@ export function startAutoReconnect() {
 
   const attempt = async () => {
     try {
+      if (Platform.OS === "web") {
+        await autoReconnectAllWebPrinters("cashier");
+        await autoReconnectAllWebPrinters("kitchen");
+      }
       await checkPrinterConnection("cashier");
       await checkPrinterConnection("kitchen");
     } catch {}
@@ -1170,8 +1306,8 @@ export function startAutoReconnect() {
   // Immediate check
   attempt();
 
-  // Periodic intelligent background health check every 30 seconds
-  setInterval(attempt, 30000);
+  // Periodic intelligent background health check every 20 seconds
+  setInterval(attempt, 20000);
 }
 
 // Start auto-reconnection immediately on module import
@@ -1409,7 +1545,12 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     }
 
     if (Platform.OS === "web") {
-      // 1. Direct Web Bluetooth ESC/POS printing
+      // Auto-reconnect if connection not currently cached in memory
+      if (!activeWebSerialWriter && !activeWebBluetoothCharacteristic && !activeWebUsbDevice) {
+        await autoReconnectAllWebPrinters(role);
+      }
+
+      // 1. Direct Web Bluetooth / Serial ESC/POS printing
       if (settings.type === "bluetooth") {
         if (activeWebSerialWriter) {
           try {
@@ -1427,11 +1568,23 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
         if (!activeWebBluetoothCharacteristic) {
           await tryAutoReconnectWebBluetooth(role);
         }
-        if (!activeWebBluetoothCharacteristic) {
-          const connected = await connectWebBluetoothPrinter(role);
+        if (!activeWebBluetoothCharacteristic && !activeWebSerialWriter) {
+          const connected = await connectWebSerialPrinter(role) || await connectWebBluetoothPrinter(role);
           if (!connected) {
-            // User cancelled pairing or not connected - DO NOT fall back to browser print dialog!
             return false;
+          }
+        }
+
+        if (activeWebSerialWriter) {
+          try {
+            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const success = await sendWebUsbPrint(escPosBytes);
+            if (success) {
+              if (c === copiesCount - 1) return true;
+              continue;
+            }
+          } catch (e) {
+            console.warn("Serial print retry failed:", e);
           }
         }
 
@@ -1502,9 +1655,24 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         await requestBluetoothPermissions();
 
+        let targetMac = cleanAddress === "inner" ? "" : cleanAddress;
+
         try {
           if (ThermalPrinterModule.getBluetoothDeviceList) {
-            await ThermalPrinterModule.getBluetoothDeviceList();
+            const list: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
+            if (list && Array.isArray(list) && list.length > 0) {
+              if (cleanAddress && !cleanAddress.includes(":")) {
+                const match = list.find(d => 
+                  (d.deviceName || d.name || "").toLowerCase().includes(cleanAddress.toLowerCase())
+                );
+                if (match?.macAddress) {
+                  targetMac = match.macAddress;
+                }
+              }
+              if (!targetMac && list[0]?.macAddress) {
+                targetMac = list[0].macAddress;
+              }
+            }
           }
         } catch (devErr) {
           console.warn("Could not pre-fetch bluetooth device list:", devErr);
@@ -1513,26 +1681,25 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
         try {
           await ThermalPrinterModule.printBluetooth({
             payload,
-            macAddress: cleanAddress === "inner" ? "" : cleanAddress,
+            macAddress: targetMac,
             printerWidthMM: settings.width || 58,
             printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
             mmFeedPaper: mmFeed,
             autoCut: settings.auto_cut !== false,
           });
         } catch (directErr: any) {
-          console.warn("Direct MAC print error:", directErr);
-          if (!cleanAddress || cleanAddress === "inner") {
-            try {
-              await ThermalPrinterModule.printBluetooth({
-                payload,
-                macAddress: "",
-                printerWidthMM: settings.width || 58,
-                printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
-                mmFeedPaper: mmFeed,
-                autoCut: settings.auto_cut !== false,
-              });
-            } catch {}
-          } else {
+          console.warn("Direct MAC print error, trying default paired device:", directErr);
+          try {
+            await ThermalPrinterModule.printBluetooth({
+              payload,
+              macAddress: "",
+              printerWidthMM: settings.width || 58,
+              printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+              mmFeedPaper: mmFeed,
+              autoCut: settings.auto_cut !== false,
+            });
+          } catch (fallbackErr: any) {
+            console.warn("Fallback bluetooth print also failed:", fallbackErr);
             return false;
           }
         }

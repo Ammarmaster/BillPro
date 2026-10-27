@@ -16,6 +16,7 @@ import {
   connectWebBluetoothPrinter, isWebBluetoothSupported,
   connectWebUsbPrinter, isWebUsbSupported,
   connectWebSerialPrinter, isWebSerialSupported,
+  autoReconnectAllWebPrinters,
   kickCashDrawer,
   PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
 } from "@/src/lib/print";
@@ -113,6 +114,10 @@ export default function PrinterSettingsScreen() {
       setKitchenAutoCut(kitchen.auto_cut ?? true);
       setKitchenCopies(kitchen.copies || 1);
     }
+    if (Platform.OS === "web") {
+      await autoReconnectAllWebPrinters("cashier").catch(() => {});
+      await autoReconnectAllWebPrinters("kitchen").catch(() => {});
+    }
     setLoading(false);
     checkPrinterConnection("cashier").catch(() => {});
     checkPrinterConnection("kitchen").catch(() => {});
@@ -208,14 +213,7 @@ export default function PrinterSettingsScreen() {
     setConnectingAddress(dev.address);
     try {
       if (Platform.OS === "web") {
-        if (dev.type === "bluetooth" || dev.address === "web-bluetooth-pair") {
-          const paired = await connectWebBluetoothPrinter(activeTab);
-          if (paired) {
-            await loadSettings();
-            Alert.alert("Bluetooth Connected", `Connected to Web Bluetooth printer.`);
-            return;
-          }
-        } else if (dev.type === "usb" || dev.address === "web-serial-pair") {
+        if (dev.type === "usb" || dev.address === "web-serial-pair") {
           let paired = false;
           if (isWebSerialSupported()) {
             paired = await connectWebSerialPrinter(activeTab);
@@ -225,7 +223,22 @@ export default function PrinterSettingsScreen() {
           }
           if (paired) {
             await loadSettings();
-            Alert.alert("Connected", `Connected to USB / Serial Thermal printer.`);
+            return;
+          }
+        } else if (dev.type === "bluetooth" || dev.address === "web-bluetooth-pair") {
+          let paired = false;
+          const upper = (dev.name || "").toUpperCase();
+          if (upper.includes("MPT") || upper.includes("SPP") || upper.includes("COM")) {
+            paired = await connectWebSerialPrinter(activeTab);
+          }
+          if (!paired) {
+            paired = await connectWebBluetoothPrinter(activeTab);
+          }
+          if (!paired && isWebSerialSupported()) {
+            paired = await connectWebSerialPrinter(activeTab);
+          }
+          if (paired) {
+            await loadSettings();
             return;
           }
         }
@@ -688,7 +701,25 @@ export default function PrinterSettingsScreen() {
             <View style={styles.field}>
               <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Bluetooth Thermal Connection</Text>
               {Platform.OS === "web" ? (
-                <View style={{ gap: 8, marginTop: 4 }}>
+                <View style={{ gap: 10, marginTop: 4 }}>
+                  <View style={{
+                    backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF",
+                    padding: 14,
+                    borderRadius: radius.md,
+                    borderLeftWidth: 4,
+                    borderLeftColor: "#635BFF",
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: theme.onSurface }}>
+                      💡 How to Connect MPT-II in Chrome / Edge:
+                    </Text>
+                    <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 4, lineHeight: 18 }}>
+                      1. Click <Text style={{ fontWeight: "800", color: "#635BFF" }}>"Connect MPT-II / Serial Printer"</Text> below.{"\n"}
+                      2. In the browser popup window, <Text style={{ fontWeight: "900", color: "#635BFF" }}>click on "MPT-II"</Text> to highlight it.{"\n"}
+                      3. The browser's <Text style={{ fontWeight: "900", color: "#10B981" }}>"Connect"</Text> button will activate — click it!{"\n"}
+                      4. EzBill will <Text style={{ fontWeight: "800", color: "#10B981" }}>auto-reconnect silently</Text> every time you visit or print!
+                    </Text>
+                  </View>
+
                   <Pressable
                     style={{
                       flexDirection: "row",
@@ -701,17 +732,17 @@ export default function PrinterSettingsScreen() {
                       backgroundColor: currentStatus === "connected" ? "#10B981" : "#635BFF",
                     }}
                     onPress={async () => {
-                      const ok = await connectWebBluetoothPrinter(activeTab);
+                      const ok = await connectWebSerialPrinter(activeTab);
                       if (ok) await loadSettings();
                     }}
                   >
-                    <Ionicons name="bluetooth" size={18} color="#FFFFFF" />
+                    <Ionicons name="hardware-chip" size={18} color="#FFFFFF" />
                     <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "800" }}>
-                      {currentStatus === "connected" ? "✓ Web Bluetooth Connected (Tap to Re-pair)" : "Pair Web Bluetooth Thermal Printer (BLE)"}
+                      {currentStatus === "connected" ? "✓ MPT-II / Thermal Connected (Tap to Re-pair)" : "Connect MPT-II / Serial Printer (COM Port)"}
                     </Text>
                   </Pressable>
 
-                  {isWebSerialSupported() && (
+                  {isWebBluetoothSupported() && (
                     <Pressable
                       style={{
                         flexDirection: "row",
@@ -726,13 +757,13 @@ export default function PrinterSettingsScreen() {
                         borderColor: "#635BFF",
                       }}
                       onPress={async () => {
-                        const ok = await connectWebSerialPrinter(activeTab);
+                        const ok = await connectWebBluetoothPrinter(activeTab);
                         if (ok) await loadSettings();
                       }}
                     >
-                      <Ionicons name="hardware-chip-outline" size={16} color="#635BFF" />
+                      <Ionicons name="bluetooth" size={16} color="#635BFF" />
                       <Text style={{ color: "#635BFF", fontSize: 13, fontWeight: "700" }}>
-                        Or Connect via Windows Serial / COM Port (Bluetooth SPP)
+                        Or Connect via Web Bluetooth (BLE)
                       </Text>
                     </Pressable>
                   )}
@@ -754,7 +785,22 @@ export default function PrinterSettingsScreen() {
             <View style={styles.field}>
               <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>USB / Serial Connection</Text>
               {Platform.OS === "web" ? (
-                <View style={{ gap: 8, marginTop: 4 }}>
+                <View style={{ gap: 10, marginTop: 4 }}>
+                  <View style={{
+                    backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF",
+                    padding: 12,
+                    borderRadius: radius.md,
+                    borderLeftWidth: 4,
+                    borderLeftColor: "#635BFF",
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: theme.onSurface }}>
+                      💡 Tip for Browser Popup:
+                    </Text>
+                    <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 4, lineHeight: 18 }}>
+                      In the popup window, <Text style={{ fontWeight: "800", color: "#635BFF" }}>click on your printer name</Text> in the list so it is highlighted, then click the <Text style={{ fontWeight: "800", color: "#10B981" }}>"Connect"</Text> button.
+                    </Text>
+                  </View>
+
                   <Pressable
                     style={{
                       flexDirection: "row",
