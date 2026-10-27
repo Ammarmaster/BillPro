@@ -193,6 +193,27 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
 
   try {
     if (Platform.OS === "web") {
+      if (settings.type === "bluetooth") {
+        if (activeWebBluetoothCharacteristic || activeWebBluetoothDevice?.gatt?.connected) {
+          setPrinterStatus(role, "connected");
+          return "connected";
+        }
+        const reconnected = await tryAutoReconnectWebBluetooth(role);
+        if (reconnected) {
+          setPrinterStatus(role, "connected");
+          return "connected";
+        }
+        setPrinterStatus(role, "unavailable");
+        return "unavailable";
+      }
+      if (settings.type === "usb") {
+        if (activeWebUsbDevice || activeWebSerialWriter) {
+          setPrinterStatus(role, "connected");
+          return "connected";
+        }
+        setPrinterStatus(role, "unavailable");
+        return "unavailable";
+      }
       setPrinterStatus(role, "connected");
       return "connected";
     }
@@ -231,29 +252,93 @@ export const DEFAULT_EZBILL_LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQAAA
 // WEB BLUETOOTH THERMAL PRINTER DRIVER (ESC/POS)
 // ============================================================================
 const BLUETOOTH_PRINTER_SERVICES = [
-  "000018f0-0000-1000-8000-00805f9b34fb", // Standard ESC/POS Service
-  "0000ffe0-0000-1000-8000-00805f9b34fb", // Common BLE Serial (Feasycom, HM-10, POS58/80)
-  "0000ff00-0000-1000-8000-00805f9b34fb", // Chinese POS printer default
-  "49535343-fe7d-4ae5-8fa9-9fafd205e455", // ISSC Transparent BLE
-  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+  // Nordic Semiconductor UART Service (Used by 75%+ of modern portable BLE receipt printers)
+  "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+  // Standard ESC/POS Services
+  "000018f0-0000-1000-8000-00805f9b34fb",
+  "000018f1-0000-1000-8000-00805f9b34fb",
+  // Common BLE Serial (CC2540/CC2541, HM-10, Feasycom, POS58/80)
+  "0000ffe0-0000-1000-8000-00805f9b34fb",
+  "0000ffe5-0000-1000-8000-00805f9b34fb",
+  // Chinese POS Printers (Xprinter, Rongta, Everycom, Zijiang, Milestone, Netum)
+  "0000ff00-0000-1000-8000-00805f9b34fb",
   "0000fff0-0000-1000-8000-00805f9b34fb",
-  "0000ae00-0000-1000-8000-00805f9b34fb",
   "0000ff02-0000-1000-8000-00805f9b34fb",
+  "0000fef5-0000-1000-8000-00805f9b34fb",
+  // Microchip ISSC Transparent BLE
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  // Xprinter / Posiflex custom BLE
+  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+  // Telink / Actions BLE printers
+  "0000ae00-0000-1000-8000-00805f9b34fb",
+  "0000af30-0000-1000-8000-00805f9b34fb",
+  // MPT-II / AI-BLE
+  "0000abf0-0000-1000-8000-00805f9b34fb",
+  // Star / Bixolon / Epson BLE
+  "0000fee7-0000-1000-8000-00805f9b34fb",
+  "0000fee0-0000-1000-8000-00805f9b34fb",
+  "0000fee1-0000-1000-8000-00805f9b34fb",
+  // Generic Access & Attributes
+  "00001800-0000-1000-8000-00805f9b34fb",
+  "00001801-0000-1000-8000-00805f9b34fb",
+  "0000180a-0000-1000-8000-00805f9b34fb",
 ];
 
 let activeWebBluetoothDevice: any = null;
 let activeWebBluetoothCharacteristic: any = null;
 
 export function isWebBluetoothSupported(): boolean {
-  return Platform.OS === "web" && typeof navigator !== "undefined" && "bluetooth" in navigator;
+  return Platform.OS === "web" && typeof navigator !== "undefined" && !!(navigator as any).bluetooth;
 }
 
 export function getActiveWebBluetoothDevice(): any {
   return activeWebBluetoothDevice;
 }
 
+export async function tryAutoReconnectWebBluetooth(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+  if (!isWebBluetoothSupported() || !(navigator as any).bluetooth?.getDevices) return false;
+  try {
+    const devices = await (navigator as any).bluetooth.getDevices();
+    if (devices && devices.length > 0) {
+      for (const device of devices) {
+        try {
+          const server = await device.gatt?.connect();
+          if (server && server.connected) {
+            let writeChar: any = null;
+            for (const serviceUuid of BLUETOOTH_PRINTER_SERVICES) {
+              try {
+                const service = await server.getPrimaryService(serviceUuid);
+                const chars = await service.getCharacteristics();
+                for (const c of chars) {
+                  if (c.properties.write || c.properties.writeWithoutResponse) {
+                    writeChar = c;
+                    break;
+                  }
+                }
+                if (writeChar) break;
+              } catch {}
+            }
+            if (writeChar) {
+              activeWebBluetoothDevice = device;
+              activeWebBluetoothCharacteristic = writeChar;
+              device.addEventListener("gattserverdisconnected", () => {
+                activeWebBluetoothCharacteristic = null;
+                setPrinterStatus(role, "unavailable");
+              });
+              setPrinterStatus(role, "connected");
+              return true;
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return false;
+}
+
 export async function connectWebBluetoothPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
   if (!isWebBluetoothSupported()) {
+    Alert.alert("Web Bluetooth Not Supported", "Web Bluetooth requires a Chromium browser (Chrome, Edge, Brave, Opera) with Bluetooth enabled.");
     return false;
   }
   try {
@@ -319,17 +404,23 @@ export async function connectWebBluetoothPrinter(role: "cashier" | "kitchen" = "
       });
       setPrinterStatus(role, "connected");
       return true;
+    } else {
+      Alert.alert("Printer Paired", `Connected to ${device.name || "printer"}, but no ESC/POS writable channel was detected. If this is a Bluetooth Classic SPP printer, connect via 'Windows Serial / COM Port'.`);
+      return false;
     }
-    return false;
   } catch (err: any) {
-    console.warn("Web Bluetooth pairing cancelled or failed:", err);
+    if (err.name !== "NotFoundError") {
+      console.warn("Web Bluetooth pairing error:", err);
+      Alert.alert("Bluetooth Connection Failed", err.message || "Could not connect to Bluetooth printer.");
+    }
     return false;
   }
 }
 
 export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean> {
   if (!activeWebBluetoothCharacteristic) {
-    if (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt) {
+    await tryAutoReconnectWebBluetooth();
+    if (!activeWebBluetoothCharacteristic && activeWebBluetoothDevice && activeWebBluetoothDevice.gatt) {
       try {
         const server = await activeWebBluetoothDevice.gatt.connect();
         for (const serviceUuid of BLUETOOTH_PRINTER_SERVICES) {
@@ -354,7 +445,7 @@ export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean>
   }
 
   try {
-    const chunkSize = 100;
+    const chunkSize = 64; // Safe BLE MTU write size
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.slice(i, i + chunkSize);
       if (activeWebBluetoothCharacteristic.writeValueWithoutResponse) {
@@ -362,7 +453,7 @@ export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean>
       } else {
         await activeWebBluetoothCharacteristic.writeValue(chunk);
       }
-      await new Promise(r => setTimeout(r, 25));
+      await new Promise(r => setTimeout(r, 20));
     }
     return true;
   } catch (e) {
@@ -1162,7 +1253,15 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
         type: "bluetooth",
         brand: "Generic"
       });
+    } else if (isWebBluetoothSupported()) {
+      discovered.push({
+        name: "Pair Web Bluetooth Thermal Printer (BLE)",
+        address: "web-bluetooth-pair",
+        type: "bluetooth",
+        brand: "Generic"
+      });
     }
+
     if (activeWebUsbDevice) {
       discovered.push({
         name: activeWebUsbDevice.productName || "Connected USB Thermal Printer",
@@ -1173,8 +1272,15 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
     }
     if (activeWebSerialPort) {
       discovered.push({
-        name: "USB Serial Thermal Printer",
+        name: "Connected USB Serial Thermal Printer",
         address: "USB-Serial",
+        type: "usb",
+        brand: "USB"
+      });
+    } else if (isWebSerialSupported()) {
+      discovered.push({
+        name: "Connect Windows Serial / COM Port (Bluetooth SPP / USB)",
+        address: "web-serial-pair",
         type: "usb",
         brand: "USB"
       });
@@ -1261,16 +1367,24 @@ export async function autoConnectPrinter(
 
 export async function printThermalDirect(role: "cashier" | "kitchen", data: any, isKitchen = false): Promise<boolean> {
   const settings = await getPrinterSettings(role);
-  if (!settings || settings.type === "none" || settings.type === "system") {
+  if (!settings || settings.type === "none") {
     if (Platform.OS === "web") {
-      if (isKitchen) {
-        await printKOTLegacy(data);
-      } else {
-        await printBillLegacy(data);
-      }
-      return true;
+      Alert.alert(
+        "Printer Not Configured",
+        "Please connect your thermal printer in Printer Settings, or select System Spooler to use your browser's print dialog."
+      );
+      return false;
     }
-    return false; // Fallback to system print sheet on mobile
+    return false;
+  }
+
+  if (settings.type === "system") {
+    if (isKitchen) {
+      await printKOTLegacy(data);
+    } else {
+      await printBillLegacy(data);
+    }
+    return true;
   }
 
   const payload = await formatReceipt(data, settings.width, isKitchen);
@@ -1287,42 +1401,63 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     }
 
     if (Platform.OS === "web") {
-      // 1. Direct Web Bluetooth ESC/POS printing if connected
-      if (settings.type === "bluetooth" && (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected))) {
-        try {
-          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
-          const success = await sendWebBluetoothPrint(escPosBytes);
-          if (success) {
-            if (c === copiesCount - 1) return true;
-            continue;
-          }
-        } catch (e) {
-          console.warn("Web Bluetooth direct print failed:", e);
+      // 1. Direct Web Bluetooth ESC/POS printing
+      if (settings.type === "bluetooth") {
+        if (!activeWebBluetoothCharacteristic) {
+          await tryAutoReconnectWebBluetooth(role);
         }
+        if (!activeWebBluetoothCharacteristic) {
+          const connected = await connectWebBluetoothPrinter(role);
+          if (!connected) {
+            // User cancelled pairing or not connected - DO NOT fall back to browser print dialog!
+            return false;
+          }
+        }
+
+        if (activeWebBluetoothCharacteristic) {
+          try {
+            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const success = await sendWebBluetoothPrint(escPosBytes);
+            if (success) {
+              if (c === copiesCount - 1) return true;
+              continue;
+            }
+          } catch (e) {
+            console.warn("Web Bluetooth direct print failed:", e);
+          }
+        }
+        return false;
       }
 
       // 2. Direct WebUSB / Web Serial ESC/POS
-      if (settings.type === "usb" && (activeWebUsbDevice || activeWebSerialWriter)) {
-        try {
-          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
-          const success = await sendWebUsbPrint(escPosBytes);
-          if (success) {
-            if (c === copiesCount - 1) return true;
-            continue;
-          }
-        } catch (e) {
-          console.warn("Web USB print error:", e);
+      if (settings.type === "usb") {
+        if (!activeWebUsbDevice && !activeWebSerialWriter) {
+          const connected = await connectWebSerialPrinter(role) || await connectWebUsbPrinter(role);
+          if (!connected) return false;
         }
+
+        if (activeWebUsbDevice || activeWebSerialWriter) {
+          try {
+            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const success = await sendWebUsbPrint(escPosBytes);
+            if (success) {
+              if (c === copiesCount - 1) return true;
+              continue;
+            }
+          } catch (e) {
+            console.warn("Web USB print error:", e);
+          }
+        }
+        return false;
       }
 
-      // 3. Fallback on Web: Silent in-page iframe printing (no about:blank tabs)
-      if (isKitchen) {
-        await printKOTLegacy(data);
-      } else {
-        await printBillLegacy(data);
+      // 3. Network TCP printer on Web
+      if (settings.type === "network") {
+        Alert.alert("Network Printing on Web", "Direct raw TCP socket to IP is not allowed by browser security sandbox. Connect thermal printer via Bluetooth, USB/Serial, or use the mobile app.");
+        return false;
       }
-      if (c === copiesCount - 1) return true;
-      continue;
+
+      return false;
     }
 
     if (!ThermalPrinterModule) {
@@ -1392,8 +1527,9 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
 export async function printBill(bill: any): Promise<boolean> {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  const settings = await getPrinterSettings("cashier");
   let handled = await printThermalDirect("cashier", bill, false);
-  if (!handled && Platform.OS === "web") {
+  if (!handled && settings?.type === "system" && Platform.OS === "web") {
     await printBillLegacy(bill);
     handled = true;
   }
@@ -1432,7 +1568,11 @@ export function kotHtml(order: any): string {
     <head>
       <meta charset="utf-8" />
       <style>
-        @page { margin: 3mm 3mm 20mm 3mm; }
+        @page { size: 58mm auto; margin: 2mm 0; }
+        @media print {
+          @page { size: 58mm auto; margin: 2mm 0; }
+          html, body { width: 58mm !important; max-width: 58mm !important; margin: 0 auto !important; padding: 2mm 1mm !important; }
+        }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #000; padding: 6px; padding-bottom: 25px; max-width: 280px; margin: 0 auto; font-size: 13px; line-height: 1.25; }
         .center { text-align: center; }
         .title { font-size: 17px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
@@ -1520,7 +1660,22 @@ export function billHtml(bill: any): string {
     <!DOCTYPE html>
     <html><head><meta charset="utf-8" />
     <style>
-      @page { margin: 3mm 3mm 15mm 3mm; }
+      @page {
+        size: 58mm auto;
+        margin: 2mm 0;
+      }
+      @media print {
+        @page {
+          size: 58mm auto;
+          margin: 2mm 0;
+        }
+        html, body {
+          width: 58mm !important;
+          max-width: 58mm !important;
+          margin: 0 auto !important;
+          padding: 2mm 1mm !important;
+        }
+      }
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #111; padding: 6px; padding-bottom: 20px; max-width: 290px; margin: 0 auto; font-size: 12px; line-height: 1.3; }
       .center { text-align: center; }
       .l { text-align: left; }

@@ -208,28 +208,25 @@ export default function PrinterSettingsScreen() {
     setConnectingAddress(dev.address);
     try {
       if (Platform.OS === "web") {
-        if (dev.type === "bluetooth" && isWebBluetoothSupported()) {
+        if (dev.type === "bluetooth" || dev.address === "web-bluetooth-pair") {
           const paired = await connectWebBluetoothPrinter(activeTab);
           if (paired) {
             await loadSettings();
             Alert.alert("Bluetooth Connected", `Connected to Web Bluetooth printer.`);
             return;
           }
-        } else if (dev.type === "usb") {
-          if (isWebUsbSupported()) {
-            const paired = await connectWebUsbPrinter(activeTab);
-            if (paired) {
-              await loadSettings();
-              Alert.alert("USB Connected", `Connected to USB Thermal printer via WebUSB.`);
-              return;
-            }
-          } else if (isWebSerialSupported()) {
-            const paired = await connectWebSerialPrinter(activeTab);
-            if (paired) {
-              await loadSettings();
-              Alert.alert("USB Serial Connected", `Connected to USB Serial Thermal printer.`);
-              return;
-            }
+        } else if (dev.type === "usb" || dev.address === "web-serial-pair") {
+          let paired = false;
+          if (isWebSerialSupported()) {
+            paired = await connectWebSerialPrinter(activeTab);
+          }
+          if (!paired && isWebUsbSupported()) {
+            paired = await connectWebUsbPrinter(activeTab);
+          }
+          if (paired) {
+            await loadSettings();
+            Alert.alert("Connected", `Connected to USB / Serial Thermal printer.`);
+            return;
           }
         }
       }
@@ -514,6 +511,21 @@ export default function PrinterSettingsScreen() {
 
           {/* Quick Diagnostics Action Grid */}
           <View style={[styles.cardActions, { borderTopColor: theme.border }]}>
+            {Platform.OS === "web" && currentType === "bluetooth" && (
+              <Pressable 
+                style={[styles.cardActionBtn, { backgroundColor: currentStatus === "connected" ? "rgba(16,185,129,0.15)" : "#635BFF", borderColor: currentStatus === "connected" ? "#10B981" : "#635BFF" }]} 
+                onPress={async () => {
+                  const ok = await connectWebBluetoothPrinter(activeTab);
+                  if (ok) await loadSettings();
+                }}
+              >
+                <Ionicons name="bluetooth" size={16} color={currentStatus === "connected" ? "#10B981" : "#FFFFFF"} />
+                <Text style={[styles.cardActionBtnText, { color: currentStatus === "connected" ? "#10B981" : "#FFFFFF" }]}>
+                  {currentStatus === "connected" ? "Bluetooth Ready" : "Pair Bluetooth"}
+                </Text>
+              </Pressable>
+            )}
+
             <Pressable 
               style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
               onPress={handleTestPrint} 
@@ -674,25 +686,109 @@ export default function PrinterSettingsScreen() {
             </View>
           ) : (activeTab === "cashier" ? cashierType : kitchenType) === "bluetooth" ? (
             <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Bluetooth Device Name or MAC Address</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
-                value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
-                onChangeText={activeTab === "cashier" ? setCashierMAC : setKitchenMAC}
-                placeholder="MPT-II or 00:11:22:33:44:55"
-                placeholderTextColor="#94A3B8"
-              />
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Bluetooth Thermal Connection</Text>
+              {Platform.OS === "web" ? (
+                <View style={{ gap: 8, marginTop: 4 }}>
+                  <Pressable
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      paddingVertical: 13,
+                      paddingHorizontal: 16,
+                      borderRadius: radius.md,
+                      backgroundColor: currentStatus === "connected" ? "#10B981" : "#635BFF",
+                    }}
+                    onPress={async () => {
+                      const ok = await connectWebBluetoothPrinter(activeTab);
+                      if (ok) await loadSettings();
+                    }}
+                  >
+                    <Ionicons name="bluetooth" size={18} color="#FFFFFF" />
+                    <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "800" }}>
+                      {currentStatus === "connected" ? "✓ Web Bluetooth Connected (Tap to Re-pair)" : "Pair Web Bluetooth Thermal Printer (BLE)"}
+                    </Text>
+                  </Pressable>
+
+                  {isWebSerialSupported() && (
+                    <Pressable
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        borderRadius: radius.md,
+                        backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                        borderWidth: 1,
+                        borderColor: "#635BFF",
+                      }}
+                      onPress={async () => {
+                        const ok = await connectWebSerialPrinter(activeTab);
+                        if (ok) await loadSettings();
+                      }}
+                    >
+                      <Ionicons name="hardware-chip-outline" size={16} color="#635BFF" />
+                      <Text style={{ color: "#635BFF", fontSize: 13, fontWeight: "700" }}>
+                        Or Connect via Windows Serial / COM Port (Bluetooth SPP)
+                      </Text>
+                    </Pressable>
+                  )}
+                  <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, marginTop: 2 }}>
+                    {currentStatus === "connected" ? `Active connection: ${currentName || "Bluetooth Printer"}` : "Click above to select your printer from the browser popup."}
+                  </Text>
+                </View>
+              ) : (
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
+                  value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
+                  onChangeText={activeTab === "cashier" ? setCashierMAC : setKitchenMAC}
+                  placeholder="MPT-II or 00:11:22:33:44:55"
+                  placeholderTextColor="#94A3B8"
+                />
+              )}
             </View>
           ) : (activeTab === "cashier" ? cashierType : kitchenType) === "usb" ? (
             <View style={styles.field}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>USB / Serial Device Port ID</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
-                value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
-                onChangeText={activeTab === "cashier" ? setCashierMAC : setKitchenMAC}
-                placeholder="USB-Direct or USB-Serial"
-                placeholderTextColor="#94A3B8"
-              />
+              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>USB / Serial Connection</Text>
+              {Platform.OS === "web" ? (
+                <View style={{ gap: 8, marginTop: 4 }}>
+                  <Pressable
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      paddingVertical: 13,
+                      paddingHorizontal: 16,
+                      borderRadius: radius.md,
+                      backgroundColor: currentStatus === "connected" ? "#10B981" : "#635BFF",
+                    }}
+                    onPress={async () => {
+                      const ok = await connectWebSerialPrinter(activeTab) || await connectWebUsbPrinter(activeTab);
+                      if (ok) await loadSettings();
+                    }}
+                  >
+                    <Ionicons name="git-network-outline" size={18} color="#FFFFFF" />
+                    <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "800" }}>
+                      {currentStatus === "connected" ? "✓ USB / Serial Connected (Tap to Change)" : "Select USB / Serial Thermal Printer"}
+                    </Text>
+                  </Pressable>
+                  <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, marginTop: 2 }}>
+                    Connects directly to USB or virtual serial COM port without system print dialogs.
+                  </Text>
+                </View>
+              ) : (
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.onSurface }]}
+                  value={activeTab === "cashier" ? cashierMAC : kitchenMAC}
+                  onChangeText={activeTab === "cashier" ? setCashierMAC : setKitchenMAC}
+                  placeholder="USB-Direct or USB-Serial"
+                  placeholderTextColor="#94A3B8"
+                />
+              )}
             </View>
           ) : (activeTab === "cashier" ? cashierType : kitchenType) === "sunmi" ? (
             <View style={[styles.infoBanner, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: "#635BFF" }]}>
