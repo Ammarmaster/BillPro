@@ -56,6 +56,7 @@ export default function PrinterSettingsScreen() {
   const [cashierOpenDrawer, setCashierOpenDrawer] = useState(true);
   const [cashierAutoCut, setCashierAutoCut] = useState(false);
   const [cashierCopies, setCashierCopies] = useState<number>(1);
+  const [cashierDarkness, setCashierDarkness] = useState<"normal" | "dark" | "extra_dark">("extra_dark");
 
   // Kitchen printer states
   const [kitchenType, setKitchenType] = useState<PrinterConnectionType>("none");
@@ -68,6 +69,7 @@ export default function PrinterSettingsScreen() {
   const [kitchenAuto, setKitchenAuto] = useState(true);
   const [kitchenAutoCut, setKitchenAutoCut] = useState(false);
   const [kitchenCopies, setKitchenCopies] = useState<number>(1);
+  const [kitchenDarkness, setKitchenDarkness] = useState<"normal" | "dark" | "extra_dark">("extra_dark");
 
   useEffect(() => {
     const unsubCashier = subscribePrinterStatus("cashier", s => setCashierConnStatus(s));
@@ -100,6 +102,7 @@ export default function PrinterSettingsScreen() {
       setCashierOpenDrawer(cashier.open_drawer ?? true);
       setCashierAutoCut(isMptC ? false : (cashier.auto_cut ?? false));
       setCashierCopies(cashier.copies || 1);
+      setCashierDarkness(cashier.darkness || "extra_dark");
     }
 
     const kitchen = await getPrinterSettings("kitchen");
@@ -118,6 +121,7 @@ export default function PrinterSettingsScreen() {
       setKitchenAuto(kitchen.auto_print ?? true);
       setKitchenAutoCut(isMptK ? false : (kitchen.auto_cut ?? false));
       setKitchenCopies(kitchen.copies || 1);
+      setKitchenDarkness(kitchen.darkness || "extra_dark");
     }
     if (Platform.OS === "web") {
       await autoReconnectAllWebPrinters("cashier").catch(() => {});
@@ -221,19 +225,45 @@ export default function PrinterSettingsScreen() {
     setConnectingAddress(dev.address);
     try {
       if (Platform.OS === "web") {
-        if (dev.type === "usb" || dev.address === "web-serial-pair") {
-          let paired = false;
-          if (isWebSerialSupported()) {
-            paired = await connectWebSerialPrinter(activeTab);
+        if (dev.address === "web-usb-pair") {
+          const paired = await connectWebUsbPrinter(activeTab);
+          if (paired) {
+            await loadSettings();
+            setToastMessage("✓ USB Thermal Printer Connected!");
+            setTimeout(() => setToastMessage(null), 3500);
           }
-          if (!paired && isWebUsbSupported()) {
+          return;
+        } else if (dev.address === "web-serial-pair") {
+          const paired = await connectWebSerialPrinter(activeTab);
+          if (paired) {
+            await loadSettings();
+            setToastMessage("✓ Serial COM Printer Connected!");
+            setTimeout(() => setToastMessage(null), 3500);
+          }
+          return;
+        } else if (dev.address === "web-bluetooth-pair") {
+          const paired = await connectWebBluetoothPrinter(activeTab);
+          if (paired) {
+            await loadSettings();
+            setToastMessage("✓ Bluetooth Printer Connected!");
+            setTimeout(() => setToastMessage(null), 3500);
+          }
+          return;
+        } else if (dev.type === "usb") {
+          let paired = false;
+          if (isWebUsbSupported()) {
             paired = await connectWebUsbPrinter(activeTab);
+          }
+          if (!paired && isWebSerialSupported()) {
+            paired = await connectWebSerialPrinter(activeTab);
           }
           if (paired) {
             await loadSettings();
+            setToastMessage("✓ USB Thermal Printer Connected!");
+            setTimeout(() => setToastMessage(null), 3500);
             return;
           }
-        } else if (dev.type === "bluetooth" || dev.address === "web-bluetooth-pair") {
+        } else if (dev.type === "bluetooth") {
           let paired = false;
           const upper = (dev.name || "").toUpperCase();
           if (upper.includes("MPT") || upper.includes("SPP") || upper.includes("COM")) {
@@ -247,6 +277,8 @@ export default function PrinterSettingsScreen() {
           }
           if (paired) {
             await loadSettings();
+            setToastMessage("✓ Bluetooth Printer Connected!");
+            setTimeout(() => setToastMessage(null), 3500);
             return;
           }
         }
@@ -347,6 +379,7 @@ export default function PrinterSettingsScreen() {
         open_drawer: cashierOpenDrawer,
         auto_cut: cashierAutoCut,
         copies: cashierCopies,
+        darkness: cashierDarkness,
       };
       await savePrinterSettings("cashier", cashierSettings);
 
@@ -360,6 +393,7 @@ export default function PrinterSettingsScreen() {
         auto_print: kitchenAuto,
         auto_cut: kitchenAutoCut,
         copies: kitchenCopies,
+        darkness: kitchenDarkness,
       };
       await savePrinterSettings("kitchen", kitchenSettings);
 
@@ -993,26 +1027,147 @@ export default function PrinterSettingsScreen() {
             />
           </View>
 
-          {/* Cashier Print KOT Switch */}
-          {activeTab === "cashier" && (
-            <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
-                  Print KOT on Billing Printer
+          {/* Print Darkness / Density Selector */}
+          <View style={[styles.switchRow, { borderTopColor: theme.border, alignItems: "center" }]}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                Print Darkness / Density
+              </Text>
+              <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
+                Boosts thermal heating energy for rich, deep black receipts
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 4, backgroundColor: isDark ? "#1E293B" : "#F1F5F9", padding: 3, borderRadius: 10 }}>
+              {(["normal", "dark", "extra_dark"] as const).map(d => {
+                const current = activeTab === "cashier" ? cashierDarkness : kitchenDarkness;
+                const isSelected = current === d;
+                const label = d === "normal" ? "Normal" : d === "dark" ? "Dark" : "Extra Dark";
+                return (
+                  <Pressable
+                    key={d}
+                    style={{
+                      paddingHorizontal: 9,
+                      paddingVertical: 6,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? "#635BFF" : "transparent",
+                    }}
+                    onPress={() => {
+                      if (activeTab === "cashier") setCashierDarkness(d);
+                      else setKitchenDarkness(d);
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: isSelected ? "#FFFFFF" : theme.onSurfaceSecondary }}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+
+        {/* Web Quick Connect Buttons & Windows Driver Troubleshooting Guide */}
+        {Platform.OS === "web" && (
+          <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, marginBottom: 16 }]}>
+            <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>QUICK CONNECT (BROWSER)</Text>
+            <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11, marginBottom: 12 }]}>
+              Connect directly via USB Cable, Windows Serial, or Bluetooth:
+            </Text>
+
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 150,
+                  backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                  borderColor: isDark ? "#635BFF" : "#C7D2FE",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={() => handleConnectDevice({ name: "Direct USB Thermal Printer", address: "web-usb-pair", type: "usb" })}
+              >
+                <Ionicons name="hardware-chip-outline" size={20} color="#635BFF" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#635BFF" }}>Direct USB Cable</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>WebUSB (No COM)</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 150,
+                  backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5",
+                  borderColor: isDark ? "#10B981" : "#A7F3D0",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={() => handleConnectDevice({ name: "Windows Serial COM Port", address: "web-serial-pair", type: "usb" })}
+              >
+                <Ionicons name="flash-outline" size={20} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#10B981" }}>Windows COM Port</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>CH340 / USB-Serial</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 150,
+                  backgroundColor: isDark ? "rgba(59,130,246,0.15)" : "#EFF6FF",
+                  borderColor: isDark ? "#3B82F6" : "#BFDBFE",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={() => handleConnectDevice({ name: "Web Bluetooth Printer", address: "web-bluetooth-pair", type: "bluetooth" })}
+              >
+                <Ionicons name="bluetooth-outline" size={20} color="#3B82F6" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#3B82F6" }}>Pair Bluetooth</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>Wireless BLE / SPP</Text>
+                </View>
+              </Pressable>
+            </View>
+
+            {/* In-App Windows Driver & Connection Guide */}
+            <View style={{ backgroundColor: isDark ? "rgba(245,158,11,0.08)" : "#FFFBEB", borderColor: isDark ? "rgba(245,158,11,0.25)" : "#FDE68A", borderWidth: 1, borderRadius: 12, padding: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <Ionicons name="information-circle" size={18} color="#D97706" />
+                <Text style={{ fontSize: 12, fontWeight: "800", color: "#D97706" }}>Windows USB-C Cable & Driver Troubleshooting</Text>
+              </View>
+              <Text style={{ fontSize: 11, color: theme.onSurface, lineHeight: 16, marginBottom: 6 }}>
+                If Chrome says <Text style={{ fontWeight: "700" }}>"No compatible devices found"</Text> when connecting your mobile printer via USB-C cable:
+              </Text>
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
+                  1. <Text style={{ fontWeight: "700", color: "#635BFF" }}>Try Direct USB Cable:</Text> Tap the <Text style={{ fontWeight: "700", color: "#635BFF" }}>"Direct USB Cable"</Text> button above. It looks for raw USB printer devices without requiring a Windows COM port.
                 </Text>
-                <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
-                  Also print Kitchen Order Tickets (KOT) from this cashier printer if no kitchen printer is connected
+                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
+                  2. <Text style={{ fontWeight: "700", color: "#10B981" }}>Windows CH340 Driver:</Text> Portable printers (MPT-II, PT-210) use an internal CH340 USB-Serial chip. Windows needs the standard free <Text style={{ fontWeight: "700", color: "#10B981" }}>CH340 Driver</Text> to assign a COM port (e.g. COM3). Once installed, it appears immediately under <Text style={{ fontWeight: "700" }}>Windows COM Port</Text>.
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
+                  3. <Text style={{ fontWeight: "700", color: "#3B82F6" }}>Wireless Bluetooth (Easiest & Recommended):</Text> Your portable printer has Bluetooth built-in! Turn on Bluetooth on your laptop, pair with <Text style={{ fontWeight: "700" }}>MPT-II</Text> (PIN: 0000 or 1234), and tap <Text style={{ fontWeight: "700", color: "#3B82F6" }}>"Pair Bluetooth"</Text> — works 100% wireless with no drivers or cables required!
                 </Text>
               </View>
-              <Switch
-                value={cashierPrintKOT}
-                onValueChange={setCashierPrintKOT}
-                trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
-                thumbColor="#FFFFFF"
-              />
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* Nearby Discovery Scanner Section */}
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>

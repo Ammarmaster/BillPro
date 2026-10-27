@@ -34,7 +34,11 @@ export default function WaiterScreen() {
   const { logout } = useAuth();
   const { theme, isDark } = useTheme();
   const { table: tableParam } = useLocalSearchParams<{ table?: string }>();
-  const { isDesktop, isLargeDesktop } = useResponsive();
+  const { width, isDesktop, isLargeDesktop } = useResponsive();
+
+  // Responsive column layout taking into account DesktopSidebar (~250px on desktop web)
+  const availableWidth = isDesktop ? width - 250 : width;
+  const tableCols = availableWidth >= 1300 ? 5 : availableWidth >= 920 ? 4 : availableWidth >= 600 ? 3 : 2;
 
   const dedupeTables = (tbls: Table[]): Table[] => {
     if (!Array.isArray(tbls)) return [];
@@ -838,8 +842,21 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   // -------------------------------------------------------------
   // VIEW 2: TABLES SELECTION GRID (MAIN WAITER ENTRY SCREEN)
   // -------------------------------------------------------------
+  const gridTables = useMemo(() => {
+    if (!tables || tables.length === 0) return [];
+    const remainder = tables.length % tableCols;
+    if (remainder === 0) return tables;
+    const dummyCount = tableCols - remainder;
+    const dummies = Array.from({ length: dummyCount }, (_, i) => ({
+      id: `__dummy_table_${i}`,
+      label: "",
+      seats: 0,
+      __isDummy: true,
+    }));
+    return [...tables, ...dummies];
+  }, [tables, tableCols]);
+
   if (viewMode === "tables") {
-    const tableCols = isLargeDesktop ? 6 : isDesktop ? 4 : 3;
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
@@ -957,13 +974,16 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           ) : (
             <FlatList
               key={`tbl-grid-${tableCols}`}
-              data={tables}
+              data={gridTables}
               keyExtractor={t => t.id}
               numColumns={tableCols}
               columnWrapperStyle={{ justifyContent: "flex-start", gap: 10, paddingHorizontal: spacing.lg }}
               contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.xxxl, gap: 10 }}
               showsVerticalScrollIndicator={false}
               renderItem={({ item, index }) => {
+                if ((item as any).__isDummy) {
+                  return <View style={{ flex: 1, minWidth: 0 }} />;
+                }
                 const { status, orders: tblOrders, activeCount, totalAmount } = getTableStatusInfo(item.label, orders, bills);
                 
                 let cardBg = isDark ? "#161C2E" : "#F0FDF4";
@@ -1003,7 +1023,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                 }
 
                 return (
-                  <Animated.View entering={FadeInDown.delay(index * 40).springify()} style={{ width: "31.2%", maxWidth: "31.2%", minWidth: "31.2%" }}>
+                  <Animated.View entering={FadeInDown.delay(index * 30).springify()} style={{ flex: 1, minWidth: 0 }}>
                     <Pressable
                       style={({ pressed }) => [
                         {
@@ -1014,6 +1034,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                           padding: 12,
                           minHeight: 132,
                           justifyContent: "space-between",
+                          width: "100%",
                         },
                         pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
                       ]}

@@ -27,6 +27,7 @@ export interface PrinterSettings {
   open_drawer?: boolean; // Kick cash drawer automatically on cash settlements
   auto_cut?: boolean;   // Auto paper cut
   copies?: number;      // 1, 2, or 3 copies
+  darkness?: "normal" | "dark" | "extra_dark"; // Thermal heating density & darkness
   saved_at?: string;
   last_status?: PrinterConnectionStatus;
 }
@@ -516,9 +517,18 @@ export async function tryAutoReconnectWebUsb(role: "cashier" | "kitchen" = "cash
         try {
           if (!device.opened) {
             await device.open();
-            await device.selectConfiguration(1);
-            await device.claimInterface(0);
           }
+          if (!device.configuration || device.configuration.configurationValue !== 1) {
+            try { await device.selectConfiguration(1); } catch {}
+          }
+          let ifaceNumber = 0;
+          if (device.configuration?.interfaces?.length) {
+            const printerIface = device.configuration.interfaces.find((iface: any) =>
+              iface.alternates?.some((alt: any) => alt.interfaceClass === 7)
+            );
+            ifaceNumber = printerIface ? printerIface.interfaceNumber : device.configuration.interfaces[0].interfaceNumber;
+          }
+          try { await device.claimInterface(ifaceNumber); } catch {}
           activeWebUsbDevice = device;
           setPrinterStatus(role, "connected");
           return true;
@@ -583,14 +593,38 @@ if (Platform.OS === "web" && typeof navigator !== "undefined") {
 }
 
 export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
-  if (!isWebUsbSupported()) return false;
+  if (!isWebUsbSupported()) {
+    Alert.alert("WebUSB Not Supported", "Direct USB connection requires a Chromium browser (Chrome or Edge).");
+    return false;
+  }
   try {
     const navUsb = (navigator as any).usb;
     const device = await navUsb.requestDevice({ filters: [] });
     if (!device) return false;
-    await device.open();
-    await device.selectConfiguration(1);
-    await device.claimInterface(0);
+
+    if (!device.opened) {
+      await device.open();
+    }
+    if (!device.configuration || device.configuration.configurationValue !== 1) {
+      try {
+        await device.selectConfiguration(1);
+      } catch (confErr) {
+        console.warn("selectConfiguration skipped:", confErr);
+      }
+    }
+    let ifaceNumber = 0;
+    if (device.configuration?.interfaces?.length) {
+      const printerIface = device.configuration.interfaces.find((iface: any) =>
+        iface.alternates?.some((alt: any) => alt.interfaceClass === 7)
+      );
+      ifaceNumber = printerIface ? printerIface.interfaceNumber : device.configuration.interfaces[0].interfaceNumber;
+    }
+    try {
+      await device.claimInterface(ifaceNumber);
+    } catch (claimErr) {
+      console.warn("claimInterface note:", claimErr);
+    }
+
     activeWebUsbDevice = device;
     const devName = device.productName || "USB Thermal POS Printer";
     const devAddress = `USB-${device.vendorId || "0"}-${device.productId || "0"}`;
@@ -598,12 +632,22 @@ export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashie
       name: devName,
       address: devAddress,
       type: "usb",
-      brand: "USB"
+      brand: "USB",
+      width: 58,
+      auto_cut: false,
+      darkness: "extra_dark"
     });
     setPrinterStatus(role, "connected");
+    Alert.alert("USB Printer Connected", `Successfully paired with ${devName} via USB! Auto-reconnect is active. You can now tap 'Test Ticket' or print bills.`);
     return true;
   } catch (err: any) {
-    console.warn("WebUSB connect error:", err);
+    if (err.name !== "NotFoundError") {
+      console.warn("WebUSB connect error:", err);
+      Alert.alert(
+        "USB Connection Tip",
+        "Could not claim USB interface directly. On Windows, if this printer has a CH340 chip, install the free CH340 driver to connect via 'Windows Serial / COM Port', or connect wirelessly via Bluetooth."
+      );
+    }
     return false;
   }
 }
@@ -639,16 +683,16 @@ export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cas
       activeWebSerialWriter = port.writable.getWriter();
     }
 
-    const existing = await getPrinterSettings(role);
     const devName = "MPT-II Thermal Printer";
     const devAddress = "MPT-II";
     await autoConnectPrinter(role, {
       name: devName,
       address: devAddress,
-      type: existing?.type || "bluetooth",
+      type: "usb",
       brand: "Generic",
       width: 58,
-      auto_cut: false
+      auto_cut: false,
+      darkness: "extra_dark"
     });
     setPrinterStatus(role, "connected");
     Alert.alert("Thermal Printer Connected", "Connected to MPT-II thermal printer! Auto-reconnect is now active. You can now tap 'Test Ticket' or print bills.");
@@ -656,7 +700,7 @@ export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cas
   } catch (err: any) {
     if (err.name !== "NotFoundError") {
       console.warn("Web Serial connect error:", err);
-      Alert.alert("Serial Connection", err.message || "Could not connect to serial port.");
+      Alert.alert("Serial Connection", err.message || "Could not connect to serial port. On Windows, ensure CH340 driver is installed.");
     }
     return false;
   }
@@ -683,10 +727,31 @@ export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
     try {
       if (!activeWebUsbDevice.opened) {
         await activeWebUsbDevice.open();
-        await activeWebUsbDevice.selectConfiguration(1);
-        await activeWebUsbDevice.claimInterface(0);
       }
-      await activeWebUsbDevice.transferOut(1, bytes);
+      let ifaceNumber = 0;
+      if (activeWebUsbDevice.configuration?.interfaces?.length) {
+        const printerIface = activeWebUsbDevice.configuration.interfaces.find((iface: any) =>
+          iface.alternates?.some((alt: any) => alt.interfaceClass === 7)
+        );
+        ifaceNumber = printerIface ? printerIface.interfaceNumber : activeWebUsbDevice.configuration.interfaces[0].interfaceNumber;
+      }
+      try {
+        await activeWebUsbDevice.claimInterface(ifaceNumber);
+      } catch {}
+
+      let outEndpoint = 1;
+      try {
+        const currentInterface = activeWebUsbDevice.configuration?.interfaces?.find(
+          (iface: any) => iface.interfaceNumber === ifaceNumber
+        ) || activeWebUsbDevice.configuration?.interfaces?.[0];
+        const alternate = currentInterface?.alternates?.[0];
+        const foundOut = alternate?.endpoints?.find((ep: any) => ep.direction === "out");
+        if (foundOut) {
+          outEndpoint = foundOut.endpointNumber;
+        }
+      } catch {}
+
+      await activeWebUsbDevice.transferOut(outEndpoint, bytes);
       return true;
     } catch (e) {
       console.warn("WebUSB transferOut error:", e);
@@ -775,12 +840,36 @@ function encodeUtf8(str: string): Uint8Array {
   return new Uint8Array(utf8);
 }
 
-export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 58, autoCut: boolean = false): Uint8Array {
+export function convertThermalPayloadToEscPos(
+  payload: string,
+  width: 58 | 80 = 58,
+  autoCut: boolean = false,
+  darkness: "normal" | "dark" | "extra_dark" = "extra_dark"
+): Uint8Array {
   const maxChars = width === 58 ? 32 : 48;
   const bytes: number[] = [];
 
   // Init printer: ESC @ (0x1B, 0x40)
   bytes.push(0x1B, 0x40);
+
+  // High Density / Thermal Heating Commands to make print dark and clear
+  if (darkness === "extra_dark") {
+    // 1. DC2 7: Heating parameters (max dots 9, heating time 230=2.3ms for deep black, interval 2)
+    bytes.push(0x12, 0x37, 0x09, 0xE6, 0x02);
+    // 2. Double-strike mode ON: ESC G 1 (double heating pass for high contrast)
+    bytes.push(0x1B, 0x47, 0x01);
+    // 3. Density Setting: GS ( K (level +4)
+    bytes.push(0x1D, 0x28, 0x6B, 0x02, 0x00, 0x31, 0x04);
+    // 4. GS ~ 4: Thermal density maximum
+    bytes.push(0x1D, 0x7E, 0x04);
+  } else if (darkness === "dark") {
+    // Heating time: 180=1.8ms
+    bytes.push(0x12, 0x37, 0x08, 0xB4, 0x02);
+    // Double-strike mode ON: ESC G 1
+    bytes.push(0x1B, 0x47, 0x01);
+    // GS ~ 3: Thermal density high
+    bytes.push(0x1D, 0x7E, 0x03);
+  }
 
   const lines = payload.split("\n");
 
@@ -880,8 +969,9 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
     // Alignment: ESC a n
     bytes.push(0x1B, 0x61, align);
 
-    // Bold: ESC E n
-    bytes.push(0x1B, 0x45, isBold ? 0x01 : 0x00);
+    // Bold / Emphasized: ESC E n
+    const shouldEmphasize = isBold || darkness === "extra_dark" || darkness === "dark";
+    bytes.push(0x1B, 0x45, shouldEmphasize ? 0x01 : 0x00);
 
     // Font size: GS ! n
     if (isDoubleSize) {
@@ -898,6 +988,7 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
   }
 
   // Reset styles
+  bytes.push(0x1B, 0x47, 0x00);
   bytes.push(0x1B, 0x45, 0x00);
   bytes.push(0x1D, 0x21, 0x00);
   bytes.push(0x1B, 0x61, 0x00);
@@ -1447,6 +1538,13 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
         type: "usb",
         brand: "USB"
       });
+    } else if (isWebUsbSupported()) {
+      discovered.push({
+        name: "Connect Direct USB Cable Printer (WebUSB)",
+        address: "web-usb-pair",
+        type: "usb",
+        brand: "USB"
+      });
     }
     if (activeWebSerialPort) {
       discovered.push({
@@ -1457,7 +1555,7 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
       });
     } else if (isWebSerialSupported()) {
       discovered.push({
-        name: "Connect Windows Serial / COM Port (Bluetooth SPP / USB)",
+        name: "Connect Windows Serial / COM Port (CH340 / USB)",
         address: "web-serial-pair",
         type: "usb",
         brand: "USB"
@@ -1518,6 +1616,7 @@ export async function autoConnectPrinter(
     open_drawer?: boolean;
     auto_cut?: boolean;
     copies?: number;
+    darkness?: "normal" | "dark" | "extra_dark";
   }
 ): Promise<PrinterConnectionStatus> {
   const isNetwork = printer.type === "network" || (printer.address && printer.address.includes("."));
@@ -1531,6 +1630,7 @@ export async function autoConnectPrinter(
     (existing && existing.width === 58);
   const resolvedWidth: 58 | 80 = is58 ? 58 : (printer.width || existing?.width || 58);
   const resolvedAutoCut = resolvedWidth === 58 ? false : (printer.auto_cut ?? (existing ? existing.auto_cut : false));
+  const resolvedDarkness = printer.darkness || existing?.darkness || "extra_dark";
 
   const settings: PrinterSettings = {
     type: inferredType,
@@ -1544,6 +1644,7 @@ export async function autoConnectPrinter(
     open_drawer: printer.open_drawer ?? (existing ? existing.open_drawer : true),
     auto_cut: resolvedAutoCut,
     copies: printer.copies ?? (existing ? existing.copies : 1),
+    darkness: resolvedDarkness,
   };
 
   await savePrinterSettings(role, settings);
@@ -1581,6 +1682,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     (settings.name && settings.name.includes("58"));
   const effectiveWidth: 58 | 80 = is58 ? 58 : (settings.width || 58);
   const effectiveAutoCut = effectiveWidth === 58 ? false : (settings.auto_cut !== false);
+  const effectiveDarkness = settings.darkness || "extra_dark";
 
   if (settings.type === "system") {
     if (isKitchen) {
@@ -1614,7 +1716,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       if (settings.type === "bluetooth") {
         if (activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1637,7 +1739,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1650,7 +1752,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebBluetoothCharacteristic) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
             const success = await sendWebBluetoothPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -1672,7 +1774,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebUsbDevice || activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -2270,7 +2372,7 @@ export async function printClosingReport(session: any, restaurant?: any): Promis
     if (Platform.OS === "web") {
       if (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected)) {
         try {
-          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+          const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width, false, settings.darkness || "extra_dark");
           const success = await sendWebBluetoothPrint(escPosBytes);
           if (success) return true;
         } catch {}
