@@ -194,7 +194,7 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
   try {
     if (Platform.OS === "web") {
       if (settings.type === "bluetooth") {
-        if (activeWebBluetoothCharacteristic || activeWebBluetoothDevice?.gatt?.connected) {
+        if (activeWebBluetoothCharacteristic || activeWebBluetoothDevice?.gatt?.connected || activeWebSerialWriter) {
           setPrinterStatus(role, "connected");
           return "connected";
         }
@@ -509,18 +509,26 @@ export async function connectWebSerialPrinter(role: "cashier" | "kitchen" = "cas
     const navSerial = (navigator as any).serial;
     const port = await navSerial.requestPort();
     if (!port) return false;
-    await port.open({ baudRate: 9600 });
+    try {
+      await port.open({ baudRate: 9600 });
+    } catch {
+      try {
+        await port.open({ baudRate: 115200 });
+      } catch {}
+    }
     activeWebSerialPort = port;
     activeWebSerialWriter = port.writable.getWriter();
-    const devName = "USB Serial POS Printer";
-    const devAddress = "USB-Serial";
+    const existing = await getPrinterSettings(role);
+    const devName = "MPT-II Thermal Printer";
+    const devAddress = "MPT-II";
     await autoConnectPrinter(role, {
       name: devName,
       address: devAddress,
-      type: "usb",
-      brand: "USB"
+      type: existing?.type || "bluetooth",
+      brand: "Generic"
     });
     setPrinterStatus(role, "connected");
+    Alert.alert("Thermal Printer Connected", "Connected to MPT-II thermal printer! You can now tap 'Test Ticket' or print bills.");
     return true;
   } catch (err: any) {
     console.warn("Web Serial connect error:", err);
@@ -1403,6 +1411,19 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     if (Platform.OS === "web") {
       // 1. Direct Web Bluetooth ESC/POS printing
       if (settings.type === "bluetooth") {
+        if (activeWebSerialWriter) {
+          try {
+            const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width);
+            const success = await sendWebUsbPrint(escPosBytes);
+            if (success) {
+              if (c === copiesCount - 1) return true;
+              continue;
+            }
+          } catch (e) {
+            console.warn("Serial print failed:", e);
+          }
+        }
+
         if (!activeWebBluetoothCharacteristic) {
           await tryAutoReconnectWebBluetooth(role);
         }
