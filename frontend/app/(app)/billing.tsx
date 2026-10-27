@@ -640,7 +640,7 @@ export default function Billing() {
   useEffect(() => {
     const upi = bill?.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(restaurantName)}&am=${totalAmt}&cu=INR`;
     if (upi) {
-      QRCode.toString(upi, { type: 'svg' })
+      QRCode.toString(upi, { type: 'svg', margin: 1, width: 220 })
         .then(svgString => {
           const b64 = base64Encode(svgString);
           setQrUri(`data:image/svg+xml;base64,${b64}`);
@@ -820,8 +820,8 @@ export default function Billing() {
 
             {/* Always Crisp Black & White UPI QR Container */}
             {!isPaid && (
-              <View style={[styles.upiBox, { backgroundColor: "#FFFFFF", borderRadius: radius.lg, padding: spacing.md, alignItems: "center", marginTop: spacing.md }]}>
-                <Text style={{ color: "#635BFF", fontSize: 13, fontWeight: "800" }}>Scan & Pay (UPI)</Text>
+              <View style={[styles.upiBox, { backgroundColor: isDark ? "#1E2235" : "#FFFFFF", borderColor: theme.border }]}>
+                <Text style={styles.upiTitle}>Scan & Pay (UPI)</Text>
                 {qrUri ? (
                   <Image source={{ uri: qrUri }} style={styles.qrCodeImg} contentFit="contain" testID="bill-qr-image" />
                 ) : (
@@ -829,8 +829,8 @@ export default function Billing() {
                     <ActivityIndicator color="#635BFF" />
                   </View>
                 )}
-                <Text style={{ color: "#0F172A", fontSize: 13, fontWeight: "800" }}>{upiId}</Text>
-                <Text style={{ color: "#64748B", fontSize: 11, fontWeight: "600" }}>Auto-fills {formatCurrency(totalAmt)}</Text>
+                <Text style={[styles.upiIdText, { color: theme.onSurface }]}>{upiId}</Text>
+                <Text style={[styles.upiSubText, { color: theme.onSurfaceSecondary }]}>Auto-fills {formatCurrency(totalAmt)}</Text>
               </View>
             )}
           </View>
@@ -983,17 +983,23 @@ const styles = StyleSheet.create({
   totalVal: { color: "#0F172A", fontSize: 20, fontWeight: "900" },
 
   upiBox: {
-    backgroundColor: "#F1F0FF",
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    backgroundColor: "#FFFFFF",
+    borderRadius: radius.xl,
+    padding: spacing.lg,
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 320,
     marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     gap: 2,
   },
-  upiTitle: { color: "#635BFF", fontSize: 14, fontWeight: "800" },
-  qrCodeImg: { width: 130, height: 130, marginVertical: 4, borderRadius: radius.md },
-  upiIdText: { color: "#0F172A", fontSize: 13, fontWeight: "800" },
-  upiSubText: { color: "#64748B", fontSize: 11, fontWeight: "600" },
+  upiTitle: { color: "#635BFF", fontSize: 14, fontWeight: "900", marginBottom: 2 },
+  qrCodeImg: { width: 200, height: 200, marginVertical: 6, alignSelf: "center", borderRadius: radius.md },
+  upiIdText: { color: "#0F172A", fontSize: 13, fontWeight: "800", marginTop: 4 },
+  upiSubText: { color: "#64748B", fontSize: 11, fontWeight: "600", marginTop: 1 },
 
   bottomActionBar: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#FFFFFF", flexDirection: "row", padding: spacing.lg, gap: spacing.md, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
   printBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 16, borderRadius: radius.lg, backgroundColor: "#F1F0FF", borderWidth: 1, borderColor: "rgba(99,91,255,0.2)" },

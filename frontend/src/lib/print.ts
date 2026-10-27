@@ -565,13 +565,14 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
       const len = qrBytes.length + 3;
       const pL = len % 256;
       const pH = Math.floor(len / 256);
+      const moduleSize = width === 58 ? 0x07 : 0x08;
 
       // Align Center
       bytes.push(0x1B, 0x61, 0x01);
       // QR Model 2: GS ( k 4 0 49 65 50 0
       bytes.push(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
-      // QR Module size 6: GS ( k 3 0 49 67 6
-      bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x06);
+      // QR Module size: GS ( k 3 0 49 67 moduleSize
+      bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleSize);
       // Error correction L: GS ( k 3 0 49 69 48
       bytes.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x30);
       // Store QR data: GS ( k pL pH 49 80 48 ...
@@ -582,6 +583,11 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
       bytes.push(0x0A);
       // Reset align to Left
       bytes.push(0x1B, 0x61, 0x00);
+      continue;
+    }
+
+    // Skip raw <img> tags in ESC/POS byte conversion so raw base64 text is never printed on paper
+    if (rawLine.includes("<img>") || rawLine.includes("</img>")) {
       continue;
     }
 
@@ -663,8 +669,8 @@ export function convertThermalPayloadToEscPos(payload: string, width: 58 | 80 = 
   bytes.push(0x1D, 0x21, 0x00);
   bytes.push(0x1B, 0x61, 0x00);
 
-  // Feed 5 lines for easy tearing
-  bytes.push(0x1B, 0x64, 0x05);
+  // Feed 7 lines for complete clearance before cut
+  bytes.push(0x1B, 0x64, 0x07);
   // Cut paper (partial)
   bytes.push(0x1D, 0x56, 0x42, 0x00);
 
@@ -729,6 +735,30 @@ export function getRestaurantSnapshot(data?: any): any {
 }
 
 export function getBillLogo(snapshot?: any, width: number = 80): string | null {
+  const r = snapshot || getRestaurantSnapshot();
+  if (!r) return null;
+
+  const raw = width === 58
+    ? (r.logo_base64_58 || r.logo_base64 || r.logo || r.logo_url)
+    : (r.logo_base64_80 || r.logo_base64 || r.logo || r.logo_url);
+
+  if (raw && typeof raw === "string" && raw.trim().length > 20) {
+    const cleaned = raw.replace(/^data:image\/[a-z]+;base64,/i, "").trim();
+    if (cleaned.length > 20) return cleaned;
+  }
+
+  // Check cached restaurant in case snapshot was created before logo upload
+  const cachedR = api.getCachedRestaurant();
+  if (cachedR && cachedR !== r) {
+    const cachedRaw = width === 58
+      ? (cachedR.logo_base64_58 || cachedR.logo_base64 || cachedR.logo || cachedR.logo_url)
+      : (cachedR.logo_base64_80 || cachedR.logo_base64 || cachedR.logo || cachedR.logo_url);
+    if (cachedRaw && typeof cachedRaw === "string" && cachedRaw.trim().length > 20) {
+      const cleaned = cachedRaw.replace(/^data:image\/[a-z]+;base64,/i, "").trim();
+      if (cleaned.length > 20) return cleaned;
+    }
+  }
+
   return null;
 }
 
@@ -802,6 +832,13 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
     // ==========================================
     const r = getRestaurantSnapshot(data);
     const restaurantName = (r.name || "Master Chef").toUpperCase();
+
+    // 1. Print restaurant icon / logo if uploaded by restaurant owner
+    const logoBase64 = getBillLogo(r, width);
+    if (logoBase64) {
+      lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
+    }
+
     lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
 
     if (r.address) {
@@ -927,9 +964,10 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
       const merchant = r.merchant_name || r.name || "Restaurant";
       const totalAmount = Number(totalVal).toFixed(2);
       const upiUrl = data.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR`;
-      const qrSize = width === 58 ? 30 : 36;
+      const qrSize = width === 58 ? 35 : 44;
       if (upiId) {
-        lines.push(`[C]<b>Scan to Pay: Rs.${formatThermalMoney(totalVal)}</b>\n`);
+        lines.push(`[C]<b>Scan & Pay (UPI)</b>\n`);
+        lines.push(`[C]<b>Amount: Rs.${formatThermalMoney(totalVal)}</b>\n`);
         lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
         lines.push(`[C]${upiId}\n`);
         lines.push(`[C]${divider}\n`);
@@ -938,7 +976,7 @@ export async function formatReceipt(data: any, width: number = 80, isKitchen: bo
 
     lines.push(`[C]Thank you! Visit again.\n`);
     lines.push(`[C]EzBill POS\n`);
-    lines.push(`\n\n\n\n`);
+    lines.push(`\n\n\n\n\n\n\n`);
   }
 
   return lines.join("");
@@ -1292,7 +1330,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       return false;
     }
 
-    const mmFeed = isKitchen ? 25 : 12;
+    const mmFeed = isKitchen ? 25 : 32;
 
     try {
       if (settings.type === "network") {
@@ -1454,11 +1492,12 @@ export function billHtml(bill: any): string {
       <tr>
         <td class="l">${escapeHtml(it.name)}</td>
         <td class="r">${it.quantity}x</td>
+        <td class="r">${formatCurrency(it.price || 0)}</td>
         <td class="r">${formatCurrency((it.price || 0) * (it.quantity || 1))}</td>
       </tr>`
   ).join("");
 
-  const logoBlock = customLogo ? `<img class="logo" src="data:image/png;base64,${customLogo}" style="max-height: 44px; max-width: 130px; display: block; margin: 0 auto 4px;" />` : "";
+  const logoBlock = customLogo ? `<div style="text-align: center; margin-bottom: 6px;"><img class="logo" src="data:image/png;base64,${customLogo}" style="max-height: 56px; max-width: 120px; display: inline-block; object-fit: contain;" /></div>` : "";
   const isPaid = bill.status === "paid";
   const dateObj = new Date(bill.created_at || Date.now());
   const dateStr = dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' });
@@ -1518,8 +1557,9 @@ export function billHtml(bill: any): string {
         <thead>
           <tr>
             <th class="l">ITEM</th>
-            <th class="r" style="width: 36px;">QTY</th>
-            <th class="r" style="width: 64px;">AMOUNT</th>
+            <th class="r" style="width: 32px;">QTY</th>
+            <th class="r" style="width: 48px;">RATE</th>
+            <th class="r" style="width: 58px;">AMOUNT</th>
           </tr>
         </thead>
         <tbody>
@@ -1554,16 +1594,17 @@ export function billHtml(bill: any): string {
       ${isPaid ? `
         <div class="status-pill">PAID (${(bill.payment_method || "CASH").toUpperCase()})</div>
       ` : (upiId ? `
-        <div class="qr-block">
-          <div style="font-size: 11px; font-weight: 800; margin-bottom: 2px;">Scan to Pay via UPI (${formatCurrency(totalVal)})</div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(upiUrl)}" style="width: 105px; height: 105px; display: block; margin: 4px auto;" />
-          <div style="font-size: 10px; font-weight: 600; color: #444; margin-top: 2px;">${escapeHtml(upiId)}</div>
+        <div class="qr-block" style="text-align: center; margin: 12px auto; padding: 10px; background: #fafafa; border: 1px dashed #cbd5e1; border-radius: 8px; width: 220px;">
+          <div style="font-size: 13px; font-weight: 800; color: #1e293b; margin-bottom: 4px;">Scan & Pay (UPI)</div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}" style="width: 180px; height: 180px; display: block; margin: 0 auto;" />
+          <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 6px;">${escapeHtml(upiId)}</div>
+          <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 2px;">Auto-fills ${formatCurrency(totalVal)}</div>
         </div>
       ` : "")}
       <hr />
       
       <p class="footer">Thank you! Visit again. · EzBill</p>
-      <div style="height: 30px; width: 100%;"></div>
+      <div style="height: 35px; width: 100%;"></div>
     </body></html>
   `;
 }
