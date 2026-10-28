@@ -1309,14 +1309,14 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
       lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     }
 
-    // Centered restaurant name (exact same format and sizing as KOT takeaway header):
-    // On 58mm (2-inch, 16 double-size cols): wrap cleanly at 16 chars per line.
-    // On 80mm (3-inch, 24 double-size cols): wrap cleanly at 24 chars per line.
-    // Every line is pushed with [C]<b><font size='big'>${line}</font></b> so every line is identically centered across the full printable width.
-    const maxNameCols = width === 58 ? 16 : 24;
+    // Centered restaurant name:
+    // Full printable width: 30 chars for 58mm (2-inch), 46 chars for 80mm (3-inch).
+    // Allows text to start from left and end to right across the full paper width, center aligned.
+    // Only wraps to the next line if text overflows the line capacity (only for restaurant name).
+    const maxNameCols = width === 58 ? 30 : 46;
     const nameLines = wrapCenteredLines(restaurantName, maxNameCols);
     nameLines.forEach(line => {
-      lines.push(`[C]<b><font size='big'>${line}</font></b>\n`);
+      lines.push(`[C]<b><font size='tall'>${line}</font></b>\n`);
     });
 
     if (r.address) {
