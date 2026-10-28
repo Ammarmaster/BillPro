@@ -1037,24 +1037,10 @@ export function convertThermalPayloadToEscPos(
       align = 0;
     } else if (clean.startsWith("[C]")) {
       align = 1;
-      const rawText = clean.replace("[C]", "").trim();
-      if (rawText.length < lineCols) {
-        const padTotal = lineCols - rawText.length;
-        const leftPad = Math.floor(padTotal / 2);
-        const rightPad = padTotal - leftPad;
-        formattedText = " ".repeat(leftPad) + rawText + " ".repeat(rightPad);
-      } else {
-        formattedText = rawText;
-      }
+      formattedText = clean.replace("[C]", "").trim();
     } else if (clean.startsWith("[R]")) {
       align = 2;
-      const rawText = clean.replace("[R]", "").trim();
-      if (rawText.length < lineCols) {
-        const padLeft = lineCols - rawText.length;
-        formattedText = " ".repeat(padLeft) + rawText;
-      } else {
-        formattedText = rawText;
-      }
+      formattedText = clean.replace("[R]", "").trim();
     } else if (clean.startsWith("[L]")) {
       align = 0;
       formattedText = clean.replace("[L]", "").trim();
@@ -1236,68 +1222,42 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
 
   if (isKitchen) {
     // ==========================================
-    // CLEAN, BEAUTIFULLY DESIGNED KITCHEN ORDER TICKET (KOT)
+    // SIMPLE, ULTRA-CLEAN KITCHEN ORDER TICKET (KOT)
+    // Highlighted Table, Order # and Dish Names Only
     // ==========================================
     const isTakeaway = String(data.table_number || "").toLowerCase() === "takeaway" || String(data.order_type || "").toLowerCase() === "takeaway";
     const rawTable = String(data.table_number || "").trim();
     const tableLabel = isTakeaway ? "TAKEAWAY" : (rawTable ? (rawTable.toUpperCase().startsWith("TABLE") ? rawTable.toUpperCase() : `TABLE ${rawTable.toUpperCase()}`) : "TAKEAWAY");
     const orderNo = data.order_number || (data.id ? data.id.slice(0, 6).toUpperCase() : "1");
     const dateObj = new Date(data.created_at || Date.now());
-    const dateStr = dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' });
     const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
     const items = data.items || [];
-    const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0);
 
-    lines.push(`[C]${doubleDivider}\n`);
-    lines.push(`[C]<b><font size='tall'>KITCHEN ORDER TICKET</font></b>\n`);
-    lines.push(`[C]<b><font size='tall'>${tableLabel}</font></b>\n`);
-    lines.push(`[C]${doubleDivider}\n`);
-    lines.push(`[L]Order: #${orderNo}[R]Time: ${timeStr}\n`);
-    lines.push(`[L]Date: ${dateStr}[R]Type: ${isTakeaway ? "TAKEAWAY" : "DINE-IN"}\n`);
     lines.push(`[C]${divider}\n`);
-    lines.push(`[L]<b>QTY   ITEM / DISH</b>\n`);
+    lines.push(`[C]<b><font size='big'>${tableLabel}</font></b>\n`);
+    lines.push(`[C]<b>#${orderNo} · ${timeStr}</b>\n`);
     lines.push(`[C]${divider}\n`);
 
     items.forEach((it: any) => {
       const q = Number(it.quantity || 1);
-      const name = String(it.name || "Item").trim();
-      const qPrefix = `${q}x`.padStart(3, " ") + "  "; // 5 chars: "  1x  " or " 12x  "
-      const availNameWidth = maxChars - 5;
+      const name = String(it.name || "Item").trim().toUpperCase();
+      const qPrefix = `${q}x`;
 
-      if (name.length <= availNameWidth) {
-        lines.push(`[L]<b>${qPrefix}</b>${name}\n`);
-      } else {
-        const words = name.split(" ");
-        let l1 = "";
-        let l2 = "";
-        for (const w of words) {
-          if ((l1 + " " + w).trim().length <= availNameWidth && !l2) {
-            l1 = (l1 + " " + w).trim();
-          } else if ((l2 + " " + w).trim().length <= availNameWidth) {
-            l2 = (l2 + " " + w).trim();
-          }
-        }
-        lines.push(`[L]<b>${qPrefix}</b>${l1 || name.slice(0, availNameWidth)}\n`);
-        if (l2) {
-          lines.push(`[L]     ${l2}\n`);
-        }
-      }
-
+      // Highlighted, bold, tall dish line for clear visibility in kitchen
+      lines.push(`[L]<b><font size='tall'>${qPrefix} ${name}</font></b>\n`);
       if (it.notes && String(it.notes).trim()) {
-        lines.push(`[L]     * Note: ${String(it.notes).trim()}\n`);
+        lines.push(`[L]   * ${String(it.notes).trim()}\n`);
       }
     });
 
     lines.push(`[C]${divider}\n`);
-    lines.push(`[L]<b>Total Quantity: ${totalQty} Item${totalQty > 1 ? "s" : ""}</b>\n`);
-    lines.push(`[L]Total Dishes:   ${items.length} Dish${items.length > 1 ? "es" : ""}\n`);
-    lines.push(`[C]${doubleDivider}\n`);
   } else {
     // ==========================================
     // CUSTOMER BILL RECEIPT — COMPACT & ELEGANT
     // ==========================================
     const r = getRestaurantSnapshot(data);
-    const restaurantName = (r.name || "Master Chef").toUpperCase();
+    const rawName = (r.name || "Master Chef").trim();
+    const restaurantName = rawName.toUpperCase();
 
     // 1. Print restaurant icon / logo if uploaded by restaurant owner
     const logoBase64 = getBillLogo(r, width);
@@ -1305,8 +1265,28 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
       lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     }
 
+    // Centered restaurant name (never split words):
+    // For 58mm: if <= 16 chars, use tall font. If <= 30 chars (e.g. "MASTER CHEF RESTAURANT", 22 chars), use bold normal font so it fits on 1 single line without wrapping.
+    // If > 30 chars, wrap cleanly at word boundaries.
     if (width === 58) {
-      lines.push(`[C]<b><font size='tall'>${restaurantName}</font></b>\n`);
+      if (restaurantName.length <= 16) {
+        lines.push(`[C]<b><font size='tall'>${restaurantName}</font></b>\n`);
+      } else if (restaurantName.length <= 30) {
+        lines.push(`[C]<b>${restaurantName}</b>\n`);
+      } else {
+        const words = restaurantName.split(/\s+/);
+        let l1 = "";
+        let l2 = "";
+        for (const w of words) {
+          if (!l1 || (l1 + " " + w).length <= 30) {
+            l1 = l1 ? `${l1} ${w}` : w;
+          } else {
+            l2 = l2 ? `${l2} ${w}` : w;
+          }
+        }
+        lines.push(`[C]<b>${l1}</b>\n`);
+        if (l2) lines.push(`[C]<b>${l2}</b>\n`);
+      }
     } else {
       lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
     }
@@ -2048,16 +2028,12 @@ export function kotHtml(order: any): string {
   const dateObj = new Date(order.created_at || Date.now());
   const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
   const items = order.items || [];
-  const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0);
 
   const itemsRows = items.map((it: any) => `
-    <tr>
-      <td class="qty">${it.quantity || 1}x</td>
-      <td class="name">
-        ${escapeHtml(it.name || "Item")}
-        ${it.notes ? `<div class="note">* ${escapeHtml(it.notes)}</div>` : ""}
-      </td>
-    </tr>
+    <div style="font-size: 15px; font-weight: 900; margin: 4px 0; text-transform: uppercase;">
+      ${it.quantity || 1}x ${escapeHtml(String(it.name || "Item").toUpperCase())}
+      ${it.notes ? `<div style="font-size: 11px; font-weight: 600; color: #555; margin-left: 14px;">* ${escapeHtml(it.notes)}</div>` : ""}
+    </div>
   `).join("");
 
   return `
@@ -2073,40 +2049,21 @@ export function kotHtml(order: any): string {
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #000; padding: 6px; padding-bottom: 6px; max-width: 280px; margin: 0 auto; font-size: 13px; line-height: 1.25; }
         .center { text-align: center; }
-        .title { font-size: 17px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
-        .meta { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #333; margin: 3px 0 5px; }
-        hr { border: none; border-top: 1px dashed #000; margin: 5px 0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        th { font-size: 11px; font-weight: 800; border-bottom: 1.5px solid #000; padding: 2px 0 4px; text-align: left; }
-        td { padding: 3px 0; vertical-align: top; }
-        .qty { width: 36px; font-size: 15px; font-weight: 900; }
-        .name { font-size: 13.5px; font-weight: 700; }
-        .note { font-size: 11px; font-weight: 600; color: #444; margin-top: 1px; }
-        .footer { text-align: center; font-size: 12px; font-weight: 800; margin-top: 6px; border-top: 1px dashed #000; padding-top: 5px; }
+        .title { font-size: 18px; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; }
+        .meta { font-size: 12px; font-weight: 700; color: #333; margin: 2px 0 4px; text-align: center; }
+        hr { border: none; border-top: 1px dashed #000; margin: 4px 0; }
         .tear-spacer { height: 10px; width: 100%; }
       </style>
     </head>
     <body>
-      <div class="center title">KOT · ${escapeHtml(tableLabel)}</div>
-      <div class="meta">
-        <span>#${escapeHtml(orderNo)}</span>
-        <span>${escapeHtml(timeStr)}</span>
+      <hr />
+      <div class="center title">${escapeHtml(tableLabel)}</div>
+      <div class="meta">#${escapeHtml(orderNo)} · ${escapeHtml(timeStr)}</div>
+      <hr />
+      <div style="margin: 6px 0;">
+        ${itemsRows}
       </div>
       <hr />
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 36px;">QTY</th>
-            <th>ITEM</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemsRows}
-        </tbody>
-      </table>
-      <div class="footer">
-        TOTAL ITEMS: ${totalQty} (${items.length} dishes)
-      </div>
       <div class="tear-spacer"></div>
     </body>
     </html>

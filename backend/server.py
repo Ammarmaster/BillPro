@@ -2354,6 +2354,27 @@ async def list_tables(user: dict = Depends(get_current_user)):
     await _auto_clear_kitchen_orders(tid)
     raw_tables = await db.tables.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("label", 1).to_list(500)
     
+    # Auto-seed default tables (1 to 10) if no tables exist for this restaurant yet
+    if not raw_tables:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        default_tables = [
+            {
+                "id": f"tbl_{tid}_{i}",
+                "tenant_id": tid,
+                "label": str(i),
+                "seats": 4,
+                "status": "available",
+                "is_deleted": False,
+                "created_at": now_iso
+            }
+            for i in range(1, 11)
+        ]
+        try:
+            await db.tables.insert_many(default_tables)
+            raw_tables = await db.tables.find({"tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("label", 1).to_list(500)
+        except Exception as seed_err:
+            logger.warning("Auto-seed default tables error: %s", seed_err)
+
     seen = set()
     unique_tables = []
     duplicate_ids = []

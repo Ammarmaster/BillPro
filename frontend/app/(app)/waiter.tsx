@@ -43,11 +43,17 @@ export default function WaiterScreen() {
   const dedupeTables = (tbls: Table[]): Table[] => {
     if (!Array.isArray(tbls)) return [];
     const seen = new Set<string>();
-    return tbls.filter(t => {
+    const filtered = tbls.filter(t => {
       const k = String(t.label || t.id).trim().toLowerCase();
       if (!k || seen.has(k)) return false;
       seen.add(k);
       return true;
+    });
+    return filtered.sort((a, b) => {
+      const numA = parseInt(String(a.label).replace(/\D/g, ""), 10);
+      const numB = parseInt(String(b.label).replace(/\D/g, ""), 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return String(a.label).localeCompare(String(b.label));
     });
   };
 
@@ -55,13 +61,7 @@ export default function WaiterScreen() {
   const [items, setItems] = useState<Item[]>(() => api.getCachedMenu() || []);
   const [tables, setTables] = useState<Table[]>(() => {
     const raw = api.getCachedTables() || [];
-    const seen = new Set<string>();
-    return raw.filter((t: any) => {
-      const k = String(t.label || t.id).trim().toLowerCase();
-      if (!k || seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
+    return dedupeTables(raw);
   });
   const [orders, setOrders] = useState<any[]>(() => api.getCachedOrders() || []);
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
@@ -156,6 +156,22 @@ export default function WaiterScreen() {
     load().catch(() => {});
   };
 
+  const handleSeedDefaultTables = async () => {
+    try {
+      const created: Table[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const res = await api.createTable({ label: String(i), seats: 4 }).catch(() => null);
+        if (res) created.push(res);
+      }
+      if (created.length > 0) {
+        setTables(dedupeTables(created));
+      } else {
+        const list = await api.listTables().catch(() => null);
+        if (list && list.length > 0) setTables(dedupeTables(list));
+      }
+    } catch {}
+  };
+
   // Priority 1: Fast table & order synchronization
   const load = useCallback(async () => {
     setErr(null);
@@ -165,7 +181,11 @@ export default function WaiterScreen() {
         api.listTables().catch(() => null),
         api.listOrders().catch(() => null),
       ]);
-      if (t && t.length > 0) setTables(dedupeTables(t));
+      if (t && t.length > 0) {
+        setTables(dedupeTables(t));
+      } else if (Array.isArray(t) && t.length === 0) {
+        await handleSeedDefaultTables();
+      }
       if (o) setOrders(o);
 
       // Background lazy sync for menu and bills without blocking tables UI
@@ -177,8 +197,15 @@ export default function WaiterScreen() {
     }
   }, []);
 
+  // Guarantee instant load on web and initial component mount
+  useEffect(() => {
+    load();
+  }, [load]);
+
   useFocusEffect(useCallback(() => {
     // Re-hydrate local state from cache immediately on tab focus
+    const cachedTables = api.getCachedTables();
+    if (cachedTables && cachedTables.length > 0) setTables(dedupeTables(cachedTables));
     const cachedOrders = api.getCachedOrders();
     if (cachedOrders) setOrders(cachedOrders);
     const cachedBills = api.getCachedBills();
@@ -967,9 +994,28 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           {loading ? (
             <View style={styles.center}><ActivityIndicator size="large" color="#635BFF" /></View>
           ) : tables.length === 0 ? (
-            <View style={styles.center}>
-              <Ionicons name="grid-outline" size={48} color={theme.onSurfaceTertiary} />
-              <Text style={{ color: theme.onSurfaceSecondary, marginTop: 8, fontSize: 15 }}>No tables found.</Text>
+            <View style={[styles.center, { paddingVertical: 40 }]}>
+              <Ionicons name="grid-outline" size={52} color={theme.onSurfaceTertiary} />
+              <Text style={{ color: theme.onSurface, marginTop: 12, fontSize: 18, fontWeight: "800" }}>No tables setup yet</Text>
+              <Text style={{ color: theme.onSurfaceSecondary, marginTop: 6, fontSize: 14, textAlign: "center", maxWidth: 300 }}>
+                Set up dining tables to start taking orders and generating bills.
+              </Text>
+              <Pressable
+                style={{
+                  backgroundColor: "#635BFF",
+                  paddingHorizontal: 20,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 18,
+                }}
+                onPress={handleSeedDefaultTables}
+              >
+                <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+                <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 15 }}>Create Tables 1 - 10</Text>
+              </Pressable>
             </View>
           ) : (
             <FlatList
