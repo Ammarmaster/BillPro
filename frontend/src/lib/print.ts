@@ -1017,9 +1017,10 @@ export function convertThermalPayloadToEscPos(
     let formattedText = "";
 
     const lineCols = isDoubleSize ? Math.floor(maxChars / 2) : maxChars;
+    const cleanText = clean.trim();
 
-    if (clean.includes("[L]") && clean.includes("[C]") && clean.includes("[R]")) {
-      const parts = clean.split(/\[L\]|\[C\]|\[R\]/).filter(p => p !== "");
+    if (cleanText.includes("[L]") && cleanText.includes("[C]") && cleanText.includes("[R]")) {
+      const parts = cleanText.split(/\[L\]|\[C\]|\[R\]/).filter(p => p !== "");
       const colL = (parts[0] || "").trim();
       const colC = (parts[1] || "").trim();
       const colR = (parts[2] || "").trim();
@@ -1028,28 +1029,24 @@ export function convertThermalPayloadToEscPos(
       const spaces = Math.max(1, maxChars - leftCenter.length - colR.length);
       formattedText = leftCenter + " ".repeat(spaces) + colR;
       align = 0;
-    } else if (clean.includes("[L]") && clean.includes("[R]")) {
-      const parts = clean.split(/\[L\]|\[R\]/).filter(p => p !== "");
+    } else if (cleanText.includes("[L]") && cleanText.includes("[R]")) {
+      const parts = cleanText.split(/\[L\]|\[R\]/).filter(p => p !== "");
       const colL = (parts[0] || "").trim();
       const colR = (parts[1] || "").trim();
       const spaces = Math.max(1, maxChars - colL.length - colR.length);
       formattedText = colL + " ".repeat(spaces) + colR;
       align = 0;
-    } else if (clean.startsWith("[C]")) {
+    } else if (cleanText.startsWith("[C]")) {
       align = 1;
-      const rawText = clean.replace("[C]", "").trim();
-      const leftPad = Math.max(0, Math.floor((lineCols - rawText.length) / 2));
-      formattedText = " ".repeat(leftPad) + rawText;
-    } else if (clean.startsWith("[R]")) {
+      formattedText = cleanText.replace("[C]", "").trim();
+    } else if (cleanText.startsWith("[R]")) {
       align = 2;
-      const rawText = clean.replace("[R]", "").trim();
-      const leftPad = Math.max(0, lineCols - rawText.length);
-      formattedText = " ".repeat(leftPad) + rawText;
-    } else if (clean.startsWith("[L]")) {
+      formattedText = cleanText.replace("[R]", "").trim();
+    } else if (cleanText.startsWith("[L]")) {
       align = 0;
-      formattedText = clean.replace("[L]", "").trim();
+      formattedText = cleanText.replace("[L]", "").trim();
     } else {
-      formattedText = clean.trim();
+      formattedText = cleanText;
     }
 
     // 1. Font size: GS ! n (MUST be sent before ESC a or text)
