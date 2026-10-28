@@ -388,6 +388,20 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.price * l.quantity, 0), [lines]);
   const totalQty = useMemo(() => lines.reduce((s, l) => s + l.quantity, 0), [lines]);
 
+  const gridTables = useMemo(() => {
+    if (!tables || tables.length === 0) return [];
+    const remainder = tables.length % tableCols;
+    if (remainder === 0) return tables;
+    const dummyCount = tableCols - remainder;
+    const dummies = Array.from({ length: dummyCount }, (_, i) => ({
+      id: `__dummy_table_${i}`,
+      label: "",
+      seats: 0,
+      __isDummy: true,
+    }));
+    return [...tables, ...dummies];
+  }, [tables, tableCols]);
+
 
   const submitOrder = async () => {
     if (!table.trim()) { setErr("Choose a table."); return; }
@@ -869,20 +883,6 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
   // -------------------------------------------------------------
   // VIEW 2: TABLES SELECTION GRID (MAIN WAITER ENTRY SCREEN)
   // -------------------------------------------------------------
-  const gridTables = useMemo(() => {
-    if (!tables || tables.length === 0) return [];
-    const remainder = tables.length % tableCols;
-    if (remainder === 0) return tables;
-    const dummyCount = tableCols - remainder;
-    const dummies = Array.from({ length: dummyCount }, (_, i) => ({
-      id: `__dummy_table_${i}`,
-      label: "",
-      seats: 0,
-      __isDummy: true,
-    }));
-    return [...tables, ...dummies];
-  }, [tables, tableCols]);
-
   if (viewMode === "tables") {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>

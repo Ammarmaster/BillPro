@@ -1037,10 +1037,14 @@ export function convertThermalPayloadToEscPos(
       align = 0;
     } else if (clean.startsWith("[C]")) {
       align = 1;
-      formattedText = clean.replace("[C]", "").trim();
+      const rawText = clean.replace("[C]", "").trim();
+      const leftPad = Math.max(0, Math.floor((lineCols - rawText.length) / 2));
+      formattedText = " ".repeat(leftPad) + rawText;
     } else if (clean.startsWith("[R]")) {
       align = 2;
-      formattedText = clean.replace("[R]", "").trim();
+      const rawText = clean.replace("[R]", "").trim();
+      const leftPad = Math.max(0, lineCols - rawText.length);
+      formattedText = " ".repeat(leftPad) + rawText;
     } else if (clean.startsWith("[L]")) {
       align = 0;
       formattedText = clean.replace("[L]", "").trim();
