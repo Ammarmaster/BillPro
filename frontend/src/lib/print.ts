@@ -1309,26 +1309,15 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
       lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     }
 
-    // Centered restaurant name:
-    // If line capacity is exceeded, wrap cleanly to the next line at word boundaries,
-    // and ensure every line starts from the middle (is horizontally centered with [C]).
-    if (width === 58) {
-      // 58mm (2-inch): 32 columns total. Limit line length to 26 characters so text stays centered with clean margins.
-      const nameLines = wrapCenteredLines(restaurantName, 26);
-      nameLines.forEach(line => {
-        lines.push(`[C]<b><font size='tall'>${line}</font></b>\n`);
-      });
-    } else {
-      // 80mm (3-inch): 48 columns total.
-      if (restaurantName.length <= 20) {
-        lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
-      } else {
-        const nameLines = wrapCenteredLines(restaurantName, 36);
-        nameLines.forEach(line => {
-          lines.push(`[C]<b><font size='tall'>${line}</font></b>\n`);
-        });
-      }
-    }
+    // Centered restaurant name (exact same format and sizing as KOT takeaway header):
+    // On 58mm (2-inch, 16 double-size cols): wrap cleanly at 16 chars per line.
+    // On 80mm (3-inch, 24 double-size cols): wrap cleanly at 24 chars per line.
+    // Every line is pushed with [C]<b><font size='big'>${line}</font></b> so every line is identically centered across the full printable width.
+    const maxNameCols = width === 58 ? 16 : 24;
+    const nameLines = wrapCenteredLines(restaurantName, maxNameCols);
+    nameLines.forEach(line => {
+      lines.push(`[C]<b><font size='big'>${line}</font></b>\n`);
+    });
 
     if (r.address) {
       const cleanAddr = String(r.address).replace(/\s+/g, " ").trim();
@@ -2162,7 +2151,7 @@ export function billHtml(bill: any): string {
       .center { text-align: center; }
       .l { text-align: left; }
       .r { text-align: right; }
-      h1 { font-size: 15px; margin: 2px 0; text-transform: uppercase; font-weight: 900; text-align: center; letter-spacing: 0.5px; }
+      .title { font-size: 17px; margin: 2px 0 4px; text-transform: uppercase; font-weight: 900; text-align: center; letter-spacing: 0.5px; }
       p.sub { font-size: 10.5px; color: #444; margin: 1px 0; text-align: center; }
       hr { border: none; border-top: 1px dashed #777; margin: 4px 0; }
       .meta { display: flex; justify-content: space-between; font-size: 11px; color: #333; margin: 2px 0; }
@@ -2175,7 +2164,7 @@ export function billHtml(bill: any): string {
       .footer { text-align: center; margin-top: 5px; font-size: 10px; color: #666; font-weight: 600; }
     </style></head><body>
       ${logoBlock}
-      <h1>${escapeHtml(r.name || "Master Chef")}</h1>
+      <div class="center title">${escapeHtml(r.name || "Master Chef")}</div>
       ${r.address ? `<p class="sub">${escapeHtml(r.address)}</p>` : ""}
       ${phone ? `<p class="sub">Ph: ${escapeHtml(phone)}${gst ? ` | GST: ${escapeHtml(gst)}` : ""}</p>` : (gst ? `<p class="sub">GSTIN: ${escapeHtml(gst)}</p>` : "")}
       <hr />
