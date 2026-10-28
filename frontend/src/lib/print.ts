@@ -1049,7 +1049,10 @@ export function convertThermalPayloadToEscPos(
       formattedText = cleanText;
     }
 
-    // 1. Font size: GS ! n (MUST be sent before ESC a or text)
+    // 1. Alignment: ESC a n (MUST be sent at the beginning of the line buffer in standard ESC/POS)
+    bytes.push(0x1B, 0x61, align);
+
+    // 2. Font size: GS ! n
     if (isDoubleSize) {
       bytes.push(0x1D, 0x21, 0x11);
     } else if (isTall) {
@@ -1058,12 +1061,9 @@ export function convertThermalPayloadToEscPos(
       bytes.push(0x1D, 0x21, 0x00);
     }
 
-    // 2. Bold / Emphasized: ESC E n
+    // 3. Bold / Emphasized: ESC E n
     const shouldEmphasize = isBold || darkness === "extra_dark" || darkness === "dark";
     bytes.push(0x1B, 0x45, shouldEmphasize ? 0x01 : 0x00);
-
-    // 3. Alignment: ESC a n
-    bytes.push(0x1B, 0x61, align);
 
     // 4. Output text bytes
     const textEncoded = encodeUtf8(formattedText);
@@ -1186,6 +1186,49 @@ export function getBillLogo(snapshot?: any, width: number = 80): string | null {
   return null;
 }
 
+// Helper to wrap text cleanly at word boundaries so that wrapped lines are all independently centered
+export function wrapCenteredLines(text: string, maxLineChars: number): string[] {
+  const clean = (text || "").trim();
+  if (!clean) return [];
+  if (clean.length <= maxLineChars) return [clean];
+  const words = clean.split(/\s+/);
+  const result: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (!currentLine) {
+      if (word.length <= maxLineChars) {
+        currentLine = word;
+      } else {
+        let rem = word;
+        while (rem.length > maxLineChars) {
+          result.push(rem.slice(0, maxLineChars));
+          rem = rem.slice(maxLineChars);
+        }
+        currentLine = rem;
+      }
+    } else {
+      if ((currentLine + " " + word).length <= maxLineChars) {
+        currentLine = currentLine + " " + word;
+      } else {
+        result.push(currentLine);
+        if (word.length <= maxLineChars) {
+          currentLine = word;
+        } else {
+          let rem = word;
+          while (rem.length > maxLineChars) {
+            result.push(rem.slice(0, maxLineChars));
+            rem = rem.slice(maxLineChars);
+          }
+          currentLine = rem;
+        }
+      }
+    }
+  }
+  if (currentLine) result.push(currentLine);
+  return result;
+}
+
 export function formatCurrency(val: number): string {
   if (val % 1 === 0) {
     return `₹${Math.round(val).toLocaleString('en-IN')}`;
@@ -1266,50 +1309,33 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
       lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     }
 
-    // Centered restaurant name (never split words):
-    // For 58mm: if <= 16 chars, use tall font. If <= 30 chars (e.g. "MASTER CHEF RESTAURANT", 22 chars), use bold normal font so it fits on 1 single line without wrapping.
-    // If > 30 chars, wrap cleanly at word boundaries.
+    // Centered restaurant name:
+    // If line capacity is exceeded, wrap cleanly to the next line at word boundaries,
+    // and ensure every line starts from the middle (is horizontally centered with [C]).
     if (width === 58) {
-      if (restaurantName.length <= 16) {
-        lines.push(`[C]<b><font size='tall'>${restaurantName}</font></b>\n`);
-      } else if (restaurantName.length <= 30) {
-        lines.push(`[C]<b>${restaurantName}</b>\n`);
-      } else {
-        const words = restaurantName.split(/\s+/);
-        let l1 = "";
-        let l2 = "";
-        for (const w of words) {
-          if (!l1 || (l1 + " " + w).length <= 30) {
-            l1 = l1 ? `${l1} ${w}` : w;
-          } else {
-            l2 = l2 ? `${l2} ${w}` : w;
-          }
-        }
-        lines.push(`[C]<b>${l1}</b>\n`);
-        if (l2) lines.push(`[C]<b>${l2}</b>\n`);
-      }
+      // 58mm (2-inch): 32 columns total. Limit line length to 26 characters so text stays centered with clean margins.
+      const nameLines = wrapCenteredLines(restaurantName, 26);
+      nameLines.forEach(line => {
+        lines.push(`[C]<b><font size='tall'>${line}</font></b>\n`);
+      });
     } else {
-      lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
+      // 80mm (3-inch): 48 columns total.
+      if (restaurantName.length <= 20) {
+        lines.push(`[C]<b><font size='big'>${restaurantName}</font></b>\n`);
+      } else {
+        const nameLines = wrapCenteredLines(restaurantName, 36);
+        nameLines.forEach(line => {
+          lines.push(`[C]<b><font size='tall'>${line}</font></b>\n`);
+        });
+      }
     }
 
     if (r.address) {
       const cleanAddr = String(r.address).replace(/\s+/g, " ").trim();
-      if (cleanAddr.length <= maxChars) {
-        lines.push(`[C]${cleanAddr}\n`);
-      } else {
-        const words = cleanAddr.split(" ");
-        let l1 = "";
-        let l2 = "";
-        for (const w of words) {
-          if ((l1 + " " + w).trim().length <= maxChars && !l2) {
-            l1 = (l1 + " " + w).trim();
-          } else if ((l2 + " " + w).trim().length <= maxChars) {
-            l2 = (l2 + " " + w).trim();
-          }
-        }
-        if (l1) lines.push(`[C]${l1}\n`);
-        if (l2) lines.push(`[C]${l2}\n`);
-      }
+      const addrLines = wrapCenteredLines(cleanAddr, maxChars - 2);
+      addrLines.forEach(line => {
+        lines.push(`[C]${line}\n`);
+      });
     }
 
     const phone1 = (r.phone || "").trim();
