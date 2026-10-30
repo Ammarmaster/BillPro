@@ -933,6 +933,114 @@ export function generateEscPosRasterQr(text: string, paperWidth: 58 | 80 = 58): 
   }
 }
 
+export async function convertBase64ToEscPosRaster(
+  base64Data: string,
+  paperWidth: number = 58
+): Promise<number[]> {
+  if (!base64Data || typeof base64Data !== "string") return [];
+  const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/i, "").trim();
+  if (cleanBase64.length < 20) return [];
+
+  if (typeof Image === "undefined" || typeof document === "undefined") {
+    return [];
+  }
+
+  try {
+    let mime = "image/png";
+    if (cleanBase64.startsWith("/9j/")) mime = "image/jpeg";
+    else if (cleanBase64.startsWith("R0lGOD")) mime = "image/gif";
+    else if (cleanBase64.startsWith("UklGR")) mime = "image/webp";
+
+    const dataUri = `data:${mime};base64,${cleanBase64}`;
+    const img = new Image();
+
+    const loaded = new Promise<boolean>((resolve) => {
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+    });
+
+    img.src = dataUri;
+    if (!img.complete || !img.naturalWidth) {
+      const ok = await loaded;
+      if (!ok) return [];
+    }
+
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w <= 0 || h <= 0) return [];
+
+    const totalPaperDots = paperWidth === 58 ? 384 : 576;
+    // Accurate sizing matching System Print proportions (max-height: 56px, max-width: 120px):
+    // 58mm (384 dots): max width 160 dots (~42% of width), max height 80 dots
+    // 80mm (576 dots): max width 240 dots (~42% of width), max height 110 dots
+    const maxTargetWidth = paperWidth === 58 ? 160 : 240;
+    const maxTargetHeight = paperWidth === 58 ? 80 : 110;
+
+    const scale = Math.min(maxTargetWidth / w, maxTargetHeight / h);
+    const targetWidth = Math.max(16, Math.floor(w * scale));
+    const targetHeight = Math.max(16, Math.floor(h * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return [];
+
+    // Fill white background for transparent PNGs
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+    const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+    const data = imgData.data;
+
+    // Raster bitmap across full paper width with centered left offset
+    const bytesPerRow = Math.floor(totalPaperDots / 8); // 48 bytes for 58mm, 72 bytes for 80mm
+    const leftOffsetDots = Math.max(0, Math.floor((totalPaperDots - targetWidth) / 2));
+    const totalRows = targetHeight;
+
+    const bytes: number[] = [];
+    // ESC/POS GS v 0 0 xL xH yL yH
+    const xL = bytesPerRow % 256;
+    const xH = Math.floor(bytesPerRow / 256);
+    const yL = totalRows % 256;
+    const yH = Math.floor(totalRows / 256);
+
+    bytes.push(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH);
+
+    for (let y = 0; y < totalRows; y++) {
+      const rowOffset = y * targetWidth * 4;
+      for (let byteIdx = 0; byteIdx < bytesPerRow; byteIdx++) {
+        let byteVal = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const dotX = byteIdx * 8 + bit;
+          const relX = dotX - leftOffsetDots;
+          if (relX >= 0 && relX < targetWidth) {
+            const pixelOffset = rowOffset + relX * 4;
+            const r = data[pixelOffset];
+            const g = data[pixelOffset + 1];
+            const b = data[pixelOffset + 2];
+            const a = data[pixelOffset + 3];
+
+            if (a > 64) {
+              const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+              if (luminance < 170) {
+                byteVal |= (1 << (7 - bit));
+              }
+            }
+          }
+        }
+        bytes.push(byteVal);
+      }
+    }
+
+    return bytes;
+  } catch (err) {
+    console.warn("[PRINT] Logo raster generation error:", err);
+    return [];
+  }
+}
+
 export function convertThermalPayloadToEscPos(
   payload: string,
   width: 58 | 80 = 58,
@@ -988,6 +1096,19 @@ export function convertThermalPayloadToEscPos(
       continue;
     }
 
+    // Check for raster image tag: <rasterimg>hexbytes</rasterimg>
+    const rasterMatch = rawLine.match(/<rasterimg>(.*?)<\/rasterimg>/i);
+    if (rasterMatch) {
+      const hex = (rasterMatch[1] || "").trim();
+      if (hex) {
+        for (let i = 0; i < hex.length; i += 2) {
+          bytes.push(parseInt(hex.substr(i, 2), 16));
+        }
+        bytes.push(0x0A);
+      }
+      continue;
+    }
+
     // Skip raw <img> tags in ESC/POS byte conversion so raw base64 text is never printed on paper
     if (rawLine.includes("<img>") || rawLine.includes("</img>")) {
       continue;
@@ -1013,7 +1134,6 @@ export function convertThermalPayloadToEscPos(
       .replace(/<b>/gi, "")
       .replace(/<\/b>/gi, "");
 
-    let align = 0; // 0: Left, 1: Center, 2: Right
     let formattedText = "";
 
     const lineCols = isDoubleSize ? Math.floor(maxChars / 2) : maxChars;
@@ -1025,32 +1145,31 @@ export function convertThermalPayloadToEscPos(
       const colC = (parts[1] || "").trim();
       const colR = (parts[2] || "").trim();
 
-      const leftCenter = colL + " ".repeat(Math.max(1, Math.floor((maxChars - colC.length) / 2) - colL.length)) + colC;
-      const spaces = Math.max(1, maxChars - leftCenter.length - colR.length);
+      const leftCenter = colL + " ".repeat(Math.max(1, Math.floor((lineCols - colC.length) / 2) - colL.length)) + colC;
+      const spaces = Math.max(1, lineCols - leftCenter.length - colR.length);
       formattedText = leftCenter + " ".repeat(spaces) + colR;
-      align = 0;
     } else if (cleanText.includes("[L]") && cleanText.includes("[R]")) {
       const parts = cleanText.split(/\[L\]|\[R\]/).filter(p => p !== "");
       const colL = (parts[0] || "").trim();
       const colR = (parts[1] || "").trim();
-      const spaces = Math.max(1, maxChars - colL.length - colR.length);
+      const spaces = Math.max(1, lineCols - colL.length - colR.length);
       formattedText = colL + " ".repeat(spaces) + colR;
-      align = 0;
     } else if (cleanText.startsWith("[C]")) {
-      align = 1;
-      formattedText = cleanText.replace("[C]", "").trim();
+      const rawText = cleanText.slice(3).trim();
+      const leftPad = Math.max(0, Math.floor((lineCols - rawText.length) / 2));
+      formattedText = " ".repeat(leftPad) + rawText;
     } else if (cleanText.startsWith("[R]")) {
-      align = 2;
-      formattedText = cleanText.replace("[R]", "").trim();
+      const rawText = cleanText.slice(3).trim();
+      const leftPad = Math.max(0, lineCols - rawText.length);
+      formattedText = " ".repeat(leftPad) + rawText;
     } else if (cleanText.startsWith("[L]")) {
-      align = 0;
-      formattedText = cleanText.replace("[L]", "").trim();
+      formattedText = cleanText.slice(3).trim();
     } else {
       formattedText = cleanText;
     }
 
-    // 1. Alignment: ESC a n (MUST be sent at the beginning of the line buffer in standard ESC/POS)
-    bytes.push(0x1B, 0x61, align);
+    // 1. Alignment: ESC a 0 (Always Left Align; software spaces guarantee exact centering on 100% of printers)
+    bytes.push(0x1B, 0x61, 0x00);
 
     // 2. Font size: GS ! n
     if (isDoubleSize) {
@@ -1070,11 +1189,7 @@ export function convertThermalPayloadToEscPos(
     for (const b of textEncoded) bytes.push(b);
     bytes.push(0x0A);
 
-    // 5. Reset line alignment back to left immediately after line feed
-    if (align !== 0) {
-      bytes.push(0x1B, 0x61, 0x00);
-    }
-    // 6. Reset font size back to normal
+    // 5. Reset font size back to normal
     if (isDoubleSize || isTall) {
       bytes.push(0x1D, 0x21, 0x00);
     }
@@ -1306,7 +1421,19 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
     // 1. Print restaurant icon / logo if uploaded by restaurant owner
     const logoBase64 = getBillLogo(r, width);
     if (logoBase64) {
-      lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
+      if (Platform.OS === "web") {
+        try {
+          const rasterBytes = await convertBase64ToEscPosRaster(logoBase64, width === 80 ? 80 : 58);
+          if (rasterBytes && rasterBytes.length > 0) {
+            const hex = rasterBytes.map(b => b.toString(16).padStart(2, "0")).join("");
+            lines.push(`<rasterimg>${hex}</rasterimg>\n`);
+          }
+        } catch (logoErr) {
+          console.warn("[PRINT] Raster logo generation error:", logoErr);
+        }
+      } else {
+        lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
+      }
     }
 
     // Centered restaurant name:
@@ -1953,6 +2080,8 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           payload,
           ip: (settings.address || "").trim(),
           port: parseInt(settings.port || "9100"),
+          printerWidthMM: effectiveWidth === 58 ? 48 : 72,
+          printerNbrCharactersPerLine: effectiveWidth === 80 ? 48 : 32,
           autoCut: shouldCut,
           mmFeedPaper: mmFeed,
         });
@@ -1988,7 +2117,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           await ThermalPrinterModule.printBluetooth({
             payload,
             macAddress: targetMac,
-            printerWidthMM: effectiveWidth,
+            printerWidthMM: effectiveWidth === 58 ? 48 : 72,
             printerNbrCharactersPerLine: effectiveWidth === 80 ? 48 : 32,
             mmFeedPaper: mmFeed,
             autoCut: shouldCut,
@@ -1999,7 +2128,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
             await ThermalPrinterModule.printBluetooth({
               payload,
               macAddress: "",
-              printerWidthMM: effectiveWidth,
+              printerWidthMM: effectiveWidth === 58 ? 48 : 72,
               printerNbrCharactersPerLine: effectiveWidth === 80 ? 48 : 32,
               mmFeedPaper: mmFeed,
               autoCut: shouldCut,
@@ -2510,6 +2639,8 @@ export async function printClosingReport(session: any, restaurant?: any): Promis
             payload,
             ip: (settings.address || "").trim(),
             port: parseInt(settings.port || "9100"),
+            printerWidthMM: (settings.width || 58) === 58 ? 48 : 72,
+            printerNbrCharactersPerLine: (settings.width || 58) === 80 ? 48 : 32,
             autoCut: true,
             mmFeedPaper: 15,
           });
@@ -2518,8 +2649,8 @@ export async function printClosingReport(session: any, restaurant?: any): Promis
           await ThermalPrinterModule.printBluetooth({
             payload,
             macAddress: (settings.address || "").trim(),
-            printerWidthMM: settings.width || 58,
-            printerNbrCharactersPerLine: settings.width === 80 ? 48 : 32,
+            printerWidthMM: (settings.width || 58) === 58 ? 48 : 72,
+            printerNbrCharactersPerLine: (settings.width || 58) === 80 ? 48 : 32,
             mmFeedPaper: 15,
           });
           return true;
