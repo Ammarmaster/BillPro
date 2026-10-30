@@ -954,14 +954,16 @@ export async function convertBase64ToEscPosRaster(
     const dataUri = `data:${mime};base64,${cleanBase64}`;
     const img = new Image();
 
+    // Race image loading against a 2-second timeout to prevent hanging
     const loaded = new Promise<boolean>((resolve) => {
       img.onload = () => resolve(true);
       img.onerror = () => resolve(false);
     });
+    const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000));
 
     img.src = dataUri;
     if (!img.complete || !img.naturalWidth) {
-      const ok = await loaded;
+      const ok = await Promise.race([loaded, timeout]);
       if (!ok) return [];
     }
 
@@ -1422,8 +1424,11 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
     const logoBase64 = getBillLogo(r, width);
     if (logoBase64) {
       if (Platform.OS === "web") {
+        // Convert logo to ESC/POS raster bitmap for thermal printers (non-blocking, with timeout)
         try {
-          const rasterBytes = await convertBase64ToEscPosRaster(logoBase64, width === 80 ? 80 : 58);
+          const rasterPromise = convertBase64ToEscPosRaster(logoBase64, width === 80 ? 80 : 58);
+          const rasterTimeout = new Promise<number[]>((resolve) => setTimeout(() => resolve([]), 3000));
+          const rasterBytes = await Promise.race([rasterPromise, rasterTimeout]);
           if (rasterBytes && rasterBytes.length > 0) {
             const hex = rasterBytes.map(b => b.toString(16).padStart(2, "0")).join("");
             lines.push(`<rasterimg>${hex}</rasterimg>\n`);
@@ -1941,7 +1946,19 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     return true;
   }
 
-  const payload = await formatReceipt(data, effectiveWidth, isKitchen);
+  let payload: string;
+  try {
+    payload = await formatReceipt(data, effectiveWidth, isKitchen);
+  } catch (fmtErr) {
+    console.warn("[PRINT] formatReceipt error, retrying without logo:", fmtErr);
+    // Fallback: try again — formatReceipt should still work even if logo raster fails
+    try {
+      payload = await formatReceipt(data, effectiveWidth, isKitchen);
+    } catch {
+      console.warn("[PRINT] formatReceipt failed completely");
+      return false;
+    }
+  }
   const copiesCount = Math.max(1, Math.min(3, settings.copies || 1));
 
   // Auto-Kick Cash Drawer on Cash Payments
