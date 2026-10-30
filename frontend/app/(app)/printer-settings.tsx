@@ -70,6 +70,7 @@ export default function PrinterSettingsScreen() {
   const [kitchenAutoCut, setKitchenAutoCut] = useState(false);
   const [kitchenCopies, setKitchenCopies] = useState<number>(1);
   const [kitchenDarkness, setKitchenDarkness] = useState<"normal" | "dark" | "extra_dark">("extra_dark");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     const unsubCashier = subscribePrinterStatus("cashier", s => setCashierConnStatus(s));
@@ -657,7 +658,181 @@ export default function PrinterSettingsScreen() {
           </View>
         </View>
 
-        {/* Brand & Model 1-Click Presets */}
+        {/* 1. DISCOVERED & QUICK CONNECT PRINTERS (BLUETOOTH, LAN/WI-FI, USB) */}
+        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <View style={styles.scanHeader}>
+            <View style={{ flex: 1, paddingRight: 6 }}>
+              <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>
+                DISCOVERED & QUICK CONNECT
+              </Text>
+              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>
+                1-Tap Auto Connect Bluetooth, USB & LAN Network Printers
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <Pressable
+                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}
+                onPress={handleScan}
+                disabled={scanning}
+              >
+                {scanning ? (
+                  <ActivityIndicator size="small" color="#635BFF" />
+                ) : (
+                  <>
+                    <Ionicons name="bluetooth" size={14} color="#635BFF" />
+                    <Text style={[styles.scanBtnText, { color: "#635BFF" }]}>Scan BT/USB</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0" }]}
+                onPress={handleSubnetScan}
+                disabled={scanningSubnet}
+              >
+                {scanningSubnet ? (
+                  <ActivityIndicator size="small" color="#10B981" />
+                ) : (
+                  <>
+                    <Ionicons name="wifi-outline" size={14} color="#10B981" />
+                    <Text style={[styles.scanBtnText, { color: "#10B981" }]}>Scan LAN</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Web Quick Pair Shortcuts */}
+          {Platform.OS === "web" && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 140,
+                  backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                  borderColor: isDark ? "#635BFF" : "#C7D2FE",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={() => handleConnectDevice({ name: "Direct USB Thermal Printer", address: "web-usb-pair", type: "usb" })}
+              >
+                <Ionicons name="hardware-chip-outline" size={18} color="#635BFF" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#635BFF" }}>Direct USB</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>Plug & Play (Raw)</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 140,
+                  backgroundColor: isDark ? "rgba(59,130,246,0.15)" : "#EFF6FF",
+                  borderColor: isDark ? "#3B82F6" : "#BFDBFE",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={() => handleConnectDevice({ name: "Web Bluetooth Printer", address: "web-bluetooth-pair", type: "bluetooth" })}
+              >
+                <Ionicons name="bluetooth-outline" size={18} color="#3B82F6" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#3B82F6" }}>Pair Bluetooth</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>Wireless (No Driver)</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 140,
+                  backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5",
+                  borderColor: isDark ? "#10B981" : "#A7F3D0",
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={() => handleConnectDevice({ name: "Windows Serial COM Port", address: "web-serial-pair", type: "usb" })}
+              >
+                <Ionicons name="flash-outline" size={18} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#10B981" }}>Windows COM</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>CH340 / USB-Serial</Text>
+                </View>
+              </Pressable>
+            </View>
+          )}
+
+          {scanning && (
+            <View style={{ paddingVertical: 18, alignItems: "center", gap: 8 }}>
+              <ActivityIndicator size="small" color="#635BFF" />
+              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>
+                Searching Bluetooth, USB & LAN networks...
+              </Text>
+            </View>
+          )}
+
+          {!scanning && devices.length > 0 ? (
+            devices.map((dev, i) => {
+              const isCurrent = (dev.address && currentAddress && dev.address.toLowerCase() === currentAddress.toLowerCase());
+              const isConnecting = connectingAddress === dev.address;
+
+              return (
+                <Pressable
+                  key={i}
+                  style={[
+                    styles.deviceRow,
+                    { 
+                      backgroundColor: isCurrent ? (isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF") : theme.surface,
+                      borderColor: isCurrent ? "#635BFF" : theme.border 
+                    }
+                  ]}
+                  onPress={() => handleConnectDevice(dev)}
+                >
+                  <View style={[styles.deviceIconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
+                    <Ionicons
+                      name={dev.type === "network" ? "wifi-outline" : (dev.type === "usb" ? "git-network-outline" : (dev.type === "sunmi" ? "phone-portrait-outline" : "bluetooth-outline"))}
+                      size={20}
+                      color="#635BFF"
+                    />
+                  </View>
+                  <View style={{ marginLeft: 12, flex: 1, minWidth: 0, paddingRight: 6 }}>
+                    <Text style={[styles.deviceName, { color: theme.onSurface }]} numberOfLines={1}>{dev.name}</Text>
+                    <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+                      {dev.type.toUpperCase()} • {dev.address} {dev.brand ? `• ${dev.brand}` : ""}
+                    </Text>
+                  </View>
+                  <View style={[styles.useTag, { backgroundColor: isCurrent ? "#10B981" : "#635BFF" }]}>
+                    {isConnecting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.useTagText}>{isCurrent ? "✓ Active" : "Connect"}</Text>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })
+          ) : !scanning ? (
+            <Text style={[styles.noDeviceText, { color: theme.onSurfaceSecondary }]}>
+              Tap "Scan BT/USB" or "Scan LAN" to discover and auto-pair your printer.
+            </Text>
+          ) : null}
+        </View>
+
+        {/* 2. Popular Brand & Model 1-Click Presets */}
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <Text style={[styles.sectionTitle, { color: "#635BFF" }]}>
             POPULAR PRINTER PRESETS (1-TAP AUTO SETUP)
@@ -697,43 +872,56 @@ export default function PrinterSettingsScreen() {
           </ScrollView>
         </View>
 
-        {/* Form Card Settings */}
+        {/* 3. Advanced Manual Hardware & Print Fine-Tuning */}
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-          <Text style={[styles.sectionTitle, { color: "#635BFF" }]}>
-            {activeTab === "cashier" ? "CASHIER BILLING PRINTER SETTINGS" : "KITCHEN KOT PRINTER SETTINGS"}
-          </Text>
-
-          {/* Connection Type Interface Selector */}
-          <View style={styles.field}>
-            <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer Hardware Interface</Text>
-            <View style={styles.selectorGrid}>
-              {([
-                { id: "bluetooth", label: "Bluetooth", icon: "bluetooth" },
-                { id: "network", label: "Wi-Fi / LAN", icon: "wifi" },
-                { id: "usb", label: "USB Cable", icon: "git-network" },
-                { id: "sunmi", label: "Sunmi POS", icon: "phone-portrait" },
-                { id: "system", label: "System Spooler", icon: "desktop" },
-                { id: "none", label: "Disabled", icon: "close-circle" }
-              ] as const).map(t => {
-                const isSel = (activeTab === "cashier" ? cashierType : kitchenType) === t.id;
-                return (
-                  <Pressable
-                    key={t.id}
-                    style={[
-                      styles.selectorGridBtn,
-                      { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
-                    ]}
-                    onPress={() => activeTab === "cashier" ? setCashierType(t.id) : setKitchenType(t.id)}
-                  >
-                    <Ionicons name={t.icon as any} size={16} color={isSel ? "#FFFFFF" : theme.onSurfaceSecondary} />
-                    <Text style={[styles.selectorBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-                      {t.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+          <Pressable 
+            style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+            onPress={() => setShowAdvanced(!showAdvanced)}
+          >
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>
+                {activeTab === "cashier" ? "ADVANCED MANUAL SETTINGS" : "KITCHEN ADVANCED SETTINGS"}
+              </Text>
+              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>
+                {showAdvanced ? "Tap to collapse manual configuration" : "Tap to adjust paper width, darkness, drawer kick & IP"}
+              </Text>
             </View>
-          </View>
+            <Ionicons name={showAdvanced ? "chevron-up-circle" : "chevron-down-circle"} size={22} color="#635BFF" />
+          </Pressable>
+
+          {showAdvanced && (
+            <View style={{ marginTop: 14 }}>
+              {/* Connection Type Interface Selector */}
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Printer Hardware Interface</Text>
+                <View style={styles.selectorGrid}>
+                  {([
+                    { id: "bluetooth", label: "Bluetooth", icon: "bluetooth" },
+                    { id: "network", label: "Wi-Fi / LAN", icon: "wifi" },
+                    { id: "usb", label: "USB Cable", icon: "git-network" },
+                    { id: "sunmi", label: "Sunmi POS", icon: "phone-portrait" },
+                    { id: "system", label: "System Spooler", icon: "desktop" },
+                    { id: "none", label: "Disabled", icon: "close-circle" }
+                  ] as const).map(t => {
+                    const isSel = (activeTab === "cashier" ? cashierType : kitchenType) === t.id;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        style={[
+                          styles.selectorGridBtn,
+                          { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
+                        ]}
+                        onPress={() => activeTab === "cashier" ? setCashierType(t.id) : setKitchenType(t.id)}
+                      >
+                        <Ionicons name={t.icon as any} size={16} color={isSel ? "#FFFFFF" : theme.onSurfaceSecondary} />
+                        <Text style={[styles.selectorBtnText, { color: isSel ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
+                          {t.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
 
           {/* Network IP or Bluetooth MAC or USB input */}
           {(activeTab === "cashier" ? cashierType : kitchenType) === "network" ? (
@@ -1064,206 +1252,9 @@ export default function PrinterSettingsScreen() {
               })}
             </View>
           </View>
-        </View>
-
-        {/* Web Quick Connect Buttons & Windows Driver Troubleshooting Guide */}
-        {Platform.OS === "web" && (
-          <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, marginBottom: 16 }]}>
-            <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>QUICK CONNECT (BROWSER)</Text>
-            <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11, marginBottom: 12 }]}>
-              Connect directly via USB Cable, Windows Serial, or Bluetooth:
-            </Text>
-
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 150,
-                  backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
-                  borderColor: isDark ? "#635BFF" : "#C7D2FE",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={() => handleConnectDevice({ name: "Direct USB Thermal Printer", address: "web-usb-pair", type: "usb" })}
-              >
-                <Ionicons name="hardware-chip-outline" size={20} color="#635BFF" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#635BFF" }}>Direct USB Cable</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>WebUSB (No COM)</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 150,
-                  backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5",
-                  borderColor: isDark ? "#10B981" : "#A7F3D0",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={() => handleConnectDevice({ name: "Windows Serial COM Port", address: "web-serial-pair", type: "usb" })}
-              >
-                <Ionicons name="flash-outline" size={20} color="#10B981" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#10B981" }}>Windows COM Port</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>CH340 / USB-Serial</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 150,
-                  backgroundColor: isDark ? "rgba(59,130,246,0.15)" : "#EFF6FF",
-                  borderColor: isDark ? "#3B82F6" : "#BFDBFE",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={() => handleConnectDevice({ name: "Web Bluetooth Printer", address: "web-bluetooth-pair", type: "bluetooth" })}
-              >
-                <Ionicons name="bluetooth-outline" size={20} color="#3B82F6" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#3B82F6" }}>Pair Bluetooth</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>Wireless BLE / SPP</Text>
-                </View>
-              </Pressable>
-            </View>
-
-            {/* In-App Windows Driver & Connection Guide */}
-            <View style={{ backgroundColor: isDark ? "rgba(245,158,11,0.08)" : "#FFFBEB", borderColor: isDark ? "rgba(245,158,11,0.25)" : "#FDE68A", borderWidth: 1, borderRadius: 12, padding: 12 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <Ionicons name="information-circle" size={18} color="#D97706" />
-                <Text style={{ fontSize: 12, fontWeight: "800", color: "#D97706" }}>Windows USB-C Cable & Driver Troubleshooting</Text>
-              </View>
-              <Text style={{ fontSize: 11, color: theme.onSurface, lineHeight: 16, marginBottom: 6 }}>
-                If Chrome says <Text style={{ fontWeight: "700" }}>"No compatible devices found"</Text> when connecting your mobile printer via USB-C cable:
-              </Text>
-              <View style={{ gap: 4 }}>
-                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
-                  1. <Text style={{ fontWeight: "700", color: "#635BFF" }}>Try Direct USB Cable:</Text> Tap the <Text style={{ fontWeight: "700", color: "#635BFF" }}>"Direct USB Cable"</Text> button above. It looks for raw USB printer devices without requiring a Windows COM port.
-                </Text>
-                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
-                  2. <Text style={{ fontWeight: "700", color: "#10B981" }}>Windows CH340 Driver:</Text> Portable printers (MPT-II, PT-210) use an internal CH340 USB-Serial chip. Windows needs the standard free <Text style={{ fontWeight: "700", color: "#10B981" }}>CH340 Driver</Text> to assign a COM port (e.g. COM3). Once installed, it appears immediately under <Text style={{ fontWeight: "700" }}>Windows COM Port</Text>.
-                </Text>
-                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
-                  3. <Text style={{ fontWeight: "700", color: "#3B82F6" }}>Wireless Bluetooth (Easiest & Recommended):</Text> Your portable printer has Bluetooth built-in! Turn on Bluetooth on your laptop, pair with <Text style={{ fontWeight: "700" }}>MPT-II</Text> (PIN: 0000 or 1234), and tap <Text style={{ fontWeight: "700", color: "#3B82F6" }}>"Pair Bluetooth"</Text> — works 100% wireless with no drivers or cables required!
-                </Text>
-              </View>
-            </View>
           </View>
         )}
-
-        {/* Nearby Discovery Scanner Section */}
-        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-          <View style={styles.scanHeader}>
-            <View>
-              <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>DISCOVERED PRINTERS</Text>
-              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>Bluetooth, USB & LAN Network Devices</Text>
-            </View>
-            <View style={{ flexDirection: "row", gap: 6 }}>
-              <Pressable
-                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}
-                onPress={handleScan}
-                disabled={scanning}
-              >
-                {scanning ? (
-                  <ActivityIndicator size="small" color="#635BFF" />
-                ) : (
-                  <>
-                    <Ionicons name="refresh-outline" size={14} color="#635BFF" />
-                    <Text style={[styles.scanBtnText, { color: "#635BFF" }]}>Scan All</Text>
-                  </>
-                )}
-              </Pressable>
-
-              <Pressable
-                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0" }]}
-                onPress={handleSubnetScan}
-                disabled={scanningSubnet}
-              >
-                {scanningSubnet ? (
-                  <ActivityIndicator size="small" color="#10B981" />
-                ) : (
-                  <>
-                    <Ionicons name="wifi-outline" size={14} color="#10B981" />
-                    <Text style={[styles.scanBtnText, { color: "#10B981" }]}>Scan LAN</Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
-          </View>
-
-          {scanning && (
-            <View style={{ paddingVertical: 20, alignItems: "center", gap: 8 }}>
-              <ActivityIndicator size="small" color="#635BFF" />
-              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>
-                Searching across Bluetooth, USB & Wi-Fi networks...
-              </Text>
-            </View>
-          )}
-
-          {!scanning && devices.length > 0 ? (
-            devices.map((dev, i) => {
-              const isCurrent = (dev.address && currentAddress && dev.address.toLowerCase() === currentAddress.toLowerCase());
-              const isConnecting = connectingAddress === dev.address;
-
-              return (
-                <Pressable
-                  key={i}
-                  style={[
-                    styles.deviceRow,
-                    { 
-                      backgroundColor: isCurrent ? (isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF") : theme.surface,
-                      borderColor: isCurrent ? "#635BFF" : theme.border 
-                    }
-                  ]}
-                  onPress={() => handleConnectDevice(dev)}
-                >
-                  <View style={[styles.deviceIconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
-                    <Ionicons
-                      name={dev.type === "network" ? "wifi-outline" : (dev.type === "usb" ? "git-network-outline" : (dev.type === "sunmi" ? "phone-portrait-outline" : "bluetooth-outline"))}
-                      size={20}
-                      color="#635BFF"
-                    />
-                  </View>
-                  <View style={{ marginLeft: 12, flex: 1, minWidth: 0, paddingRight: 6 }}>
-                    <Text style={[styles.deviceName, { color: theme.onSurface }]} numberOfLines={1}>{dev.name}</Text>
-                    <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
-                      {dev.type.toUpperCase()} • {dev.address} {dev.brand ? `• ${dev.brand}` : ""}
-                    </Text>
-                  </View>
-                  <View style={[styles.useTag, { backgroundColor: isCurrent ? "#10B981" : "#635BFF" }]}>
-                    {isConnecting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.useTagText}>{isCurrent ? "Connected" : "Connect"}</Text>
-                    )}
-                  </View>
-                </Pressable>
-              );
-            })
-          ) : !scanning ? (
-            <Text style={[styles.noDeviceText, { color: theme.onSurfaceSecondary }]}>
-              No paired thermal printers detected. Tap "Scan All" to search Bluetooth, USB & LAN.
-            </Text>
-          ) : null}
-        </View>
+      </View>
 
         {/* Bottom Save & Action Buttons */}
         <View style={styles.actionsRow}>

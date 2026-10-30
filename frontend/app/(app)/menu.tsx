@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, Modal,
-  ActivityIndicator, FlatList,
+  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import Animated, { FadeInUp } from "react-native-reanimated";
@@ -251,43 +251,61 @@ export default function MenuScreen() {
         {err && <Text style={styles.err} testID="menu-error">{err}</Text>}
 
         <Modal transparent visible={catModal} animationType="slide" onRequestClose={() => setCatModal(false)}>
-          <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
-            <View style={[
-              styles.modalCard, 
-              { 
-                paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
-                width: isDesktop ? 460 : "100%",
-                borderRadius: isDesktop ? 20 : radius.lg,
-              }
-            ]}>
-              <Text style={styles.modalTitle}>New Category</Text>
-              <TextInput value={catName} onChangeText={setCatName} placeholder="e.g. Starters" placeholderTextColor={colors.onSurfaceTertiary} style={styles.input} testID="cat-name-input" />
-              <View style={styles.modalActions}>
-                <Pressable style={styles.ghostBtn} onPress={() => setCatModal(false)} testID="cat-cancel-btn">
-                  <Text style={styles.ghostBtnText}>Cancel</Text>
-                </Pressable>
-                <Pressable style={styles.primaryBtn} onPress={addCat} disabled={busy} testID="cat-save-btn">
-                  {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
-                </Pressable>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            style={{ flex: 1 }}
+          >
+            <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+              <View style={[
+                styles.modalCard, 
+                { 
+                  paddingBottom: isDesktop ? spacing.xl : Math.max(insets.bottom, 16) + spacing.xl,
+                  width: isDesktop ? 460 : "100%",
+                  borderRadius: isDesktop ? 20 : radius.lg,
+                }
+              ]}>
+                <Text style={styles.modalTitle}>New Category</Text>
+                <TextInput
+                  value={catName}
+                  onChangeText={setCatName}
+                  placeholder="e.g. Starters"
+                  placeholderTextColor={colors.onSurfaceTertiary}
+                  style={styles.input}
+                  testID="cat-name-input"
+                  autoFocus
+                />
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.ghostBtn} onPress={() => setCatModal(false)} testID="cat-cancel-btn">
+                    <Text style={styles.ghostBtnText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={styles.primaryBtn} onPress={addCat} disabled={busy} testID="cat-save-btn">
+                    {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
+                  </Pressable>
+                </View>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal transparent visible={itemModal} animationType="slide" onRequestClose={() => { setEditingItem(null); setItemModal(false); }}>
-          <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
-            <ScrollView 
-              contentContainerStyle={[
-                styles.modalCard, 
-                { 
-                  paddingBottom: isDesktop ? spacing.xl : insets.bottom + spacing.xl,
-                  width: isDesktop ? 520 : "100%",
-                  borderRadius: isDesktop ? 20 : radius.lg,
-                  alignSelf: isDesktop ? "center" : undefined,
-                }
-              ]}
-              style={isDesktop ? { maxHeight: "90%", width: 520, flexGrow: 0 } : undefined}
-            >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            style={{ flex: 1 }}
+          >
+            <View style={[styles.modalBg, isDesktop && { justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+              <ScrollView 
+                contentContainerStyle={[
+                  styles.modalCard, 
+                  { 
+                    paddingBottom: isDesktop ? spacing.xl : Math.max(insets.bottom, 16) + spacing.xl,
+                    width: isDesktop ? 520 : "100%",
+                    borderRadius: isDesktop ? 20 : radius.lg,
+                    alignSelf: isDesktop ? "center" : undefined,
+                  }
+                ]}
+                keyboardShouldPersistTaps="handled"
+                style={isDesktop ? { maxHeight: "90%", width: 520, flexGrow: 0 } : undefined}
+              >
               <Text style={styles.modalTitle}>{editingItem ? "Edit Menu Item" : "New Menu Item"}</Text>
 
               <Pressable style={styles.imgPickerRow} onPress={pickImg} testID="item-image-picker">
@@ -402,7 +420,8 @@ export default function MenuScreen() {
               </View>
             </ScrollView>
           </View>
-        </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
 
         {/* JSON Menu Import Modal */}
         <MenuJsonImportModal

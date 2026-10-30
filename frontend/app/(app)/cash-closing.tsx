@@ -319,7 +319,7 @@ export default function CashClosingScreen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       
       {/* App Header */}
-      <View style={[styles.header, { borderBottomColor: theme.border, backgroundColor: theme.surface }]}>
+      <View style={[styles.header, { borderBottomColor: theme.border, backgroundColor: theme.surface, paddingTop: Platform.OS === "android" ? Math.max(insets.top, (StatusBar.currentHeight || 0) + 6, 28) : Math.max(insets.top, 10) }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <Pressable
             onPress={() => router.back()}
