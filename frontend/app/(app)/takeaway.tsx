@@ -1,6 +1,7 @@
 import { useCallback, useState, useMemo, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, SafeAreaView, StatusBar, ScrollView,
+  Modal, KeyboardAvoidingView, Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
@@ -282,6 +283,51 @@ export default function TakeawayScreen() {
     });
   };
 
+  const setQty = (id: string, quantity: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (quantity <= 0) {
+      setCart(p => p.filter(l => l.menu_item_id !== id));
+      return;
+    }
+    setCart(prev => {
+      const idx = prev.findIndex(l => l.menu_item_id === id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], quantity };
+        return copy;
+      }
+      const itemObj = items.find(it => it.id === id);
+      if (itemObj) {
+        return [...prev, { menu_item_id: itemObj.id, name: itemObj.name, price: itemObj.price, quantity, notes: "" }];
+      }
+      return prev;
+    });
+  };
+
+  // Manual Quantity Modal State
+  const [qtyModalVisible, setQtyModalVisible] = useState(false);
+  const [qtyTarget, setQtyTarget] = useState<{ id: string; name: string } | null>(null);
+  const [qtyInput, setQtyInput] = useState("1");
+
+  const openQtyModal = (id: string, name: string, currentQty: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setQtyTarget({ id, name });
+    setQtyInput(currentQty > 0 ? String(currentQty) : "1");
+    setQtyModalVisible(true);
+  };
+
+  const applyManualQty = (overrideNum?: number) => {
+    if (!qtyTarget) return;
+    const num = overrideNum !== undefined ? overrideNum : parseInt(qtyInput.replace(/[^0-9]/g, ""), 10);
+    if (!isNaN(num) && num > 0) {
+      setQty(qtyTarget.id, num);
+    } else if (num === 0) {
+      setQty(qtyTarget.id, 0);
+    }
+    setQtyModalVisible(false);
+    setQtyTarget(null);
+  };
+
   const inc = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setCart(p => p.map(l => l.menu_item_id === id ? { ...l, quantity: l.quantity + 1 } : l));
@@ -491,6 +537,7 @@ export default function TakeawayScreen() {
               pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
             ]}
             onPress={() => add(item)}
+            onLongPress={() => openQtyModal(item.id, item.name, qty > 0 ? qty : 1)}
           >
             <Image
               source={menuItemImageSource(item)}
@@ -517,7 +564,15 @@ export default function TakeawayScreen() {
                 >
                   <Ionicons name="remove" size={14} color="#635BFF" />
                 </Pressable>
-                <Text style={styles.gridCounterText}>{qty}</Text>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    openQtyModal(item.id, item.name, qty);
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.gridCounterText}>{qty}</Text>
+                </Pressable>
                 <Pressable
                   onPress={(e) => {
                     e.stopPropagation();
@@ -547,6 +602,7 @@ export default function TakeawayScreen() {
           pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
         ]}
         onPress={() => add(item)}
+        onLongPress={() => openQtyModal(item.id, item.name, qty > 0 ? qty : 1)}
       >
         <View style={styles.itemLeftRow}>
           <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
@@ -564,7 +620,15 @@ export default function TakeawayScreen() {
             <Pressable onPress={() => dec(item.id)} style={styles.counterBtn} hitSlop={8}>
               <Ionicons name="remove" size={16} color="#635BFF" />
             </Pressable>
-            <Text style={styles.counterText}>{qty}</Text>
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                openQtyModal(item.id, item.name, qty);
+              }}
+              hitSlop={8}
+            >
+              <Text style={styles.counterText}>{qty}</Text>
+            </Pressable>
             <Pressable onPress={() => inc(item.id)} style={styles.counterBtn} hitSlop={8}>
               <Ionicons name="add" size={16} color="#635BFF" />
             </Pressable>
@@ -577,6 +641,119 @@ export default function TakeawayScreen() {
       </Pressable>
     );
   };
+
+  const renderQtyModal = () => (
+    <Modal
+      transparent
+      visible={qtyModalVisible}
+      animationType="fade"
+      onRequestClose={() => setQtyModalVisible(false)}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.qtyModalOverlay}
+      >
+        <Pressable style={styles.qtyModalBackdrop} onPress={() => setQtyModalVisible(false)} />
+        <View style={[styles.qtyModalCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          {/* Header */}
+          <View style={styles.qtyModalHeader}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[styles.qtyModalTitle, { color: theme.onSurface }]} numberOfLines={1}>
+                {qtyTarget?.name || "Item Quantity"}
+              </Text>
+              <Text style={[styles.qtyModalSub, { color: theme.onSurfaceSecondary }]}>
+                Type number with keyboard or pick quick amount
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setQtyModalVisible(false)}
+              style={[styles.qtyModalCloseBtn, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}
+              hitSlop={10}
+            >
+              <Ionicons name="close" size={20} color={theme.onSurface} />
+            </Pressable>
+          </View>
+
+          {/* Big Number Input Field */}
+          <View style={styles.qtyInputRow}>
+            <Pressable
+              onPress={() => {
+                const cur = parseInt(qtyInput || "0", 10);
+                if (cur > 1) setQtyInput(String(cur - 1));
+              }}
+              style={[styles.qtyStepBtn, { backgroundColor: isDark ? "#2A2A36" : "#F1F5F9" }]}
+            >
+              <Ionicons name="remove" size={24} color={theme.onSurface} />
+            </Pressable>
+
+            <TextInput
+              value={qtyInput}
+              onChangeText={(val) => setQtyInput(val.replace(/[^0-9]/g, ""))}
+              keyboardType="number-pad"
+              autoFocus
+              selectTextOnFocus
+              returnKeyType="done"
+              onSubmitEditing={() => applyManualQty()}
+              style={[
+                styles.qtyBigInput,
+                { backgroundColor: theme.surface, color: theme.onSurface, borderColor: "#635BFF" }
+              ]}
+              testID="manual-qty-input"
+            />
+
+            <Pressable
+              onPress={() => {
+                const cur = parseInt(qtyInput || "0", 10);
+                setQtyInput(String(cur + 1));
+              }}
+              style={[styles.qtyStepBtn, { backgroundColor: isDark ? "#2A2A36" : "#F1F5F9" }]}
+            >
+              <Ionicons name="add" size={24} color={theme.onSurface} />
+            </Pressable>
+          </View>
+
+          {/* Quick Presets */}
+          <Text style={[styles.qtyPresetLabel, { color: theme.onSurfaceSecondary }]}>QUICK PRESETS</Text>
+          <View style={styles.qtyPresetsRow}>
+            {[2, 5, 10, 15, 20, 50].map((preset) => (
+              <Pressable
+                key={preset}
+                style={[
+                  styles.qtyPresetBtn,
+                  { backgroundColor: isDark ? "#26294D" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }
+                ]}
+                onPress={() => setQtyInput(String(preset))}
+              >
+                <Text style={styles.qtyPresetBtnText}>{preset}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Actions */}
+          <View style={styles.qtyModalActions}>
+            <Pressable
+              style={[styles.qtyRemoveBtn, { backgroundColor: isDark ? "rgba(239,68,68,0.12)" : "#FEF2F2", borderColor: "#EF4444" }]}
+              onPress={() => applyManualQty(0)}
+            >
+              <Ionicons name="trash-outline" size={16} color="#EF4444" />
+              <Text style={{ color: "#EF4444", fontWeight: "700", fontSize: 13 }}>Remove</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.qtyConfirmBtn}
+              onPress={() => applyManualQty()}
+              testID="manual-qty-confirm-btn"
+            >
+              <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+              <Text style={styles.qtyConfirmBtnText}>
+                Set ({qtyInput || "0"})
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 
   // -------------------------------------------------------------
   // DESKTOP LAYOUT
@@ -740,7 +917,9 @@ export default function TakeawayScreen() {
                             <Pressable onPress={() => dec(item.menu_item_id)} style={styles.counterBtn} hitSlop={8}>
                               <Ionicons name="remove" size={14} color="#635BFF" />
                             </Pressable>
-                            <Text style={[styles.counterText, { fontSize: 13 }]}>{item.quantity}</Text>
+                            <Pressable onPress={() => openQtyModal(item.menu_item_id, item.name, item.quantity)} hitSlop={8}>
+                              <Text style={[styles.counterText, { fontSize: 13 }]}>{item.quantity}</Text>
+                            </Pressable>
                             <Pressable onPress={() => inc(item.menu_item_id)} style={styles.counterBtn} hitSlop={8}>
                               <Ionicons name="add" size={14} color="#635BFF" />
                             </Pressable>
@@ -791,6 +970,7 @@ export default function TakeawayScreen() {
             </View>
           )}
         </View>
+        {renderQtyModal()}
       </SafeAreaView>
     );
   }
@@ -956,6 +1136,7 @@ export default function TakeawayScreen() {
         )}
 
       </View>
+      {renderQtyModal()}
     </SafeAreaView>
   );
 }
@@ -1341,4 +1522,134 @@ const styles = StyleSheet.create({
   pillPrice: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },
   genBillPillBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FFFFFF", paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.pill },
   genBillPillText: { color: "#635BFF", fontSize: 15, fontWeight: "800" },
+
+  // Manual Quantity Modal Styles
+  qtyModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  qtyModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  qtyModalCard: {
+    width: "100%",
+    maxWidth: 380,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  qtyModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
+  },
+  qtyModalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  qtyModalSub: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: "500",
+  },
+  qtyModalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  qtyStepBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyBigInput: {
+    width: 120,
+    height: 56,
+    borderRadius: radius.lg,
+    borderWidth: 2,
+    fontSize: 28,
+    fontWeight: "900",
+    textAlign: "center",
+    paddingVertical: 0,
+  },
+  qtyPresetLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  qtyPresetsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: spacing.xl,
+  },
+  qtyPresetBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyPresetBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#635BFF",
+  },
+  qtyModalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  qtyRemoveBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+  },
+  qtyConfirmBtn: {
+    flex: 1.6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#635BFF",
+    paddingVertical: 14,
+    borderRadius: radius.lg,
+    shadowColor: "#635BFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  qtyConfirmBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
 });
