@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Switch, SafeAreaView, StatusBar, Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,6 +23,7 @@ export default function More() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showMenuQr, setShowMenuQr] = useState(false);
   const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
+  const [takeawayGrid, setTakeawayGrid] = useState(false);
 
   useEffect(() => {
     if (!restaurant) {
@@ -29,7 +31,17 @@ export default function More() {
         if (r) setRestaurant(r);
       }).catch(() => {});
     }
+    AsyncStorage.getItem("takeaway_menu_layout").then(val => {
+      setTakeawayGrid(val === "grid");
+    }).catch(() => {});
   }, []);
+
+  const handleToggleTakeawayGrid = async (val: boolean) => {
+    setTakeawayGrid(val);
+    try {
+      await AsyncStorage.setItem("takeaway_menu_layout", val ? "grid" : "list");
+    } catch {}
+  };
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
@@ -77,6 +89,28 @@ export default function More() {
                 trackColor={{ false: "#E2E8F0", true: "#635BFF" }}
                 thumbColor="#FFFFFF"
                 testID="dark-mode-toggle"
+              />
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+            {/* Takeaway Grid / List View Toggle */}
+            <View style={styles.rowItem}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? "#26294D" : "#EEF2FF" }]}>
+                <Ionicons name={takeawayGrid ? "grid" : "list"} size={20} color="#635BFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.onSurface }]}>Takeaway Grid Menu</Text>
+                <Text style={[styles.rowSub, { color: theme.onSurfaceSecondary }]}>
+                  {takeawayGrid ? "Grid view (like table ordering)" : "Compact list view"}
+                </Text>
+              </View>
+              <Switch
+                value={takeawayGrid}
+                onValueChange={handleToggleTakeawayGrid}
+                trackColor={{ false: "#E2E8F0", true: "#635BFF" }}
+                thumbColor="#FFFFFF"
+                testID="takeaway-grid-toggle"
               />
             </View>
           </View>

@@ -2,6 +2,7 @@ import { useCallback, useState, useMemo, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, SafeAreaView, StatusBar, ScrollView,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -40,6 +41,25 @@ export default function TakeawayScreen() {
   const [busy, setBusy] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [menuLayout, setMenuLayout] = useState<"list" | "grid">("list");
+
+  const loadLayoutPreference = useCallback(async () => {
+    try {
+      const saved = await AsyncStorage.getItem("takeaway_menu_layout");
+      if (saved === "grid" || saved === "list") {
+        setMenuLayout(saved);
+      }
+    } catch {}
+  }, []);
+
+  const toggleMenuLayout = async () => {
+    const next = menuLayout === "grid" ? "list" : "grid";
+    setMenuLayout(next);
+    try {
+      await AsyncStorage.setItem("takeaway_menu_layout", next);
+    } catch {}
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
 
   const load = useCallback(async () => {
     if (cats.length === 0 || items.length === 0) {
@@ -72,7 +92,12 @@ export default function TakeawayScreen() {
     return () => unsubscribe();
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      loadLayoutPreference();
+    }, [load, loadLayoutPreference])
+  );
 
   // -------------------------------------------------------------
   // TODAY'S UNPAID TAKEAWAY BILLS & ORDERS
@@ -450,11 +475,114 @@ export default function TakeawayScreen() {
     );
   };
 
+  const isGrid = menuLayout === "grid";
+
+  const renderDishItem = (item: Item, inGrid: boolean) => {
+    const inCartLine = cart.find(l => l.menu_item_id === item.id);
+    const qty = inCartLine ? inCartLine.quantity : 0;
+
+    if (inGrid) {
+      return (
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.gridMenuCard,
+              { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+              pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+            ]}
+            onPress={() => add(item)}
+          >
+            <Image
+              source={menuItemImageSource(item)}
+              style={styles.gridMenuImg}
+              contentFit="cover"
+              transition={200}
+            />
+            <View style={styles.gridMenuOverlay}>
+              <Text style={styles.gridMenuName} numberOfLines={2}>
+                {item.name}
+              </Text>
+              <Text style={styles.gridMenuPrice}>₹{item.price}</Text>
+            </View>
+
+            {qty > 0 ? (
+              <View style={styles.gridCounterPill}>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    dec(item.id);
+                  }}
+                  style={styles.gridCounterBtn}
+                  hitSlop={8}
+                >
+                  <Ionicons name="remove" size={14} color="#635BFF" />
+                </Pressable>
+                <Text style={styles.gridCounterText}>{qty}</Text>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    inc(item.id);
+                  }}
+                  style={styles.gridCounterBtn}
+                  hitSlop={8}
+                >
+                  <Ionicons name="add" size={14} color="#635BFF" />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.gridPlus}>
+                <Ionicons name="add" size={16} color="#FFFFFF" />
+              </View>
+            )}
+          </Pressable>
+        </View>
+      );
+    }
+
+    return (
+      <Pressable
+        style={({ pressed }) => [
+          styles.itemCard,
+          { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+          pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+        ]}
+        onPress={() => add(item)}
+      >
+        <View style={styles.itemLeftRow}>
+          <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={styles.redSquare} />
+              <Text style={[styles.itemName, { color: theme.onSurface }]}>{item.name}</Text>
+            </View>
+            <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary }]}>₹{item.price} · GST 0%</Text>
+          </View>
+        </View>
+
+        {qty > 0 ? (
+          <View style={styles.counterPill}>
+            <Pressable onPress={() => dec(item.id)} style={styles.counterBtn} hitSlop={8}>
+              <Ionicons name="remove" size={16} color="#635BFF" />
+            </Pressable>
+            <Text style={styles.counterText}>{qty}</Text>
+            <Pressable onPress={() => inc(item.id)} style={styles.counterBtn} hitSlop={8}>
+              <Ionicons name="add" size={16} color="#635BFF" />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.addCircleBtn}>
+            <Ionicons name="add" size={22} color="#FFFFFF" />
+          </View>
+        )}
+      </Pressable>
+    );
+  };
+
   // -------------------------------------------------------------
   // DESKTOP LAYOUT
   // -------------------------------------------------------------
   if (isDesktop) {
-    const dishCols = isLargeDesktop ? 2 : 1;
+    const dishCols = isGrid ? (isLargeDesktop ? 3 : 2) : (isLargeDesktop ? 2 : 1);
     const unpaidGridCols = isLargeDesktop ? 3 : 2;
 
     return (
@@ -530,12 +658,29 @@ export default function TakeawayScreen() {
                   </Pressable>
                 )}
 
-                <View style={[styles.searchRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                  <Ionicons name="search" size={18} color={theme.onSurfaceTertiary} />
-                  <TextInput
-                    value={search} onChangeText={setSearch} placeholder="Search items..."
-                    placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]}
-                  />
+                <View style={styles.searchContainer}>
+                  <View style={[styles.searchRow, { flex: 1, marginHorizontal: 0, marginTop: 0, backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                    <Ionicons name="search" size={18} color={theme.onSurfaceTertiary} />
+                    <TextInput
+                      value={search} onChangeText={setSearch} placeholder="Search items..."
+                      placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]}
+                    />
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.layoutToggleBtn,
+                      { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }
+                    ]}
+                    onPress={toggleMenuLayout}
+                    hitSlop={8}
+                    testID="takeaway-layout-toggle-btn-desktop"
+                  >
+                    <Ionicons
+                      name={isGrid ? "grid" : "list"}
+                      size={18}
+                      color={isGrid ? "#635BFF" : theme.onSurfaceSecondary}
+                    />
+                  </Pressable>
                 </View>
 
                 <View style={styles.chipContainer}>
@@ -555,56 +700,14 @@ export default function TakeawayScreen() {
                   <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
                 ) : (
                   <FlatList
-                    key={`takeaway-grid-${dishCols}`}
+                    key={`takeaway-desktop-${menuLayout}-${dishCols}`}
                     data={filtered}
                     keyExtractor={i => i.id}
                     numColumns={dishCols}
                     contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 40, gap: spacing.md }}
                     columnWrapperStyle={dishCols > 1 ? { gap: spacing.md } : undefined}
                     showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => {
-                      const inCartLine = cart.find(l => l.menu_item_id === item.id);
-                      const qty = inCartLine ? inCartLine.quantity : 0;
-
-                      return (
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.itemCard,
-                            dishCols > 1 && { flex: 1 },
-                            { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
-                            pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-                          ]}
-                          onPress={() => add(item)}
-                        >
-                          <View style={styles.itemLeftRow}>
-                            <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
-                            <View style={{ flex: 1 }}>
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                <View style={styles.redSquare} />
-                                <Text style={[styles.itemName, { color: theme.onSurface }]}>{item.name}</Text>
-                              </View>
-                              <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary }]}>₹{item.price} · GST 0%</Text>
-                            </View>
-                          </View>
-
-                          {qty > 0 ? (
-                            <View style={styles.counterPill}>
-                              <Pressable onPress={() => dec(item.id)} style={styles.counterBtn} hitSlop={8}>
-                                <Ionicons name="remove" size={16} color="#635BFF" />
-                              </Pressable>
-                              <Text style={styles.counterText}>{qty}</Text>
-                              <Pressable onPress={() => inc(item.id)} style={styles.counterBtn} hitSlop={8}>
-                                <Ionicons name="add" size={16} color="#635BFF" />
-                              </Pressable>
-                            </View>
-                          ) : (
-                            <View style={styles.addCircleBtn}>
-                              <Ionicons name="add" size={22} color="#FFFFFF" />
-                            </View>
-                          )}
-                        </Pressable>
-                      );
-                    }}
+                    renderItem={({ item }) => renderDishItem(item, isGrid)}
                   />
                 )}
               </View>
@@ -765,13 +868,30 @@ export default function TakeawayScreen() {
               </Pressable>
             )}
 
-            {/* Search Bar */}
-            <View style={[styles.searchRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-              <Ionicons name="search" size={18} color={theme.onSurfaceTertiary} />
-              <TextInput
-                value={search} onChangeText={setSearch} placeholder="Search items..."
-                placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]}
-              />
+            {/* Search Bar & Grid/List Toggle */}
+            <View style={styles.searchContainer}>
+              <View style={[styles.searchRow, { flex: 1, marginHorizontal: 0, marginTop: 0, backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Ionicons name="search" size={18} color={theme.onSurfaceTertiary} />
+                <TextInput
+                  value={search} onChangeText={setSearch} placeholder="Search items..."
+                  placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]}
+                />
+              </View>
+              <Pressable
+                style={[
+                  styles.layoutToggleBtn,
+                  { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }
+                ]}
+                onPress={toggleMenuLayout}
+                hitSlop={8}
+                testID="takeaway-layout-toggle-btn-mobile"
+              >
+                <Ionicons
+                  name={isGrid ? "grid" : "list"}
+                  size={18}
+                  color={isGrid ? "#635BFF" : theme.onSurfaceSecondary}
+                />
+              </Pressable>
             </View>
 
             {/* Category Chips */}
@@ -792,57 +912,19 @@ export default function TakeawayScreen() {
               </ScrollView>
             </View>
 
-            {/* Items List */}
+            {/* Items List or Grid */}
             {loading ? (
               <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
             ) : (
               <FlatList
+                key={`takeaway-mobile-${menuLayout}-${isGrid ? 2 : 1}`}
                 data={filtered}
                 keyExtractor={i => i.id}
+                numColumns={isGrid ? 2 : 1}
                 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 160, gap: spacing.md }}
+                columnWrapperStyle={isGrid ? { gap: spacing.md } : undefined}
                 showsVerticalScrollIndicator={false}
-                renderItem={({ item }) => {
-                  const inCartLine = cart.find(l => l.menu_item_id === item.id);
-                  const qty = inCartLine ? inCartLine.quantity : 0;
-
-                  return (
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.itemCard,
-                        { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
-                        pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-                      ]}
-                      onPress={() => add(item)}
-                    >
-                      <View style={styles.itemLeftRow}>
-                        <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                            <View style={styles.redSquare} />
-                            <Text style={[styles.itemName, { color: theme.onSurface }]}>{item.name}</Text>
-                          </View>
-                          <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary }]}>₹{item.price} · GST 0%</Text>
-                        </View>
-                      </View>
-
-                      {qty > 0 ? (
-                        <View style={styles.counterPill}>
-                          <Pressable onPress={() => dec(item.id)} style={styles.counterBtn} hitSlop={8}>
-                            <Ionicons name="remove" size={16} color="#635BFF" />
-                          </Pressable>
-                          <Text style={styles.counterText}>{qty}</Text>
-                          <Pressable onPress={() => inc(item.id)} style={styles.counterBtn} hitSlop={8}>
-                            <Ionicons name="add" size={16} color="#635BFF" />
-                          </Pressable>
-                        </View>
-                      ) : (
-                        <View style={styles.addCircleBtn}>
-                          <Ionicons name="add" size={22} color="#FFFFFF" />
-                        </View>
-                      )}
-                    </Pressable>
-                  );
-                }}
+                renderItem={({ item }) => renderDishItem(item, isGrid)}
               />
             )}
 
@@ -1138,6 +1220,108 @@ const styles = StyleSheet.create({
   },
 
   err: { color: colors.onError, backgroundColor: colors.error, margin: spacing.lg, padding: spacing.md, borderRadius: radius.md },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  layoutToggleBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gridMenuCard: {
+    aspectRatio: 0.95,
+    borderRadius: radius.lg,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+  },
+  gridMenuImg: {
+    flex: 1,
+    width: "100%",
+  },
+  gridMenuOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.78)",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderBottomLeftRadius: radius.lg - 1,
+    borderBottomRightRadius: radius.lg - 1,
+  },
+  gridMenuName: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    textShadowColor: "rgba(0, 0, 0, 0.9)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  gridMenuPrice: {
+    color: "#A5B4FC",
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 2,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  gridPlus: {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#635BFF",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  gridCounterPill: {
+    position: "absolute",
+    right: 6,
+    top: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderRadius: radius.pill,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    gap: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  gridCounterBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gridCounterText: {
+    color: "#1E1E24",
+    fontSize: 12,
+    fontWeight: "800",
+    minWidth: 14,
+    textAlign: "center",
+  },
   bottomBarWrap: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: spacing.lg, backgroundColor: "transparent" },
   purpleBottomPill: {
     flexDirection: "row",

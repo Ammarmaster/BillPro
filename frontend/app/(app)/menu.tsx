@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, Modal,
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
+  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import Animated, { FadeInUp } from "react-native-reanimated";
@@ -91,6 +91,32 @@ export default function MenuScreen() {
     setBusy(true);
     try { await api.createCategory({ name: catName.trim(), sort_order: cats.length }); setCatName(""); setCatModal(false); await load(); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const delCat = (cat: Cat) => {
+    Alert.alert(
+      "Delete Category",
+      `Are you sure you want to delete "${cat.name}"?\nItems in this category will also be removed.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await api.deleteCategory(cat.id);
+              if (selCat === cat.id) setSelCat("all");
+              await load();
+            } catch (e: any) {
+              setErr(e.message || "Failed to delete category");
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const saveItem = async () => {
@@ -199,7 +225,15 @@ export default function MenuScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsWrap}>
           <Chip label="All" active={selCat === "all"} onPress={() => setSelCat("all")} testID="chip-all" />
           {cats.map(c => (
-            <Chip key={c.id} label={c.name} active={selCat === c.id} onPress={() => setSelCat(c.id)} testID={`chip-${c.id}`} />
+            <Chip
+              key={c.id}
+              label={c.name}
+              active={selCat === c.id}
+              onPress={() => setSelCat(c.id)}
+              onLongPress={() => delCat(c)}
+              onDelete={selCat === c.id ? () => delCat(c) : undefined}
+              testID={`chip-${c.id}`}
+            />
           ))}
         </ScrollView>
 
@@ -282,6 +316,53 @@ export default function MenuScreen() {
                     {busy ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.primaryText}>Save</Text>}
                   </Pressable>
                 </View>
+
+                {cats.length > 0 && (
+                  <View style={{ marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md }}>
+                    <Text style={{ color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: "700", marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      Manage Categories ({cats.length})
+                    </Text>
+                    <ScrollView style={{ maxHeight: 180 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                      {cats.map(c => {
+                        const count = items.filter(i => i.category_id === c.id).length;
+                        return (
+                          <View
+                            key={c.id}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              backgroundColor: colors.surfaceTertiary,
+                              borderRadius: radius.md,
+                              marginBottom: 6,
+                              borderWidth: 1,
+                              borderColor: colors.border,
+                            }}
+                          >
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                              <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "600" }} numberOfLines={1}>{c.name}</Text>
+                              <Text style={{ color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 }}>{count} {count === 1 ? "item" : "items"}</Text>
+                            </View>
+                            <Pressable
+                              onPress={() => delCat(c)}
+                              hitSlop={10}
+                              style={{
+                                padding: 8,
+                                borderRadius: radius.sm,
+                                backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2",
+                              }}
+                              testID={`cat-modal-delete-${c.id}`}
+                            >
+                              <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -434,10 +515,45 @@ export default function MenuScreen() {
   );
 }
 
-function Chip({ label, active, onPress, testID }: { label: string; active: boolean; onPress: () => void; testID: string }) {
+function Chip({
+  label,
+  active,
+  onPress,
+  onLongPress,
+  onDelete,
+  testID,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+  onDelete?: () => void;
+  testID: string;
+}) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive, { flexShrink: 0 }]} testID={testID}>
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[
+        styles.chip,
+        active && styles.chipActive,
+        { flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 6 },
+      ]}
+      testID={testID}
+    >
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+      {onDelete && (
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          hitSlop={8}
+          style={{ padding: 2 }}
+        >
+          <Ionicons name="trash-outline" size={14} color="#EF4444" />
+        </Pressable>
+      )}
     </Pressable>
   );
 }
