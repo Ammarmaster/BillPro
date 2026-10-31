@@ -262,7 +262,14 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
                 {scannedOrderPreview ? "Review Customer Order" : "Scan Customer Order"}
               </Text>
             </View>
-            <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.surfaceSecondary }]} hitSlop={12}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                onClose();
+              }}
+              style={({ pressed }) => [styles.closeBtn, { backgroundColor: theme.surfaceSecondary, opacity: pressed ? 0.6 : 1 }]}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            >
               <Ionicons name="close" size={20} color={theme.onSurface} />
             </Pressable>
           </View>

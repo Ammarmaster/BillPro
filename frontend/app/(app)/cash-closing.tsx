@@ -319,11 +319,19 @@ export default function CashClosingScreen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       
       {/* App Header */}
-      <View style={[styles.header, { borderBottomColor: theme.border, backgroundColor: theme.surface, paddingTop: Platform.OS === "android" ? Math.max(insets.top, (StatusBar.currentHeight || 0) + 6, 28) : Math.max(insets.top, 10) }]}>
+      <View style={[styles.header, { borderBottomColor: theme.border, backgroundColor: theme.surface, paddingTop: Platform.OS === "android" ? Math.max(insets.top, (StatusBar.currentHeight || 0) + 16, 52) : Math.max(insets.top, 14) }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.7 : 1, backgroundColor: isDark ? "#222" : "#F1F5F9" }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/(app)/dashboard");
+              }
+            }}
+            style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.6 : 1, backgroundColor: isDark ? "#222" : "#F1F5F9" }]}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
           >
             <Ionicons name="arrow-back" size={20} color={theme.onSurface} />
           </Pressable>
@@ -338,11 +346,16 @@ export default function CashClosingScreen() {
           <SyncStatusIndicator compact />
           <View style={[styles.tabSegment, { backgroundColor: isDark ? "#1E1E24" : "#E2E8F0" }]}>
             <Pressable
-              style={[
+              style={({ pressed }) => [
                 styles.tabBtn,
                 activeTab === "active" && [styles.tabBtnActive, { backgroundColor: "#635BFF" }],
+                pressed && { opacity: 0.7 }
               ]}
-              onPress={() => setActiveTab("active")}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setActiveTab("active");
+              }}
             >
               <Ionicons
                 name="wallet-outline"
@@ -360,11 +373,16 @@ export default function CashClosingScreen() {
             </Pressable>
 
             <Pressable
-              style={[
+              style={({ pressed }) => [
                 styles.tabBtn,
                 activeTab === "history" && [styles.tabBtnActive, { backgroundColor: "#635BFF" }],
+                pressed && { opacity: 0.7 }
               ]}
-              onPress={() => setActiveTab("history")}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setActiveTab("history");
+              }}
             >
               <Ionicons
                 name="time-outline"

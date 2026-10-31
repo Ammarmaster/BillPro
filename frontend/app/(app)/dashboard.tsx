@@ -1524,44 +1524,62 @@ function OwnerDashboard() {
             </Animated.View>
 
             {/* Quick Action Shortcuts: Scan Web Order, Cash Closing & Printer */}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: spacing.md, marginBottom: spacing.xs, flexWrap: "wrap" }}>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: spacing.md, marginBottom: spacing.xs }}>
               <Pressable
-                style={[
+                style={({ pressed }) => [
                   styles.quickActionShortcut,
-                  { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE", flex: 1, minWidth: 110 }
+                  {
+                    backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
+                    borderColor: isDark ? "#635BFF" : "#C7D2FE",
+                  },
+                  pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] }
                 ]}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                 onPress={() => {
-                  if (api.hasFeature("qr_web_menu")) {
-                    setShowScanner(true);
-                  } else {
-                    setShowProLockModal(true);
-                  }
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setShowScanner(true);
                 }}
               >
-                <Ionicons name="qr-code-outline" size={18} color="#635BFF" />
-                <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]}>Scan Order</Text>
+                <Ionicons name="qr-code-outline" size={17} color="#635BFF" />
+                <Text style={[styles.quickActionShortcutText, { color: "#635BFF" }]} numberOfLines={1}>Scan Order</Text>
               </Pressable>
 
               <Pressable
-                style={[
+                style={({ pressed }) => [
                   styles.quickActionShortcut,
-                  { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0", flex: 1, minWidth: 110 }
+                  {
+                    backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5",
+                    borderColor: isDark ? "#10B981" : "#A7F3D0",
+                  },
+                  pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] }
                 ]}
-                onPress={() => router.push("/(app)/cash-closing")}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  router.push("/(app)/cash-closing" as any);
+                }}
               >
-                <Ionicons name="wallet-outline" size={18} color="#10B981" />
-                <Text style={[styles.quickActionShortcutText, { color: "#10B981" }]}>Cash Closing</Text>
+                <Ionicons name="wallet-outline" size={17} color="#10B981" />
+                <Text style={[styles.quickActionShortcutText, { color: "#10B981" }]} numberOfLines={1}>Cash Closing</Text>
               </Pressable>
 
               <Pressable
-                style={[
+                style={({ pressed }) => [
                   styles.quickActionShortcut,
-                  { backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB", borderColor: isDark ? "#F59E0B" : "#FDE68A", flex: 0.8, minWidth: 90 }
+                  {
+                    backgroundColor: isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB",
+                    borderColor: isDark ? "#F59E0B" : "#FDE68A",
+                  },
+                  pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] }
                 ]}
-                onPress={() => router.push("/(app)/printer-settings")}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  router.push("/(app)/printer-settings" as any);
+                }}
               >
-                <Ionicons name="print-outline" size={18} color="#F59E0B" />
-                <Text style={[styles.quickActionShortcutText, { color: "#F59E0B" }]}>Printer</Text>
+                <Ionicons name="print-outline" size={17} color="#F59E0B" />
+                <Text style={[styles.quickActionShortcutText, { color: "#F59E0B" }]} numberOfLines={1}>Printer</Text>
               </Pressable>
             </View>
 
@@ -1834,13 +1852,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 4,
     borderRadius: 14,
     borderWidth: 1,
-    gap: 6,
+    gap: 4,
   },
   quickActionShortcutText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "700",
   },
   greet: { letterSpacing: 1.2, fontSize: 11, fontWeight: "800" },

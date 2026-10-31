@@ -507,7 +507,7 @@ export default function PrinterSettingsScreen() {
   }
 
   return (
-    <View style={[styles.safe, { backgroundColor: theme.surface, paddingTop: Math.max(insets.top, 14) }]}>
+    <View style={[styles.safe, { backgroundColor: theme.surface, paddingTop: Platform.OS === "android" ? Math.max(insets.top, (StatusBar.currentHeight || 0) + 16, 52) : Math.max(insets.top, 14) }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.surface} />
       <View style={[{ flex: 1, width: "100%" }, isDesktop && { maxWidth: 900, alignSelf: "center" }]}>
         
@@ -522,8 +522,16 @@ export default function PrinterSettingsScreen() {
       {/* Header Matching More & Dashboard */}
       <View style={styles.header}>
         <Pressable 
-          onPress={() => router.replace("/(app)/more")} 
-          style={[styles.backBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: theme.border }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/(app)/dashboard");
+            }
+          }} 
+          style={({ pressed }) => [styles.backBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: theme.border, opacity: pressed ? 0.6 : 1 }]}
+          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
         >
           <Ionicons name="chevron-back" size={20} color="#635BFF" />
         </Pressable>
