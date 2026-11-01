@@ -424,7 +424,7 @@ export default function SettingsDetails() {
                         gap: 6,
                       }}
                       onPress={async () => {
-                        const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+                        const backendBase = api.getBackendUrl();
                         const tid = user?.tenant_id || "undefined";
                         const url = `${backendBase}/menu/${tid}?mode=menu`;
                         if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
@@ -523,7 +523,7 @@ export default function SettingsDetails() {
         title="Digital Web Menu QR"
         restaurantName={form.name || "Restaurant"}
         badgeText="DIGITAL WEB MENU"
-        targetUrl={`${(process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "")}/menu/${user?.tenant_id || "undefined"}?mode=menu`}
+        targetUrl={`${api.getBackendUrl()}/menu/${user?.tenant_id || "undefined"}?mode=menu`}
       />
     </SafeAreaView>
   );

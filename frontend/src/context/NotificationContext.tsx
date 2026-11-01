@@ -3,7 +3,7 @@ import { Platform, Vibration, Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/context/AuthContext";
-import { api, clearCachePrefix } from "@/src/lib/api";
+import { api, clearCachePrefix, getBackendUrl } from "@/src/lib/api";
 
 let Notifications: any = null;
 if (Platform.OS !== "web") {
@@ -70,10 +70,9 @@ interface NotificationContextProps {
 const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
 
 const PREFS_KEY = "lumina_notification_preferences";
-const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
-const KITCHEN_ALERT_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
-const PAYMENT_MONEY_SOUND_URL = `${BACKEND_BASE}/static/sounds/payment-money.wav`;
-const GENERAL_NOTIFICATION_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
+const getKitchenAlertSoundUrl = () => `${getBackendUrl()}/static/sounds/kitchen-alert.wav`;
+const getPaymentMoneySoundUrl = () => `${getBackendUrl()}/static/sounds/payment-money.wav`;
+const getGeneralNotificationSoundUrl = () => `${getBackendUrl()}/static/sounds/notification.wav`;
 
 
 const defaultPrefs: NotificationPreferences = {
@@ -150,7 +149,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (Platform.OS !== "web" && createAudioPlayer) {
       try {
         console.log("[Audio] Preloading notification sound player...");
-        audioPlayer.current = createAudioPlayer(GENERAL_NOTIFICATION_SOUND_URL);
+        audioPlayer.current = createAudioPlayer(getGeneralNotificationSoundUrl());
       } catch (e) {
         console.warn("[Audio] Failed to initialize preloaded player:", e);
       }
@@ -267,7 +266,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (ws.current || isConnectingRef.current) return;
     isConnectingRef.current = true;
 
-    const base = BACKEND_BASE
+    const base = getBackendUrl()
       .replace(/\/$/, "")
       .replace(/^http/, "ws");
     
@@ -586,7 +585,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const playSound = (notif?: Notification) => {
-    let targetSoundUrl = GENERAL_NOTIFICATION_SOUND_URL;
+    let targetSoundUrl = getGeneralNotificationSoundUrl();
 
     if (notif) {
       const isNewOrder = notif.category === "kitchen" && (
@@ -602,11 +601,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         notif.data?.status === "paid";
 
       if (isPayment) {
-        targetSoundUrl = PAYMENT_MONEY_SOUND_URL;
+        targetSoundUrl = getPaymentMoneySoundUrl();
       } else if (isNewOrder) {
-        targetSoundUrl = KITCHEN_ALERT_SOUND_URL;
+        targetSoundUrl = getKitchenAlertSoundUrl();
       } else {
-        targetSoundUrl = GENERAL_NOTIFICATION_SOUND_URL;
+        targetSoundUrl = getGeneralNotificationSoundUrl();
       }
     }
 

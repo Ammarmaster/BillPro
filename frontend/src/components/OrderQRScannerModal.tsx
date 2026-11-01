@@ -9,7 +9,7 @@ import * as Haptics from "expo-haptics";
 import { useAudioPlayer } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
-import { api } from "@/src/lib/api";
+import { api, getBackendUrl } from "@/src/lib/api";
 import { spacing, radius } from "@/src/theme";
 
 const { width } = Dimensions.get("window");
@@ -22,8 +22,7 @@ type Props = {
   defaultTable?: string;
 };
 
-const BACKEND_BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
-const SCAN_SOUND_URL = `${BACKEND_BASE}/static/sounds/notification.wav`;
+const getScanSoundUrl = () => `${getBackendUrl()}/static/sounds/notification.wav`;
 
 // Universal 0ms Audio Beep Generator
 function playInstantPOSBeep() {
@@ -70,7 +69,7 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
   const [rawScannedPayload, setRawScannedPayload] = useState<string>("");
 
   // Preload native audio player
-  const player = useAudioPlayer(Platform.OS !== "web" ? SCAN_SOUND_URL : null);
+  const player = useAudioPlayer(Platform.OS !== "web" ? getScanSoundUrl() : null);
   if (player) {
     player.loop = false;
   }

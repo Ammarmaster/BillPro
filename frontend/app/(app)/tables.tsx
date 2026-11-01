@@ -240,7 +240,7 @@ export default function TablesScreen() {
         </Modal>
 
         {qrTable && (() => {
-          const backendBase = (process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+          const backendBase = api.getBackendUrl();
           const tid = tenantId || user?.tenant_id || api.getCachedRestaurant()?.id || "undefined";
           const tableTarget = qrTable.custom_qr ? qrTable.custom_qr : (qrTable.label || qrTable.id);
           const targetUrl = `${backendBase}/menu/${encodeURIComponent(tid)}/${encodeURIComponent(tableTarget)}`;

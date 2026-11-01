@@ -14,6 +14,7 @@ import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 import FeatureLockModal from "@/src/components/FeatureLockModal";
+import BackendConfigModal from "@/src/components/BackendConfigModal";
 import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
 
 import { safeParseDate } from "@/src/lib/dateUtils";
@@ -90,6 +91,9 @@ function AdminConsole() {
   const [reportModal, setReportModal] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const [reportLoading, setReportLoading] = useState(false);
+
+  // Dynamic Backend Server URL Modal State
+  const [serverModal, setServerModal] = useState(false);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -300,6 +304,14 @@ function AdminConsole() {
         </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            style={[styles.headerIconBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+            onPress={() => setServerModal(true)}
+            hitSlop={8}
+          >
+            <Ionicons name="server-outline" size={18} color="#06B6D4" />
+          </Pressable>
+
           <Pressable
             style={[styles.headerIconBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
             onPress={openDiagnostics}
@@ -516,6 +528,16 @@ function AdminConsole() {
                   <Ionicons name="megaphone" size={18} color="#EC4899" />
                 </View>
                 <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Broadcast</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.dockActionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, minWidth: 86 }]}
+                onPress={() => setServerModal(true)}
+              >
+                <View style={[styles.dockIconBg, { backgroundColor: "#06B6D418" }]}>
+                  <Ionicons name="server" size={18} color="#06B6D4" />
+                </View>
+                <Text style={[styles.dockActionText, { color: theme.onSurface }]}>Server URL</Text>
               </Pressable>
 
               <Pressable
@@ -1210,6 +1232,13 @@ function AdminConsole() {
           </View>
         </View>
       </Modal>
+
+      {/* Dynamic Backend Server URL Configuration Modal */}
+      <BackendConfigModal
+        visible={serverModal}
+        onClose={() => setServerModal(false)}
+        onSuccess={() => load()}
+      />
       </View>
     </View>
   );

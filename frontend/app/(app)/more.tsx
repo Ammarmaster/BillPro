@@ -380,7 +380,7 @@ export default function More() {
         badgeText={api.hasFeature("customer_ordering") || api.hasFeature("qr_web_menu") ? "DIGITAL ORDERING & MENU" : "DIGITAL WEB MENU"}
         callToActionText={api.hasFeature("customer_ordering") || api.hasFeature("qr_web_menu") ? "✦ SCAN TO ORDER ✦" : "✦ SCAN FOR MENU ✦"}
         helperText={api.hasFeature("customer_ordering") || api.hasFeature("qr_web_menu") ? "Scan with phone camera to view menu & order" : "Scan with phone camera to view menu & prices"}
-        targetUrl={`${(process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com").replace(/\/$/, "")}/menu/${user?.tenant_id || restaurant?.id || restaurant?.tenant_id || "undefined"}`}
+        targetUrl={`${api.getBackendUrl()}/menu/${user?.tenant_id || restaurant?.id || restaurant?.tenant_id || "undefined"}`}
       />
     </SafeAreaView>
   );

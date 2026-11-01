@@ -65,7 +65,10 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "3d159373-e59e-47ef-9a6a-f561faa01b5d"
+      }
     },
     "owner": "ammarmaster"
   }

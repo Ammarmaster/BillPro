@@ -14,7 +14,91 @@ import {
   SyncActionType,
 } from "./offlineSync";
 
-const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+
+let activeBackendUrl = DEFAULT_BACKEND_URL;
+
+// Load custom backend URL synchronously on Web or asynchronously on native
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  try {
+    const saved = window.localStorage.getItem("custom_backend_url");
+    if (saved && saved.trim()) {
+      activeBackendUrl = saved.trim().replace(/\/$/, "");
+    }
+  } catch {}
+} else {
+  AsyncStorage.getItem("custom_backend_url").then((saved) => {
+    if (saved && saved.trim()) {
+      activeBackendUrl = saved.trim().replace(/\/$/, "");
+    }
+  }).catch(() => {});
+}
+
+export function getBackendUrl(): string {
+  return activeBackendUrl;
+}
+
+export function getDefaultBackendUrl(): string {
+  return DEFAULT_BACKEND_URL;
+}
+
+export async function setCustomBackendUrl(url: string): Promise<string> {
+  let cleaned = (url || "").trim();
+  if (!cleaned) throw new Error("Backend URL cannot be empty.");
+  if (!/^https?:\/\//i.test(cleaned)) {
+    cleaned = `https://${cleaned}`;
+  }
+  cleaned = cleaned.replace(/\/$/, "");
+  activeBackendUrl = cleaned;
+  await setDiskCache("custom_backend_url", cleaned);
+  notifyCacheUpdate("/system/backend-url", { url: cleaned });
+  return cleaned;
+}
+
+export async function resetCustomBackendUrl(): Promise<string> {
+  activeBackendUrl = DEFAULT_BACKEND_URL;
+  await delDiskCache("custom_backend_url");
+  notifyCacheUpdate("/system/backend-url", { url: DEFAULT_BACKEND_URL });
+  return DEFAULT_BACKEND_URL;
+}
+
+export async function testBackendHealth(targetUrl?: string): Promise<{ ok: boolean; status?: string; latencyMs: number; error?: string }> {
+  const urlToTest = (targetUrl || activeBackendUrl).trim().replace(/\/$/, "");
+  const start = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    let res: Response | null = null;
+    try {
+      res = await fetch(`${urlToTest}/health`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+    } catch {
+      res = await fetch(`${urlToTest}/api/health`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+    }
+    clearTimeout(timeout);
+    const latencyMs = Date.now() - start;
+    if (res && res.ok) {
+      let status = "online";
+      try {
+        const json = await res.json();
+        status = json.status || "online";
+      } catch {}
+      return { ok: true, status, latencyMs };
+    }
+    return { ok: false, error: res ? `HTTP ${res.status}: ${res.statusText}` : "No response", latencyMs };
+  } catch (e: any) {
+    return {
+      ok: false,
+      error: e.name === "AbortError" ? "Connection timed out (6s)" : (e.message || "Failed to connect to server"),
+      latencyMs: Date.now() - start,
+    };
+  }
+}
 
 const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
 
@@ -387,7 +471,7 @@ async function doRefreshToken(): Promise<string | null> {
     try {
       const rToken = await getRefresh();
       if (!rToken) return null;
-      const res = await fetch(`${BASE}/api/auth/refresh`, {
+      const res = await fetch(`${getBackendUrl()}/api/auth/refresh`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -466,7 +550,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 
     let res: Response;
     try {
-      res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+      res = await fetch(`${getBackendUrl()}/api${path}`, { ...opts, headers });
     } catch (netErr: any) {
       if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
         return memoryCache[path];
@@ -1558,7 +1642,12 @@ export const api = {
   adminRefundPayment: (pid: string, payload?: { refund_reason?: string; cancel_subscription?: boolean }) =>
     req(`/admin/payments/${pid}/refund`, { method: "POST", body: JSON.stringify(payload || {}) }),
   adminBusinessSummary: () => req("/admin/reports/business-summary"),
-  adminExportBusinessReportUrl: () => `${BASE}/api/admin/reports/export`,
+  getBackendUrl: () => getBackendUrl(),
+  getDefaultBackendUrl: () => getDefaultBackendUrl(),
+  setCustomBackendUrl: (url: string) => setCustomBackendUrl(url),
+  resetCustomBackendUrl: () => resetCustomBackendUrl(),
+  testBackendHealth: (url?: string) => testBackendHealth(url),
+  adminExportBusinessReportUrl: () => `${getBackendUrl()}/api/admin/reports/export`,
   adminGetRestaurantMenu: (tid: string) => req(`/admin/restaurants/${tid}/menu`),
   adminImportRestaurantMenuJson: (tid: string, payload: { replace_existing?: boolean; data?: any; raw_json?: string }) =>
     req(`/admin/restaurants/${tid}/menu/import-json`, { method: "POST", body: JSON.stringify(payload) }),
