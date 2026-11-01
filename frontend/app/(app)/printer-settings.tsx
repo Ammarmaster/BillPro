@@ -209,6 +209,7 @@ export default function PrinterSettingsScreen() {
       brand: preset.brand,
       width: preset.defaultWidth,
       auto_print: true,
+      print_kot: isCashier ? cashierPrintKOT : false,
       open_drawer: isCashier,
       auto_cut: preset.defaultWidth === 80
     });
@@ -1298,6 +1299,41 @@ export default function PrinterSettingsScreen() {
               thumbColor="#FFFFFF"
             />
           </View>
+
+          {/* Also Print Kitchen KOT from Cashier Printer */}
+          {activeTab === "cashier" && (
+            <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                    Print Kitchen KOT on This Printer
+                  </Text>
+                  <View style={{ backgroundColor: cashierPrintKOT ? "rgba(16,185,129,0.15)" : (isDark ? "rgba(255,255,255,0.06)" : "#F1F5F9"), paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 10, fontWeight: "800", color: cashierPrintKOT ? "#10B981" : theme.onSurfaceSecondary }}>
+                      {cashierPrintKOT ? "KOT ACTIVE" : "OFF"}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
+                  Automatically prints food order KOT tickets from this cashier/billing machine when orders are placed
+                </Text>
+              </View>
+              <Switch
+                value={cashierPrintKOT}
+                onValueChange={async (val) => {
+                  setCashierPrintKOT(val);
+                  const cur = await getPrinterSettings("cashier");
+                  if (cur) {
+                    await savePrinterSettings("cashier", { ...cur, print_kot: val });
+                    setToastMessage(val ? "✓ KOT active on this printer" : "KOT disabled on this printer");
+                    setTimeout(() => setToastMessage(null), 3000);
+                  }
+                }}
+                trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#10B981" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          )}
 
           {/* Auto Cash Drawer Kick */}
           {activeTab === "cashier" && (
