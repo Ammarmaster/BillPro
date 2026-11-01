@@ -48,8 +48,8 @@ export default function PricingScreen() {
       name: "Growth Dine-In",
       badge: "⭐ MOST POPULAR · MULTI-STAFF",
       popular: true,
-      priceMonthly: 599,
-      priceYearly: 5999,
+      priceMonthly: 499,
+      priceYearly: 4999,
       tagline: "Designed for busy dine-in spots with captain apps, staff logins and live kitchen displays",
       cursiveNote: "📱 Up to 5 Users (Owner + 4 Staff) · Realtime Sync",
       features: [
@@ -64,7 +64,7 @@ export default function PricingScreen() {
         "Inventory Stock & Daily Expense Tracking",
         "Waiter-wise Performance & Order Reports",
       ],
-      cta: "Choose Growth (₹599/mo)",
+      cta: "Choose Growth (₹499/mo)",
       ctaPrimary: true,
     },
     {
@@ -268,7 +268,7 @@ export default function PricingScreen() {
             <View style={[styles.tableRow, styles.tableHeader]}>
               <Text style={[styles.tableCell, styles.tableCellFeat, { fontWeight: "800", color: "#FFFFFF" }]}>Feature</Text>
               <Text style={[styles.tableCell, { fontWeight: "800", color: "#FF7D52" }]}>Starter (₹299/mo)</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Growth (₹599/mo)</Text>
+              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Growth (₹499/mo)</Text>
               <Text style={[styles.tableCell, { fontWeight: "800", color: "#635BFF" }]}>Pro (₹999/mo)</Text>
             </View>
             {comparisonRows.map((row, idx) => (

@@ -7147,7 +7147,7 @@ async def seed_super_admin():
          "features": ["Owner account", "Basic billing", "Menu CRUD", "Table CRUD", "Basic order creation", "Cloud data backup", "Local-first billing", "Offline bill generation", "Thermal printing", "GST billing", "Logo on bill", "Bill reprint", "Basic settings", "Light/Dark mode", "Password reset"]},
         {"id": "STARTER_YEARLY", "name": "Starter", "price": 2999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Starter Monthly", "Save ₹589 annually"]},
-        {"id": "GROWTH_MONTHLY", "name": "Growth", "price": 599.0, "interval": "month", "valid_days": 30,
+        {"id": "GROWTH_MONTHLY", "name": "Growth", "price": 499.0, "interval": "month", "valid_days": 30, "razorpay_plan_id": "plan_TupnPSnQSitc0L",
          "features": ["Everything in Starter", "Up to 5 users total (Owner + 4 staff)", "Staff management & roles", "Multi-device realtime sync", "Background & offline-first sync", "Role-based notifications", "Sales Analytics Dashboard", "Inventory management & alerts", "Expense tracking", "AI Photo → Menu"]},
         {"id": "GROWTH_YEARLY", "name": "Growth", "price": 5999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Growth Monthly", "Save ₹1,189 annually"]},

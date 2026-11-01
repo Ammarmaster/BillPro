@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar, BackHandler,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar, BackHandler, Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -575,11 +575,17 @@ export default function Billing() {
     }
 
     // Auto-print receipt optimistically if cashier printer is configured for auto-print
-    getPrinterSettings("cashier").then(async settings => {
-      if (settings && settings.type !== "none" && settings.auto_print) {
-        await printBill(updatedLocalBill);
+    const triggerAutoPrint = async () => {
+      try {
+        const settings = await getPrinterSettings("cashier");
+        if (settings && settings.type !== "none" && settings.auto_print) {
+          await printBill(updatedLocalBill);
+        }
+      } catch (printErr) {
+        console.warn("Auto-print error:", printErr);
       }
-    }).catch(() => {});
+    };
+    triggerAutoPrint();
 
     // Redirect to Takeaway (for next billing) or Tables section
     const isTakeawayBill =
@@ -593,9 +599,10 @@ export default function Billing() {
     const targetRoute = isTakeawayBill ? "/(app)/takeaway" : (backTo ? (backTo as any) : "/(app)/waiter");
 
     if (redirectTimeoutRef.current) clearTimeout(redirectTimeoutRef.current);
+    const navDelay = Platform.OS === "web" ? 1200 : 500;
     redirectTimeoutRef.current = setTimeout(() => {
       router.replace(targetRoute as any);
-    }, 400);
+    }, navDelay);
   };
 
   const doPrint = async () => {

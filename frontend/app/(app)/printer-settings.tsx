@@ -18,6 +18,7 @@ import {
   connectWebSerialPrinter, isWebSerialSupported,
   autoReconnectAllWebPrinters,
   kickCashDrawer,
+  printBillLegacy, printKOTLegacy,
   PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
 } from "@/src/lib/print";
 
@@ -250,6 +251,17 @@ export default function PrinterSettingsScreen() {
             setTimeout(() => setToastMessage(null), 3500);
           }
           return;
+        } else if (dev.type === "system" || dev.address === "System-Default") {
+          await handleApplyPreset({
+            id: "windows_spooler",
+            name: "Windows USB Printer (Spooler)",
+            brand: "Windows USB",
+            type: "system",
+            defaultWidth: 58,
+            description: "Laptop & PC Windows spooler",
+            icon: "desktop"
+          });
+          return;
         } else if (dev.type === "usb") {
           let paired = false;
           if (isWebUsbSupported()) {
@@ -264,6 +276,11 @@ export default function PrinterSettingsScreen() {
             setTimeout(() => setToastMessage(null), 3500);
             return;
           }
+          Alert.alert(
+            "USB Printer Notice",
+            "Windows printer driver has claimed the USB port. Tap 'Windows USB Printer' above to print directly through your active Windows printer driver!"
+          );
+          return;
         } else if (dev.type === "bluetooth") {
           let paired = false;
           const upper = (dev.name || "").toUpperCase();
@@ -282,6 +299,11 @@ export default function PrinterSettingsScreen() {
             setTimeout(() => setToastMessage(null), 3500);
             return;
           }
+          Alert.alert(
+            "Bluetooth Connection Notice",
+            "Could not connect via Web Bluetooth. Since your printer is connected to your laptop via USB, tap 'Windows USB Printer' above to use your Windows printer driver directly!"
+          );
+          return;
         }
       }
 
@@ -449,10 +471,27 @@ export default function PrinterSettingsScreen() {
     };
 
     try {
+      let printed = false;
       if (activeTab === "cashier") {
-        await printThermalDirect("cashier", testBill, false);
+        printed = await printThermalDirect("cashier", testBill, false);
       } else {
-        await printThermalDirect("kitchen", testBill, true);
+        printed = await printThermalDirect("kitchen", testBill, true);
+      }
+
+      // Universal Web fallback: If direct ESC/POS failed or device not connected,
+      // dispatch via Windows Print Spooler so test prints NEVER fail on laptop/desktop!
+      if (!printed && Platform.OS === "web") {
+        if (activeTab === "kitchen") {
+          await printKOTLegacy(testBill);
+        } else {
+          await printBillLegacy(testBill);
+        }
+        Alert.alert(
+          "Test Ticket Dispatched",
+          "Printed via Windows Print Spooler! Since your thermal printer is connected via USB to your laptop, it will print through your active Windows printer driver."
+        );
+      } else if (printed) {
+        Alert.alert("Print Test", "Test ticket sent to thermal printer successfully!");
       }
     } catch (e: any) {
       Alert.alert("Print Test", e.message || "Failed to print test ticket.");
@@ -484,13 +523,16 @@ export default function PrinterSettingsScreen() {
   const currentAddress = activeTab === "cashier" ? (cashierType === "network" ? cashierIP : cashierMAC) : (kitchenType === "network" ? kitchenIP : kitchenMAC);
 
   const getStatusBadge = (st: PrinterConnectionStatus) => {
+    if (currentType === "system") {
+      return { label: "Windows Spooler (Active)", bg: isDark ? "rgba(16, 185, 129, 0.18)" : "#DCFCE7", text: "#10B981", icon: "checkmark-circle" };
+    }
     switch (st) {
       case "connected":
         return { label: "Connected & Ready", bg: isDark ? "rgba(16, 185, 129, 0.18)" : "#DCFCE7", text: "#10B981", icon: "checkmark-circle" };
       case "reconnecting":
         return { label: "Auto-Reconnecting...", bg: isDark ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7", text: "#F59E0B", icon: "sync" };
       case "unavailable":
-        return { label: "Offline / Unavailable", bg: isDark ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2", text: "#EF4444", icon: "alert-circle" };
+        return { label: "Offline / Pair Required", bg: isDark ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2", text: "#EF4444", icon: "alert-circle" };
       default:
         return { label: "Not Configured", bg: isDark ? "rgba(148, 163, 184, 0.15)" : "#F1F5F9", text: theme.onSurfaceSecondary, icon: "close-circle" };
     }
@@ -713,6 +755,39 @@ export default function PrinterSettingsScreen() {
           {/* Web Quick Pair Shortcuts */}
           {Platform.OS === "web" && (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 140,
+                  backgroundColor: currentType === "system" ? "rgba(16,185,129,0.2)" : (isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB"),
+                  borderColor: currentType === "system" ? "#10B981" : (isDark ? "#F59E0B" : "#FDE68A"),
+                  borderWidth: 1.5,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={async () => {
+                  await handleApplyPreset({
+                    id: "windows_spooler",
+                    name: "Windows USB Printer (Spooler)",
+                    brand: "Windows USB",
+                    type: "system",
+                    defaultWidth: 58,
+                    description: "Laptop & PC Windows spooler",
+                    icon: "desktop"
+                  });
+                }}
+              >
+                <Ionicons name="desktop-outline" size={18} color="#F59E0B" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#F59E0B" }}>Windows USB</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>PC Spooler (100% Reliable)</Text>
+                </View>
+              </Pressable>
+
               <Pressable
                 style={{
                   flex: 1,

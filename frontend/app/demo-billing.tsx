@@ -993,7 +993,7 @@ export default function DemoBilling() {
                 </View>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
                   <Text style={[styles.planName, { color: "#FF5E2B" }]}>PRO RESTAURANT</Text>
-                  <Text style={styles.planPrice}>₹599<Text style={{ fontSize: 12, color: "#94A3B8" }}>/mo</Text></Text>
+                  <Text style={styles.planPrice}>₹499<Text style={{ fontSize: 12, color: "#94A3B8" }}>/mo</Text></Text>
                 </View>
                 <Text style={styles.planDesc}>For dine-in restaurants with tables & kitchen KOT.</Text>
                 

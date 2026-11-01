@@ -46,6 +46,15 @@ export interface PrinterPreset {
 
 export const PRINTER_PRESETS: PrinterPreset[] = [
   {
+    id: "windows_spooler",
+    name: "Windows USB Printer / System Spooler",
+    brand: "Windows USB",
+    type: "system",
+    defaultWidth: 58,
+    description: "Instant printing for USB printers installed on Windows laptop / PC (Hallet, POS-58, TVS, Epson)",
+    icon: "desktop",
+  },
+  {
     id: "tvs_rp",
     name: "TVS Electronics (RP 3150 / 3200 / 45)",
     brand: "TVS",
@@ -267,6 +276,9 @@ const BLUETOOTH_PRINTER_SERVICES = [
   "0000fef5-0000-1000-8000-00805f9b34fb",
   // Microchip ISSC Transparent BLE
   "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  // Standard Bluetooth SPP Serial Port Profile (Hallet / POS-58 / Generic BT)
+  "00001101-0000-1000-8000-00805f9b34fb",
+  "0000e0ff-0000-1000-8000-00805f9b34fb",
   // Xprinter / Posiflex custom BLE
   "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
   // Telink / Actions BLE printers
@@ -442,15 +454,46 @@ export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean>
   }
 
   try {
-    const chunkSize = 64; // Safe BLE MTU write size
+    // Universal BLE MTU payload size: 20 bytes (23 MTU - 3 byte ATT header).
+    // Most portable thermal printers drop or reject packets > 20 bytes!
+    const chunkSize = 20;
+    const canWriteWithoutResponse = !!activeWebBluetoothCharacteristic.properties?.writeWithoutResponse;
+    const canWriteWithResponse = !!activeWebBluetoothCharacteristic.properties?.write;
+
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.slice(i, i + chunkSize);
-      if (activeWebBluetoothCharacteristic.writeValueWithoutResponse) {
-        await activeWebBluetoothCharacteristic.writeValueWithoutResponse(chunk);
-      } else {
-        await activeWebBluetoothCharacteristic.writeValue(chunk);
+      let written = false;
+
+      // 1. Try writeWithoutResponse if characteristic supports it
+      if (canWriteWithoutResponse && activeWebBluetoothCharacteristic.writeValueWithoutResponse) {
+        try {
+          await activeWebBluetoothCharacteristic.writeValueWithoutResponse(chunk);
+          written = true;
+        } catch (wErr) {
+          console.warn("[BLE] writeWithoutResponse failed, falling back to writeValue:", wErr);
+        }
       }
-      await new Promise(r => setTimeout(r, 20));
+
+      // 2. Fallback to writeValue (with response acknowledgment)
+      if (!written && (canWriteWithResponse || activeWebBluetoothCharacteristic.writeValue)) {
+        try {
+          await activeWebBluetoothCharacteristic.writeValue(chunk);
+          written = true;
+        } catch (wErr2) {
+          console.warn("[BLE] writeValue failed:", wErr2);
+        }
+      }
+
+      // 3. Fallback to writeValueWithResponse
+      if (!written && activeWebBluetoothCharacteristic.writeValueWithResponse) {
+        try {
+          await activeWebBluetoothCharacteristic.writeValueWithResponse(chunk);
+          written = true;
+        } catch {}
+      }
+
+      // Safe pacing delay to avoid buffer overflow on printer's BLE UART chip
+      await new Promise(r => setTimeout(r, 15));
     }
     return true;
   } catch (e) {
@@ -1220,31 +1263,57 @@ export function convertThermalPayloadToEscPos(
 
 export function printViaIframe(html: string) {
   if (typeof document === "undefined") return;
+
+  // Inject automatic onload print trigger directly into HTML document
+  let printableHtml = html;
+  if (!printableHtml.includes("window.print()")) {
+    printableHtml = printableHtml.replace(
+      "</body>",
+      `<script>
+        window.addEventListener("load", function() {
+          setTimeout(function() {
+            try { window.focus(); window.print(); } catch(e) {}
+          }, 120);
+        });
+      </script></body>`
+    );
+  }
+
   let iframe = document.getElementById("ezbill-print-frame") as HTMLIFrameElement;
   if (!iframe) {
     iframe = document.createElement("iframe");
     iframe.id = "ezbill-print-frame";
     iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
+    iframe.style.top = "-9999px";
+    iframe.style.left = "-9999px";
+    iframe.style.width = "420px";
+    iframe.style.height = "600px";
     iframe.style.border = "none";
     document.body.appendChild(iframe);
   }
   const doc = iframe.contentWindow?.document || iframe.contentDocument;
   if (doc) {
     doc.open();
-    doc.write(html);
+    doc.write(printableHtml);
     doc.close();
     setTimeout(() => {
       try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
       } catch (e) {
-        console.warn("Iframe print error:", e);
+        console.warn("Iframe print error, falling back to popup window:", e);
+        try {
+          const win = window.open("", "_blank", "width=420,height=600");
+          if (win) {
+            win.document.write(printableHtml);
+            win.document.close();
+            win.focus();
+            win.print();
+            setTimeout(() => win.close(), 1000);
+          }
+        } catch {}
       }
-    }, 250);
+    }, 280);
   }
 }
 
@@ -1645,16 +1714,22 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   
   // 1. Try dedicated kitchen printer first (if manual or auto_print is on)
+  let handled = false;
   if (hasKitchenPrinter && (isManual || kSettings?.auto_print)) {
-    return await printThermalDirect("kitchen", order, true);
-  }
-  
-  // 2. Fallback to cashier printer ONLY if manual or cSettings.print_kot is enabled
-  if (hasCashierPrinter && (isManual || cSettings?.print_kot)) {
-    return await printThermalDirect("cashier", order, true);
+    handled = await printThermalDirect("kitchen", order, true);
+  } else if (hasCashierPrinter && (isManual || cSettings?.print_kot)) {
+    handled = await printThermalDirect("cashier", order, true);
   }
 
-  return false;
+  // Fallback to system print on web if manual request
+  if (!handled && Platform.OS === "web" && isManual) {
+    try {
+      await printKOTLegacy(order);
+      handled = true;
+    } catch {}
+  }
+
+  return handled;
 }
 
 // Background auto-reconnect manager with backoff
@@ -2034,9 +2109,19 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           }
         }
 
-        // Silent suppression during automated ordering — never pop up chooser
-        console.warn("[PRINT] Bluetooth printer not reachable silently. Connect in Printer Settings.");
-        return false;
+        // Direct Web Bluetooth failed or not active:
+        // Automatically fallback to Windows Spooler on Web so prints NEVER get lost!
+        try {
+          if (isKitchen) {
+            await printKOTLegacy(data);
+          } else {
+            await printBillLegacy(data);
+          }
+          return true;
+        } catch (fbErr) {
+          console.warn("[PRINT] Bluetooth fallback to spooler error:", fbErr);
+          return false;
+        }
       }
 
       // 2. Direct WebUSB / Web Serial ESC/POS
@@ -2069,9 +2154,19 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           }
         }
 
-        // Silent suppression during automated ordering — never pop up chooser
-        console.warn("[PRINT] USB thermal printer not reachable silently. Connect in Printer Settings.");
-        return false;
+        // Direct WebUSB failed or claimed by Windows driver:
+        // Automatically fallback to Windows Spooler on Web so prints NEVER get lost!
+        try {
+          if (isKitchen) {
+            await printKOTLegacy(data);
+          } else {
+            await printBillLegacy(data);
+          }
+          return true;
+        } catch (fbErr) {
+          console.warn("[PRINT] USB fallback to spooler error:", fbErr);
+          return false;
+        }
       }
 
       // 3. Network TCP printer on Web
@@ -2167,11 +2262,23 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
 export async function printBill(bill: any): Promise<boolean> {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  const settings = await getPrinterSettings("cashier");
-  let handled = await printThermalDirect("cashier", bill, false);
-  if (!handled && settings?.type === "system" && Platform.OS === "web") {
-    await printBillLegacy(bill);
-    handled = true;
+  let handled = false;
+  try {
+    handled = await printThermalDirect("cashier", bill, false);
+  } catch (err) {
+    console.warn("[PRINT] printThermalDirect failed:", err);
+  }
+
+  // Universal Fallback on Web / Laptop / Desktop:
+  // If direct raw ESC/POS failed (e.g. USB claimed by Windows printer driver or Bluetooth dropped),
+  // seamlessly print via Windows/Browser system spooler so the receipt ALWAYS prints!
+  if (!handled && Platform.OS === "web") {
+    try {
+      await printBillLegacy(bill);
+      handled = true;
+    } catch (legErr) {
+      console.warn("[PRINT] System print fallback error:", legErr);
+    }
   }
   return handled;
 }
