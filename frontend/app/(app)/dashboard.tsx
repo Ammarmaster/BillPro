@@ -304,13 +304,15 @@ function AdminConsole() {
         </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Pressable
-            style={[styles.headerIconBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-            onPress={() => setServerModal(true)}
-            hitSlop={8}
-          >
-            <Ionicons name="server-outline" size={18} color="#06B6D4" />
-          </Pressable>
+          {isSuperAdmin && (
+            <Pressable
+              style={[styles.headerIconBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+              onPress={() => setServerModal(true)}
+              hitSlop={8}
+            >
+              <Ionicons name="server-outline" size={18} color="#06B6D4" />
+            </Pressable>
+          )}
 
           <Pressable
             style={[styles.headerIconBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}

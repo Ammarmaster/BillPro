@@ -10,8 +10,6 @@ import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
-import BackendConfigModal from "@/src/components/BackendConfigModal";
-import { getBackendUrl } from "@/src/lib/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -19,8 +17,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showServerModal, setShowServerModal] = useState(false);
-  const [currentServerUrl, setCurrentServerUrl] = useState(() => getBackendUrl());
   const { login } = useAuth();
   const { theme, isDark } = useTheme();
   const { isDesktop } = useResponsive();
@@ -211,24 +207,10 @@ export default function Login() {
                   Are you an employee? <Text style={styles.staffAccent}>Staff PIN Login</Text>
                 </Text>
               </Pressable>
-
-              {/* Dynamic Server Config Button */}
-              <Pressable onPress={() => setShowServerModal(true)} style={styles.serverPillBtn} hitSlop={8}>
-                <Ionicons name="server-outline" size={13} color="#64748B" />
-                <Text style={styles.serverPillText} numberOfLines={1}>
-                  Server: {currentServerUrl.replace(/^https?:\/\//, "")}
-                </Text>
-              </Pressable>
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <BackendConfigModal
-        visible={showServerModal}
-        onClose={() => setShowServerModal(false)}
-        onSuccess={(url) => setCurrentServerUrl(url)}
-      />
     </View>
   );
 }
@@ -367,26 +349,6 @@ const styles = StyleSheet.create({
   staffBtn: { marginTop: spacing.lg, alignItems: "center" },
   staffText: { color: "#64748B", fontSize: 13, fontWeight: "500" },
   staffAccent: { color: "#FF5E2B", fontWeight: "700" },
-  serverPillBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: spacing.xl,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    alignSelf: "center",
-    maxWidth: 280,
-  },
-  serverPillText: {
-    color: "#64748B",
-    fontSize: 11,
-    fontWeight: "600",
-  },
 
   forgotBtn: { alignSelf: "flex-end", marginTop: 4, marginBottom: 8 },
   successBanner: {
