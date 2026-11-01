@@ -1104,24 +1104,25 @@ export function convertThermalPayloadToEscPos(
   const maxChars = width === 58 ? 32 : 48;
   const bytes: number[] = [];
 
-  // Init printer: ESC @ (0x1B, 0x40)
+  // 1. Reset / Initialize printer: ESC @
   bytes.push(0x1B, 0x40);
 
-  // High Density / Thermal Heating Commands to make print dark and clear
-  if (darkness === "extra_dark") {
-    // 1. DC2 7: Heating parameters (max dots 9, heating time 230=2.3ms for deep black, interval 2)
-    bytes.push(0x12, 0x37, 0x09, 0xE6, 0x02);
-    // 2. Double-strike mode ON: ESC G 1 (double heating pass for high contrast)
+  // 2. Cancel Chinese Character Mode (FS .): Essential for Hallet H80i, Xprinter, POS-58/80!
+  // Prevents the printer from misinterpreting any control bytes or data as Chinese characters.
+  bytes.push(0x1C, 0x2E);
+
+  // 3. Select Character Code Table 0 (PC437: Standard USA / Western English): ESC t 0
+  bytes.push(0x1B, 0x74, 0x00);
+
+  // 4. Select International Character Set (USA): ESC R 0
+  bytes.push(0x1B, 0x52, 0x00);
+
+  // 5. Set default line spacing (30 dots): ESC 3 30
+  bytes.push(0x1B, 0x33, 0x1E);
+
+  // Universal ESC/POS double-strike for clean, high-contrast dark text
+  if (darkness === "extra_dark" || darkness === "dark") {
     bytes.push(0x1B, 0x47, 0x01);
-    // 3. GS ~ 4: Thermal density maximum
-    bytes.push(0x1D, 0x7E, 0x04);
-  } else if (darkness === "dark") {
-    // Heating time: 180=1.8ms
-    bytes.push(0x12, 0x37, 0x08, 0xB4, 0x02);
-    // Double-strike mode ON: ESC G 1
-    bytes.push(0x1B, 0x47, 0x01);
-    // GS ~ 3: Thermal density high
-    bytes.push(0x1D, 0x7E, 0x03);
   }
 
   const lines = payload.split("\n");
@@ -1150,21 +1151,9 @@ export function convertThermalPayloadToEscPos(
       continue;
     }
 
-    // Check for raster image tag: <rasterimg>hexbytes</rasterimg>
-    const rasterMatch = rawLine.match(/<rasterimg>(.*?)<\/rasterimg>/i);
-    if (rasterMatch) {
-      const hex = (rasterMatch[1] || "").trim();
-      if (hex) {
-        for (let i = 0; i < hex.length; i += 2) {
-          bytes.push(parseInt(hex.substr(i, 2), 16));
-        }
-        bytes.push(0x0A);
-      }
-      continue;
-    }
-
-    // Skip raw <img> tags in ESC/POS byte conversion so raw base64 text is never printed on paper
-    if (rawLine.includes("<img>") || rawLine.includes("</img>")) {
+    // Skip raster images and raw <img> tags in ESC/POS byte conversion so raw graphics bytes
+    // are never sent to thermal printers as text (which causes Chinese character output on Hallet/POS printers)
+    if (rawLine.includes("<rasterimg>") || rawLine.includes("</rasterimg>") || rawLine.includes("<img>") || rawLine.includes("</img>")) {
       continue;
     }
 
@@ -1260,7 +1249,8 @@ export function convertThermalPayloadToEscPos(
   if (width === 58) {
     bytes.push(0x1B, 0x64, 0x01);
   } else {
-    bytes.push(0x1B, 0x64, 0x02);
+    // Feed 4 lines on 80mm desktop printers so the QR code and total are well above the auto-cutter blade
+    bytes.push(0x1B, 0x64, 0x04);
     if (autoCut) {
       // Use GS V 1 (0x1D, 0x56, 0x01) for instant partial cut without feeding extra blank paper
       bytes.push(0x1D, 0x56, 0x01);
@@ -1498,25 +1488,10 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
     const rawName = (r.name || "Master Chef").trim();
     const restaurantName = rawName.toUpperCase();
 
-    // 1. Print restaurant icon / logo if uploaded by restaurant owner
+    // 1. Print restaurant icon / logo in native Android app
     const logoBase64 = getBillLogo(r, width);
-    if (logoBase64) {
-      if (Platform.OS === "web") {
-        // Convert logo to ESC/POS raster bitmap for thermal printers (non-blocking, with timeout)
-        try {
-          const rasterPromise = convertBase64ToEscPosRaster(logoBase64, width === 80 ? 80 : 58);
-          const rasterTimeout = new Promise<number[]>((resolve) => setTimeout(() => resolve([]), 3000));
-          const rasterBytes = await Promise.race([rasterPromise, rasterTimeout]);
-          if (rasterBytes && rasterBytes.length > 0) {
-            const hex = rasterBytes.map(b => b.toString(16).padStart(2, "0")).join("");
-            lines.push(`<rasterimg>${hex}</rasterimg>\n`);
-          }
-        } catch (logoErr) {
-          console.warn("[PRINT] Raster logo generation error:", logoErr);
-        }
-      } else {
-        lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
-      }
+    if (logoBase64 && Platform.OS !== "web") {
+      lines.push(`[C]<img>data:image/png;base64,${logoBase64}</img>\n`);
     }
 
     // Centered restaurant name:
