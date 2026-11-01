@@ -132,8 +132,8 @@ export default function WaiterScreen() {
         const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
         const kSettings = await getPrinterSettings("kitchen");
         const cSettings = await getPrinterSettings("cashier");
-        const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
-        const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
+        const isKitchenConfigured = !!(kSettings && kSettings.type !== "none");
+        const isCashierConfigured = !!(cSettings && cSettings.type !== "none");
         const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
         if (shouldPrint) {
           await printKitchenKOT(finalOrder);
@@ -451,8 +451,8 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           const { getPrinterSettings, printKitchenKOT } = require("@/src/lib/print");
           const kSettings = await getPrinterSettings("kitchen");
           const cSettings = await getPrinterSettings("cashier");
-          const isKitchenConfigured = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
-          const isCashierConfigured = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
+          const isKitchenConfigured = !!(kSettings && kSettings.type !== "none");
+          const isCashierConfigured = !!(cSettings && cSettings.type !== "none");
           const shouldPrint = isKitchenConfigured ? !!kSettings?.auto_print : (isCashierConfigured ? !!cSettings?.print_kot : false);
           if (shouldPrint) {
             await printKitchenKOT(optimisticOrder);

@@ -759,6 +759,39 @@ export default function PrinterSettingsScreen() {
                 style={{
                   flex: 1,
                   minWidth: 140,
+                  backgroundColor: (currentName && currentName.includes("Hallet")) ? "rgba(16,185,129,0.2)" : (isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2"),
+                  borderColor: (currentName && currentName.includes("Hallet")) ? "#10B981" : (isDark ? "#EF4444" : "#FECDD3"),
+                  borderWidth: 1.5,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={async () => {
+                  await handleApplyPreset({
+                    id: "hallet_h80i",
+                    name: "Hallet H80i (80mm / 3 Inch)",
+                    brand: "Hallet",
+                    type: "system",
+                    defaultWidth: 80,
+                    description: "Hallet H80i 80mm thermal POS receipt & KOT printer",
+                    icon: "receipt"
+                  });
+                }}
+              >
+                <Ionicons name="receipt" size={18} color="#EF4444" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#EF4444" }}>Hallet H80i (80mm)</Text>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>3-Inch Billing & KOT</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={{
+                  flex: 1,
+                  minWidth: 140,
                   backgroundColor: currentType === "system" ? "rgba(16,185,129,0.2)" : (isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB"),
                   borderColor: currentType === "system" ? "#10B981" : (isDark ? "#F59E0B" : "#FDE68A"),
                   borderWidth: 1.5,
@@ -856,6 +889,12 @@ export default function PrinterSettingsScreen() {
                   <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>CH340 / USB-Serial</Text>
                 </View>
               </Pressable>
+
+              <View style={{ width: "100%", paddingVertical: 4 }}>
+                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
+                  ℹ️ <Text style={{ fontWeight: "700", color: theme.onSurface }}>Hallet H80i & Desktop Printers:</Text> Hallet H80i uses Bluetooth Classic & USB. On laptop/desktop browsers, Web Bluetooth cannot see Classic devices. Since your Hallet H80i is plugged in via USB, tap <Text style={{ fontWeight: "800", color: "#EF4444" }}>Hallet H80i (80mm)</Text> above to print bills and KOTs instantly via your Windows driver!
+                </Text>
+              </View>
             </View>
           )}
 

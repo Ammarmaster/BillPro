@@ -46,11 +46,20 @@ export interface PrinterPreset {
 
 export const PRINTER_PRESETS: PrinterPreset[] = [
   {
+    id: "hallet_h80i",
+    name: "Hallet H80i (80mm / 3 Inch)",
+    brand: "Hallet",
+    type: "system",
+    defaultWidth: 80,
+    description: "Hallet H80i 80mm / 3-inch thermal POS receipt & KOT printer (USB & Windows)",
+    icon: "receipt",
+  },
+  {
     id: "windows_spooler",
     name: "Windows USB Printer / System Spooler",
     brand: "Windows USB",
     type: "system",
-    defaultWidth: 58,
+    defaultWidth: 80,
     description: "Instant printing for USB printers installed on Windows laptop / PC (Hallet, POS-58, TVS, Epson)",
     icon: "desktop",
   },
@@ -1659,8 +1668,8 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
   const kSettings = await getPrinterSettings("kitchen");
   const cSettings = await getPrinterSettings("cashier");
 
-  const hasKitchenPrinter = kSettings && kSettings.type !== "none" && kSettings.type !== "system";
-  const hasCashierPrinter = cSettings && cSettings.type !== "none" && cSettings.type !== "system";
+  const hasKitchenPrinter = !!(kSettings && kSettings.type !== "none");
+  const hasCashierPrinter = !!(cSettings && cSettings.type !== "none");
 
   // Strict Auto-Print Setting Guard:
   // If NOT a manual print, strictly evaluate whether KOT auto-print is active
@@ -1721,12 +1730,14 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
     handled = await printThermalDirect("cashier", order, true);
   }
 
-  // Fallback to system print on web if manual request
-  if (!handled && Platform.OS === "web" && isManual) {
+  // Fallback to system print on web so KOT NEVER fails on laptop / PC
+  if (!handled && Platform.OS === "web") {
     try {
       await printKOTLegacy(order);
       handled = true;
-    } catch {}
+    } catch (kotErr) {
+      console.warn("[PRINT] KOT system fallback error:", kotErr);
+    }
   }
 
   return handled;
