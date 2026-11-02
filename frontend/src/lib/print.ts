@@ -14,7 +14,7 @@ try {
 const PRINTER_SETTINGS_PREFIX = "lumina_printer_settings_";
 
 export type PrinterConnectionStatus = "connected" | "reconnecting" | "unavailable" | "none";
-export type PrinterConnectionType = "bluetooth" | "network" | "usb" | "sunmi" | "system" | "qz" | "none";
+export type PrinterConnectionType = "bluetooth" | "network" | "usb" | "sunmi" | "system" | "none";
 
 export interface PrinterSettings {
   type: PrinterConnectionType;
@@ -220,11 +220,6 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
 
   try {
     if (Platform.OS === "web") {
-      if (settings.type === "qz") {
-        const status = (await isQzRunning()) ? "connected" : "unavailable";
-        setPrinterStatus(role, status);
-        return status;
-      }
       // A WebUSB printer is only "connected" if its own device is present, not any other transport
       if (settings.type === "usb" && parseUsbAddress(settings.address)) {
         const status = (await findConfiguredUsbDevice(settings.address)) ? "connected" : "unavailable";
@@ -760,7 +755,7 @@ export async function autoReconnectAllWebPrinters(role: "cashier" | "kitchen" = 
   if (Platform.OS !== "web") return false;
   const settings = await getPrinterSettings(role);
   // Roles using the spooler or no printer must not grab remembered ports from a role that does
-  if (!settings || settings.type === "none" || settings.type === "system" || settings.type === "qz") return false;
+  if (!settings || settings.type === "none" || settings.type === "system") return false;
   if (settings.type === "usb" && parseUsbAddress(settings.address)) {
     return tryAutoReconnectWebUsb(role);
   }
@@ -980,84 +975,6 @@ async function sendUsbSettingsBytes(address: string | undefined, bytes: Uint8Arr
     : { outcome: "not_sent", reason: "No connected USB or serial printer was found." };
 }
 
-// QZ Tray: a local helper app that sends raw ESC/POS to a Windows printer without replacing its driver
-let qzConnecting: Promise<any> | null = null;
-
-async function getConnectedQz(): Promise<any> {
-  // @ts-ignore qz-tray ships without type declarations
-  const module: any = await import("qz-tray");
-  const qz = module.default || module;
-  if (qz.websocket.isActive()) return qz;
-  if (!qzConnecting) {
-    qzConnecting = qz.websocket.connect({ retries: 1, delay: 1 }).finally(() => { qzConnecting = null; });
-  }
-  await qzConnecting;
-  return qz;
-}
-
-export async function listQzPrinters(): Promise<string[]> {
-  const qz = await getConnectedQz();
-  const printers = await qz.printers.find();
-  return Array.isArray(printers) ? printers : [printers];
-}
-
-export async function connectQzPrinter(role: "cashier" | "kitchen", printerName: string): Promise<void> {
-  const existing = await getPrinterSettings(role);
-  await savePrinterSettings(role, {
-    auto_print: true,
-    width: 58,
-    ...existing,
-    type: "qz",
-    address: printerName,
-    name: printerName,
-    brand: "QZ Tray",
-  });
-  await checkPrinterConnection(role);
-}
-
-// Only checks the connection: listing printers shows a QZ Tray permission popup on unsigned sites
-async function isQzRunning(): Promise<boolean> {
-  try {
-    await getConnectedQz();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// An identical job still waiting (e.g. on the permission popup) is shared, so repeat clicks cannot print twice
-const qzJobsInFlight = new Map<string, Promise<DirectSendResult>>();
-
-function sendQzJob(printerName: string, bytes: Uint8Array): Promise<DirectSendResult> {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  const data = btoa(binary);
-  const key = `${printerName}:${data}`;
-
-  const inFlight = qzJobsInFlight.get(key);
-  if (inFlight) return inFlight;
-
-  const job = writeQzJob(printerName, data).finally(() => { qzJobsInFlight.delete(key); });
-  qzJobsInFlight.set(key, job);
-  return job;
-}
-
-async function writeQzJob(printerName: string, data: string): Promise<DirectSendResult> {
-  let qz: any;
-  try {
-    qz = await getConnectedQz();
-  } catch {
-    return { outcome: "not_sent", reason: "QZ Tray is not running on this computer." };
-  }
-  try {
-    await qz.print(qz.configs.create(printerName), [{ type: "raw", format: "command", flavor: "base64", data }]);
-    return { outcome: "sent" };
-  } catch (e: any) {
-    // The job may already be with the Windows print queue, so it must not be resent automatically
-    return { outcome: "ambiguous", reason: e?.message || "QZ Tray reported a print error." };
-  }
-}
-
 export function getDrawerKickCommand(): Uint8Array {
   // ESC p 0 25 250 (Pin 2 kick) & ESC p 1 25 250 (Pin 5 kick)
   return new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA, 0x1B, 0x70, 0x01, 0x19, 0xFA]);
@@ -1073,9 +990,6 @@ export async function kickCashDrawer(role: "cashier" | "kitchen" = "cashier"): P
   const kickBytes = getDrawerKickCommand();
 
   if (Platform.OS === "web") {
-    if (settings.type === "qz") {
-      return (await sendQzJob(settings.address, kickBytes)).outcome === "sent";
-    }
     if (settings.type === "usb") {
       return (await sendUsbSettingsBytes(settings.address, kickBytes, role)).outcome === "sent";
     }
@@ -2224,9 +2138,6 @@ export async function printNativeQrTest(role: "cashier" | "kitchen"): Promise<bo
   const payload = "[C]Fast QR test\n[C]<qrcode>BillPro Fast QR test OK. This is not a payment code, so nothing can be paid by scanning it.</qrcode>\n[C]If a QR is above, it should scan.\n";
   const bytes = convertThermalPayloadToEscPos(payload, settings.width || 58, false, settings.darkness || "extra_dark", true);
 
-  if (settings.type === "qz") {
-    return (await sendQzJob(settings.address, bytes)).outcome === "sent";
-  }
   if (settings.type === "usb") {
     return (await sendUsbSettingsBytes(settings.address, bytes, role)).outcome === "sent";
   }
@@ -2392,12 +2303,9 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       }
 
       // 2. Direct WebUSB / Web Serial ESC/POS
-      if (settings.type === "usb" || settings.type === "qz") {
-        const printerLabel = settings.type === "qz" ? "QZ Tray printer" : "USB printer";
+      if (settings.type === "usb") {
         const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
-        const result = settings.type === "qz"
-          ? await sendQzJob(settings.address, escPosBytes)
-          : await sendUsbSettingsBytes(settings.address, escPosBytes, role);
+        const result = await sendUsbSettingsBytes(settings.address, escPosBytes, role);
         if (result.outcome === "sent") {
           if (c === copiesCount - 1) return true;
           continue;
@@ -2406,11 +2314,11 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
         // An earlier copy or some of this one may be on paper: no automatic resend of any kind
         if (result.outcome === "ambiguous" || c > 0) {
           throw new PrintIncompleteError(
-            `The ${printerLabel} stopped during copy ${c + 1} of ${copiesCount}: ${result.reason} Check the printed slip and reprint only if it is incomplete.`
+            `The USB printer stopped during copy ${c + 1} of ${copiesCount}: ${result.reason} Check the printed slip and reprint only if it is incomplete.`
           );
         }
-        console.warn(`[PRINT] ${printerLabel} not reached, using system print:`, result.reason);
-        notifyPrintProblem(settings.type === "qz" ? "QZ Tray Printer Not Reached" : "USB Printer Not Reached", `${result.reason}\n\nOpening the system print dialog instead.`);
+        console.warn("[PRINT] USB printer not reached, using system print:", result.reason);
+        notifyPrintProblem("USB Printer Not Reached", `${result.reason}\n\nOpening the system print dialog instead.`);
 
         // Direct WebUSB failed or claimed by Windows driver:
         // Automatically fallback to Windows Spooler on Web so prints NEVER get lost!
@@ -3006,12 +2914,6 @@ export async function printClosingReport(session: any, restaurant?: any): Promis
   if (settings && settings.type !== "none" && settings.type !== "system") {
     const payload = await formatClosingReceipt(session, settings.width);
     if (Platform.OS === "web") {
-      if (settings.type === "qz") {
-        const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width, false, settings.darkness || "extra_dark");
-        const result = await sendQzJob(settings.address, escPosBytes);
-        if (result.outcome === "sent") return true;
-        if (result.outcome === "ambiguous") throw new PrintIncompleteError(`${result.reason} Check the printer before printing the report again.`);
-      }
       if (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected)) {
         try {
           const escPosBytes = convertThermalPayloadToEscPos(payload, settings.width, false, settings.darkness || "extra_dark");

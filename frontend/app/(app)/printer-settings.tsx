@@ -16,7 +16,7 @@ import {
   connectWebBluetoothPrinter, isWebBluetoothSupported,
   connectWebUsbPrinter, isWebUsbSupported,
   connectWebSerialPrinter, isWebSerialSupported,
-  autoReconnectAllWebPrinters, listQzPrinters, connectQzPrinter,
+  autoReconnectAllWebPrinters,
   kickCashDrawer,
   printBillLegacy, printKOTLegacy, notifyPrintProblem, printNativeQrTest,
   PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
@@ -61,8 +61,6 @@ export default function PrinterSettingsScreen() {
   const [cashierDarkness, setCashierDarkness] = useState<"normal" | "dark" | "extra_dark">("extra_dark");
   const [cashierNativeQr, setCashierNativeQr] = useState(false);
   const [testingQr, setTestingQr] = useState(false);
-  const [qzPrinters, setQzPrinters] = useState<string[]>([]);
-  const [loadingQz, setLoadingQz] = useState(false);
 
   // Kitchen printer states
   const [kitchenType, setKitchenType] = useState<PrinterConnectionType>("none");
@@ -97,7 +95,7 @@ export default function PrinterSettingsScreen() {
       if (cashier.type === "network") {
         setCashierIP(cashier.address);
         setCashierPort(cashier.port || "9100");
-      } else if (cashier.type === "bluetooth" || cashier.type === "sunmi" || cashier.type === "usb" || cashier.type === "qz") {
+      } else if (cashier.type === "bluetooth" || cashier.type === "sunmi" || cashier.type === "usb") {
         setCashierMAC(cashier.address);
       }
       setCashierName(cashier.name);
@@ -119,7 +117,7 @@ export default function PrinterSettingsScreen() {
       if (kitchen.type === "network") {
         setKitchenIP(kitchen.address);
         setKitchenPort(kitchen.port || "9100");
-      } else if (kitchen.type === "bluetooth" || kitchen.type === "sunmi" || kitchen.type === "usb" || kitchen.type === "qz") {
+      } else if (kitchen.type === "bluetooth" || kitchen.type === "sunmi" || kitchen.type === "usb") {
         setKitchenMAC(kitchen.address);
       }
       setKitchenName(kitchen.name);
@@ -508,30 +506,6 @@ export default function PrinterSettingsScreen() {
     }
   };
 
-  const handleFindQzPrinters = async () => {
-    setLoadingQz(true);
-    try {
-      setQzPrinters(await listQzPrinters());
-    } catch {
-      setQzPrinters([]);
-      notifyPrintProblem("QZ Tray Not Found", "Install QZ Tray from qz.io, make sure it is running, allow this website if it asks, then try again.");
-    } finally {
-      setLoadingQz(false);
-    }
-  };
-
-  const handleSelectQzPrinter = async (printerName: string) => {
-    try {
-      await connectQzPrinter(activeTab, printerName);
-      await loadSettings();
-      setQzPrinters([]);
-      setToastMessage(`✓ ${printerName} connected through QZ Tray`);
-      setTimeout(() => setToastMessage(null), 3500);
-    } catch (e: any) {
-      notifyPrintProblem("QZ Tray", e.message || "Could not save this printer.");
-    }
-  };
-
   const handleTestQr = async () => {
     setTestingQr(true);
     try {
@@ -812,11 +786,6 @@ export default function PrinterSettingsScreen() {
                   }),
                 },
                 {
-                  key: "qz", icon: "flash-outline", title: "QZ Tray", desc: loadingQz ? "Looking for QZ Tray..." : "Keeps the driver, prints with no dialog",
-                  active: currentType === "qz",
-                  onPress: handleFindQzPrinters,
-                },
-                {
                   key: "usb", icon: "hardware-chip-outline", title: "Direct USB", desc: "USB printer without a Windows driver",
                   active: currentType === "usb",
                   onPress: () => handleConnectDevice({ name: "Direct USB Thermal Printer", address: "web-usb-pair", type: "usb" }),
@@ -827,7 +796,7 @@ export default function PrinterSettingsScreen() {
                   onPress: () => handleConnectDevice({ name: "Web Bluetooth Printer", address: "web-bluetooth-pair", type: "bluetooth" }),
                 },
                 {
-                  key: "serial", icon: "swap-horizontal-outline", title: "COM port", desc: "CH340 USB or Bluetooth Classic",
+                  key: "serial", icon: "flash-outline", title: "COM port", desc: "CH340 USB or Bluetooth Classic",
                   active: currentType === "bluetooth" && currentAddress === "MPT-II",
                   onPress: () => handleConnectDevice({ name: "Windows Serial COM Port", address: "web-serial-pair", type: "usb" }),
                 },
@@ -848,25 +817,6 @@ export default function PrinterSettingsScreen() {
                     <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>{option.desc}</Text>
                   </View>
                   {option.active && <Ionicons name="checkmark-circle" size={20} color="#635BFF" />}
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {Platform.OS === "web" && qzPrinters.length > 0 && (
-            <View style={{ marginTop: 10 }}>
-              <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>Choose your thermal printer</Text>
-              {qzPrinters.map(printerName => (
-                <Pressable
-                  key={printerName}
-                  style={[styles.deviceRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                  onPress={() => handleSelectQzPrinter(printerName)}
-                >
-                  <Ionicons name="print-outline" size={20} color="#635BFF" style={{ marginRight: 10 }} />
-                  <Text style={[styles.deviceName, { color: theme.onSurface, flex: 1 }]} numberOfLines={1}>{printerName}</Text>
-                  <View style={[styles.useTag, { backgroundColor: "#635BFF" }]}>
-                    <Text style={styles.useTagText}>Use</Text>
-                  </View>
                 </Pressable>
               ))}
             </View>
@@ -998,9 +948,8 @@ export default function PrinterSettingsScreen() {
                     { id: "usb", label: "USB Cable", icon: "git-network" },
                     { id: "sunmi", label: "Sunmi POS", icon: "phone-portrait" },
                     { id: "system", label: "System Spooler", icon: "desktop" },
-                    { id: "qz", label: "QZ Tray", icon: "flash" },
                     { id: "none", label: "Disabled", icon: "close-circle" }
-                  ] as const).filter(t => t.id !== "qz" || Platform.OS === "web").map(t => {
+                  ] as const).map(t => {
                     const isSel = (activeTab === "cashier" ? cashierType : kitchenType) === t.id;
                     return (
                       <Pressable
@@ -1350,7 +1299,7 @@ export default function PrinterSettingsScreen() {
           </View>
 
           {/* Fast QR: web ESC/POS only, the mobile app prints through its own library */}
-          {Platform.OS === "web" && activeTab === "cashier" && (cashierType === "usb" || cashierType === "bluetooth" || cashierType === "qz") && (
+          {Platform.OS === "web" && activeTab === "cashier" && (cashierType === "usb" || cashierType === "bluetooth") && (
             <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
               <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
