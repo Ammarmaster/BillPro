@@ -18,7 +18,7 @@ import {
   connectWebSerialPrinter, isWebSerialSupported,
   autoReconnectAllWebPrinters,
   kickCashDrawer,
-  printBillLegacy, printKOTLegacy, notifyPrintProblem,
+  printBillLegacy, printKOTLegacy, notifyPrintProblem, printNativeQrTest,
   PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
 } from "@/src/lib/print";
 
@@ -58,6 +58,8 @@ export default function PrinterSettingsScreen() {
   const [cashierAutoCut, setCashierAutoCut] = useState(false);
   const [cashierCopies, setCashierCopies] = useState<number>(1);
   const [cashierDarkness, setCashierDarkness] = useState<"normal" | "dark" | "extra_dark">("extra_dark");
+  const [cashierNativeQr, setCashierNativeQr] = useState(false);
+  const [testingQr, setTestingQr] = useState(false);
 
   // Kitchen printer states
   const [kitchenType, setKitchenType] = useState<PrinterConnectionType>("none");
@@ -105,6 +107,7 @@ export default function PrinterSettingsScreen() {
       setCashierAutoCut(isMptC ? false : (cashier.auto_cut ?? false));
       setCashierCopies(cashier.copies || 1);
       setCashierDarkness(cashier.darkness || "extra_dark");
+      setCashierNativeQr(cashier.native_qr ?? false);
     }
 
     const kitchen = await getPrinterSettings("kitchen");
@@ -404,6 +407,7 @@ export default function PrinterSettingsScreen() {
         auto_cut: cashierAutoCut,
         copies: cashierCopies,
         darkness: cashierDarkness,
+        native_qr: cashierNativeQr,
       };
       await savePrinterSettings("cashier", cashierSettings);
 
@@ -498,6 +502,23 @@ export default function PrinterSettingsScreen() {
       notifyPrintProblem("Print Test", e.message || "Failed to print test ticket.");
     } finally {
       setTestingPrint(false);
+    }
+  };
+
+  const handleTestQr = async () => {
+    setTestingQr(true);
+    try {
+      const sent = await printNativeQrTest("cashier");
+      notifyPrintProblem(
+        "Fast QR Test",
+        sent
+          ? "Sent. If a QR printed, scan it with your phone camera. Turn on Fast QR and save only if it scans."
+          : "Could not reach the printer. Connect and save it first, then try again."
+      );
+    } catch (e: any) {
+      notifyPrintProblem("Fast QR Test", e.message || "Failed to print the test QR.");
+    } finally {
+      setTestingQr(false);
     }
   };
 
@@ -1273,6 +1294,31 @@ export default function PrinterSettingsScreen() {
               thumbColor="#FFFFFF"
             />
           </View>
+
+          {/* Fast QR: web ESC/POS only, the mobile app prints through its own library */}
+          {Platform.OS === "web" && activeTab === "cashier" && (cashierType === "usb" || cashierType === "bluetooth") && (
+            <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
+                  Fast QR
+                </Text>
+                <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
+                  Printer draws the bill QR itself. Not all printers support this, so test first
+                </Text>
+                <Pressable onPress={handleTestQr} disabled={testingQr} style={{ marginTop: 6, alignSelf: "flex-start" }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#635BFF" }}>
+                    {testingQr ? "Printing..." : "Test QR"}
+                  </Text>
+                </Pressable>
+              </View>
+              <Switch
+                value={cashierNativeQr}
+                onValueChange={setCashierNativeQr}
+                trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          )}
 
           {/* Print Darkness / Density Selector */}
           <View style={[styles.switchRow, { borderTopColor: theme.border, alignItems: "center" }]}>

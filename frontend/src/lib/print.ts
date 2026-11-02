@@ -29,6 +29,7 @@ export interface PrinterSettings {
   auto_cut?: boolean;   // Auto paper cut
   copies?: number;      // 1, 2, or 3 copies
   darkness?: "normal" | "dark" | "extra_dark"; // Thermal heating density & darkness
+  native_qr?: boolean;  // Web ESC/POS: printer draws the QR itself (not supported by every printer)
   saved_at?: string;
   last_status?: PrinterConnectionStatus;
 }
@@ -1057,6 +1058,34 @@ function encodeUtf8(str: string): Uint8Array {
   return new Uint8Array(utf8);
 }
 
+// Printer-drawn QR (GS ( k). Printers without this command print nothing or stray characters, so it is opt-in.
+export function generateEscPosNativeQr(text: string, paperWidth: 58 | 80 = 58): number[] {
+  if (!text || !text.trim()) return [];
+  try {
+    const data = Array.from(new TextEncoder().encode(text.trim()));
+    if (data.length > 1000) return [];
+
+    // Same printed size as the raster QR
+    const qrSize = QRCode.create(text.trim(), { errorCorrectionLevel: "M" }).modules.size;
+    const maxQrDots = paperWidth === 58 ? 220 : 360;
+    const moduleDots = Math.min(16, Math.max(2, Math.floor(maxQrDots / (qrSize + 4))));
+
+    const storeLength = data.length + 3;
+    return [
+      0x1B, 0x61, 0x01, // ESC a 1: center
+      0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00, // Model 2
+      0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleDots, // Module size
+      0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31, // Error correction M
+      0x1D, 0x28, 0x6B, storeLength % 256, Math.floor(storeLength / 256), 0x31, 0x50, 0x30, ...data, // Store data
+      0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30, // Print stored QR
+      0x1B, 0x61, 0x00, // ESC a 0: back to left
+    ];
+  } catch (err) {
+    console.warn("[PRINT] Native QR generation failed:", err);
+    return [];
+  }
+}
+
 export function generateEscPosRasterQr(text: string, paperWidth: 58 | 80 = 58): number[] {
   if (!text || !text.trim()) return [];
   try {
@@ -1224,7 +1253,8 @@ export function convertThermalPayloadToEscPos(
   payload: string,
   width: 58 | 80 = 58,
   autoCut: boolean = false,
-  darkness: "normal" | "dark" | "extra_dark" = "extra_dark"
+  darkness: "normal" | "dark" | "extra_dark" = "extra_dark",
+  nativeQr: boolean = false
 ): Uint8Array {
   const maxChars = width === 58 ? 32 : 48;
   const bytes: number[] = [];
@@ -1264,7 +1294,7 @@ export function convertThermalPayloadToEscPos(
       const qrData = (qrMatch[1] || "").trim();
       if (qrData) {
         try {
-          const qrBytes = generateEscPosRasterQr(qrData, width);
+          const qrBytes = nativeQr ? generateEscPosNativeQr(qrData, width) : generateEscPosRasterQr(qrData, width);
           if (qrBytes.length > 0) {
             for (const b of qrBytes) bytes.push(b);
             bytes.push(0x0A);
@@ -2092,11 +2122,33 @@ export async function autoConnectPrinter(
     auto_cut: resolvedAutoCut,
     copies: printer.copies ?? (existing ? existing.copies : 1),
     darkness: resolvedDarkness,
+    native_qr: existing?.native_qr,
   };
 
   await savePrinterSettings(role, settings);
   const status = await checkPrinterConnection(role);
   return status;
+}
+
+// Prints a harmless text QR with the printer's own command, whatever the Fast QR switch says
+export async function printNativeQrTest(role: "cashier" | "kitchen"): Promise<boolean> {
+  const settings = await getPrinterSettings(role);
+  if (Platform.OS !== "web" || !settings) return false;
+
+  const payload = "[C]Fast QR test\n[C]<qrcode>BillPro Fast QR test OK. This is not a payment code, so nothing can be paid by scanning it.</qrcode>\n[C]If a QR is above, it should scan.\n";
+  const bytes = convertThermalPayloadToEscPos(payload, settings.width || 58, false, settings.darkness || "extra_dark", true);
+
+  if (settings.type === "usb") {
+    return (await sendUsbSettingsBytes(settings.address, bytes, role)).outcome === "sent";
+  }
+  if (settings.type === "bluetooth") {
+    if (!activeWebSerialWriter && !activeWebBluetoothCharacteristic) {
+      await autoReconnectAllWebPrinters(role);
+    }
+    if (activeWebSerialPort?.writable || activeWebSerialWriter) return sendWebUsbPrint(bytes);
+    if (activeWebBluetoothCharacteristic) return sendWebBluetoothPrint(bytes);
+  }
+  return false;
 }
 
 export async function printThermalDirect(role: "cashier" | "kitchen", data: any, isKitchen = false): Promise<boolean> {
@@ -2182,7 +2234,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       if (settings.type === "bluetooth") {
         if (activeWebSerialPort?.writable || activeWebSerialWriter) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -2195,7 +2247,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         if (activeWebBluetoothCharacteristic) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
             const success = await sendWebBluetoothPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -2210,7 +2262,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
         const serialOk = await tryAutoReconnectWebSerial(role);
         if (serialOk && (activeWebSerialPort?.writable || activeWebSerialWriter)) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
             const success = await sendWebUsbPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -2224,7 +2276,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
         const btOk = await tryAutoReconnectWebBluetooth(role);
         if (btOk && activeWebBluetoothCharacteristic) {
           try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
+            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
             const success = await sendWebBluetoothPrint(escPosBytes);
             if (success) {
               if (c === copiesCount - 1) return true;
@@ -2252,7 +2304,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
       // 2. Direct WebUSB / Web Serial ESC/POS
       if (settings.type === "usb") {
-        const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
+        const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
         const result = await sendUsbSettingsBytes(settings.address, escPosBytes, role);
         if (result.outcome === "sent") {
           if (c === copiesCount - 1) return true;
