@@ -312,6 +312,10 @@ const BLUETOOTH_PRINTER_SERVICES = [
   "0000180a-0000-1000-8000-00805f9b34fb",
 ];
 
+const BLUETOOTH_CONNECT_TIMEOUT_MS = 8000;
+const BLUETOOTH_ADVERTISEMENT_WAIT_MS = 5000;
+const BLUETOOTH_RETRY_COOLDOWN_MS = 30000;
+
 export function isWebBluetoothSupported(): boolean {
   return Platform.OS === "web" && typeof navigator !== "undefined" && !!(navigator as any).bluetooth;
 }
@@ -320,45 +324,123 @@ export function getActiveWebBluetoothDevice(): any {
   return activeWebBluetoothDevice;
 }
 
-export async function tryAutoReconnectWebBluetooth(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
-  if (!isWebBluetoothSupported() || !(navigator as any).bluetooth?.getDevices) return false;
-  try {
-    const devices = await (navigator as any).bluetooth.getDevices();
-    if (devices && devices.length > 0) {
-      for (const device of devices) {
+async function findWebBluetoothWriteCharacteristic(server: any): Promise<any> {
+  for (const serviceUuid of BLUETOOTH_PRINTER_SERVICES) {
+    try {
+      const service = await server.getPrimaryService(serviceUuid);
+      const chars = await service.getCharacteristics();
+      for (const c of chars) {
+        if (c.properties.write || c.properties.writeWithoutResponse) return c;
+      }
+    } catch {}
+  }
+
+  if (server.getPrimaryServices) {
+    try {
+      const allServices = await server.getPrimaryServices();
+      for (const s of allServices) {
         try {
-          const server = await device.gatt?.connect();
-          if (server && server.connected) {
-            let writeChar: any = null;
-            for (const serviceUuid of BLUETOOTH_PRINTER_SERVICES) {
-              try {
-                const service = await server.getPrimaryService(serviceUuid);
-                const chars = await service.getCharacteristics();
-                for (const c of chars) {
-                  if (c.properties.write || c.properties.writeWithoutResponse) {
-                    writeChar = c;
-                    break;
-                  }
-                }
-                if (writeChar) break;
-              } catch {}
-            }
-            if (writeChar) {
-              activeWebBluetoothDevice = device;
-              activeWebBluetoothCharacteristic = writeChar;
-              device.addEventListener("gattserverdisconnected", () => {
-                activeWebBluetoothCharacteristic = null;
-                setPrinterStatus(role, "unavailable");
-              });
-              setPrinterStatus(role, "connected");
-              return true;
-            }
+          const chars = await s.getCharacteristics();
+          for (const c of chars) {
+            if (c.properties.write || c.properties.writeWithoutResponse) return c;
           }
         } catch {}
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function rememberWebBluetoothPrinter(device: any, characteristic: any, role: "cashier" | "kitchen") {
+  activeWebBluetoothDevice = device;
+  activeWebBluetoothCharacteristic = characteristic;
+  // A property, not addEventListener: reconnecting must not stack up handlers on the same device
+  device.ongattserverdisconnected = () => {
+    console.log("Web Bluetooth thermal printer disconnected.");
+    if (device === activeWebBluetoothDevice) activeWebBluetoothCharacteristic = null;
+    setPrinterStatus(role, "unavailable");
+  };
+  setPrinterStatus(role, "connected");
+}
+
+// Opens a device this page is already allowed to use, so it never shows the browser's chooser
+async function connectKnownWebBluetoothDevice(device: any, role: "cashier" | "kitchen"): Promise<boolean> {
+  try {
+    const server: any = await withTimeout(device.gatt.connect(), BLUETOOTH_CONNECT_TIMEOUT_MS, "Bluetooth connection");
+    const writeChar = await findWebBluetoothWriteCharacteristic(server);
+    if (!writeChar) return false;
+    rememberWebBluetoothPrinter(device, writeChar, role);
+    return true;
+  } catch {
+    // Stops an attempt still pending after the timeout
+    try { device.gatt?.disconnect(); } catch {}
+    return false;
+  }
+}
+
+// After a browser restart Chrome will not connect until it has seen the printer advertise
+function waitForWebBluetoothAdvertisement(device: any): Promise<void> {
+  return new Promise(resolve => {
+    const controller = new AbortController();
+    const finish = () => {
+      clearTimeout(timer);
+      device.removeEventListener("advertisementreceived", finish);
+      controller.abort();
+      resolve();
+    };
+    const timer = setTimeout(finish, BLUETOOTH_ADVERTISEMENT_WAIT_MS);
+    device.addEventListener("advertisementreceived", finish);
+    device.watchAdvertisements({ signal: controller.signal }).catch(finish);
+  });
+}
+
+async function reconnectWebBluetooth(role: "cashier" | "kitchen"): Promise<boolean> {
+  // Same page visit: the browser still allows this device
+  if (activeWebBluetoothDevice && await connectKnownWebBluetoothDevice(activeWebBluetoothDevice, role)) return true;
+
+  // After a reload only getDevices() can find it again, and Chrome keeps that behind a flag
+  const navBt = (navigator as any).bluetooth;
+  if (!navBt?.getDevices) return false;
+  try {
+    const settings = await getPrinterSettings(role);
+    const devices: any[] = await navBt.getDevices();
+    const saved = devices.filter(d => d.id === settings?.address);
+    for (const device of saved.length > 0 ? saved : devices) {
+      if (await connectKnownWebBluetoothDevice(device, role)) return true;
+      if (device.watchAdvertisements) {
+        await waitForWebBluetoothAdvertisement(device);
+        if (await connectKnownWebBluetoothDevice(device, role)) return true;
       }
     }
   } catch {}
   return false;
+}
+
+// The 20s timer and a print can arrive together, so they share one attempt.
+// Background calls also wait after a failure because Android limits how often Bluetooth can scan.
+let webBluetoothReconnect: Promise<boolean> | null = null;
+let webBluetoothFailedAt = 0;
+
+export function tryAutoReconnectWebBluetooth(role: "cashier" | "kitchen" = "cashier", forPrint = false): Promise<boolean> {
+  if (!isWebBluetoothSupported()) return Promise.resolve(false);
+  if (webBluetoothReconnect) return webBluetoothReconnect;
+  if (!forPrint && Date.now() - webBluetoothFailedAt < BLUETOOTH_RETRY_COOLDOWN_MS) return Promise.resolve(false);
+
+  webBluetoothReconnect = reconnectWebBluetooth(role)
+    .then(ok => {
+      webBluetoothFailedAt = ok ? 0 : Date.now();
+      return ok;
+    })
+    .finally(() => {
+      webBluetoothReconnect = null;
+    });
+  return webBluetoothReconnect;
+}
+
+// After a reload normal Chrome can only get the printer back through its chooser, which needs a real tap
+async function chooseWebBluetoothPrinterDuringTap(role: "cashier" | "kitchen"): Promise<boolean> {
+  if (!isWebBluetoothSupported() || !(navigator as any).userActivation?.isActive) return false;
+  return connectWebBluetoothPrinter(role);
 }
 
 export async function connectWebBluetoothPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
@@ -376,49 +458,10 @@ export async function connectWebBluetoothPrinter(role: "cashier" | "kitchen" = "
     if (!device) return false;
 
     const server = await device.gatt.connect();
-    let writeChar: any = null;
-
-    for (const serviceUuid of BLUETOOTH_PRINTER_SERVICES) {
-      try {
-        const service = await server.getPrimaryService(serviceUuid);
-        const chars = await service.getCharacteristics();
-        for (const c of chars) {
-          if (c.properties.write || c.properties.writeWithoutResponse) {
-            writeChar = c;
-            break;
-          }
-        }
-        if (writeChar) break;
-      } catch {}
-    }
-
-    if (!writeChar && server.getPrimaryServices) {
-      try {
-        const allServices = await server.getPrimaryServices();
-        for (const s of allServices) {
-          try {
-            const chars = await s.getCharacteristics();
-            for (const c of chars) {
-              if (c.properties.write || c.properties.writeWithoutResponse) {
-                writeChar = c;
-                break;
-              }
-            }
-            if (writeChar) break;
-          } catch {}
-        }
-      } catch {}
-    }
+    const writeChar = await findWebBluetoothWriteCharacteristic(server);
 
     if (writeChar) {
-      activeWebBluetoothDevice = device;
-      activeWebBluetoothCharacteristic = writeChar;
-
-      device.addEventListener("gattserverdisconnected", () => {
-        console.log("Web Bluetooth thermal printer disconnected.");
-        activeWebBluetoothCharacteristic = null;
-        setPrinterStatus(role, "unavailable");
-      });
+      rememberWebBluetoothPrinter(device, writeChar, role);
 
       const devName = device.name || "Bluetooth Thermal Printer";
       const devAddress = device.id || "Web-Bluetooth";
@@ -448,25 +491,7 @@ export function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean> {
 
 async function writeWebBluetoothBytes(bytes: Uint8Array): Promise<boolean> {
   if (!activeWebBluetoothCharacteristic) {
-    await tryAutoReconnectWebBluetooth();
-    if (!activeWebBluetoothCharacteristic && activeWebBluetoothDevice && activeWebBluetoothDevice.gatt) {
-      try {
-        const server = await activeWebBluetoothDevice.gatt.connect();
-        for (const serviceUuid of BLUETOOTH_PRINTER_SERVICES) {
-          try {
-            const service = await server.getPrimaryService(serviceUuid);
-            const chars = await service.getCharacteristics();
-            for (const c of chars) {
-              if (c.properties.write || c.properties.writeWithoutResponse) {
-                activeWebBluetoothCharacteristic = c;
-                break;
-              }
-            }
-            if (activeWebBluetoothCharacteristic) break;
-          } catch {}
-        }
-      } catch {}
-    }
+    await tryAutoReconnectWebBluetooth("cashier", true);
   }
 
   if (!activeWebBluetoothCharacteristic) {
@@ -751,7 +776,7 @@ export async function tryAutoReconnectWebUsb(role: "cashier" | "kitchen" = "cash
   }
 }
 
-export async function autoReconnectAllWebPrinters(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+export async function autoReconnectAllWebPrinters(role: "cashier" | "kitchen" = "cashier", forPrint = false): Promise<boolean> {
   if (Platform.OS !== "web") return false;
   const settings = await getPrinterSettings(role);
   // Roles using the spooler or no printer must not grab remembered ports from a role that does
@@ -766,7 +791,7 @@ export async function autoReconnectAllWebPrinters(role: "cashier" | "kitchen" = 
   const serialOk = await tryAutoReconnectWebSerial(role);
   if (serialOk) return true;
 
-  const btOk = await tryAutoReconnectWebBluetooth(role);
+  const btOk = await tryAutoReconnectWebBluetooth(role, forPrint);
   if (btOk) return true;
 
   const usbOk = await tryAutoReconnectWebUsb(role);
@@ -2143,7 +2168,7 @@ export async function printNativeQrTest(role: "cashier" | "kitchen"): Promise<bo
   }
   if (settings.type === "bluetooth") {
     if (!activeWebSerialWriter && !activeWebBluetoothCharacteristic) {
-      await autoReconnectAllWebPrinters(role);
+      await autoReconnectAllWebPrinters(role, true);
     }
     if (activeWebSerialPort?.writable || activeWebSerialWriter) return sendWebUsbPrint(bytes);
     if (activeWebBluetoothCharacteristic) return sendWebBluetoothPrint(bytes);
@@ -2225,8 +2250,8 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     }
 
     if (Platform.OS === "web") {
-      // Auto-reconnect if connection not currently cached in memory
-      if (!activeWebSerialWriter && !activeWebBluetoothCharacteristic && !activeWebUsbDevice) {
+      // Auto-reconnect if connection not currently cached in memory (the Bluetooth branch makes its own attempt)
+      if (settings.type !== "bluetooth" && !activeWebSerialWriter && !activeWebBluetoothCharacteristic && !activeWebUsbDevice) {
         await autoReconnectAllWebPrinters(role);
       }
 
@@ -2273,7 +2298,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
           }
         }
 
-        const btOk = await tryAutoReconnectWebBluetooth(role);
+        const btOk = await tryAutoReconnectWebBluetooth(role, true) || await chooseWebBluetoothPrinterDuringTap(role);
         if (btOk && activeWebBluetoothCharacteristic) {
           try {
             const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
