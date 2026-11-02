@@ -18,7 +18,6 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
-import { useResponsive } from "@/src/hooks/useResponsive";
 import { useCart } from "@/src/context/CartContext";
 import CartDrawerModal from "@/src/components/CartDrawerModal";
 import { spacing, radius } from "@/src/theme";
@@ -502,10 +501,12 @@ const APP_MODULES = [
 
 export default function Index() {
   const { user, loading } = useAuth();
-  const { isDesktop } = useResponsive();
   const { addToCart, cartCount, cartTotal, setIsCartOpen } = useCart();
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
+  const showFullNav = width >= 1400; // Narrower screens cannot fit every link and button in one row
+  const isPhone = width < 576;
 
   // State
   const [activeModuleIndex, setActiveModuleIndex] = useState(0);
@@ -560,26 +561,26 @@ export default function Index() {
 
       {/* ================= STICKY TOP NAVBAR ================= */}
       <View style={styles.navbar}>
-        <View style={[styles.navContainer, isDesktop && styles.navContainerDesktop]}>
+        <View style={[styles.navContainer, width >= 768 && styles.navContainerDesktop]}>
           {/* Brand Logo */}
           <TouchableOpacity
-            style={styles.brandRow}
+            style={[styles.brandRow, showFullNav && { flex: 0, flexShrink: 0 }]}
             onPress={() => router.push("/")}
             activeOpacity={0.8}
           >
             <View style={styles.navLogoBox}>
               <Ionicons name="receipt" size={20} color="#FFFFFF" />
             </View>
-            <View style={styles.brandTextCol}>
+            <View style={showFullNav ? undefined : styles.brandTextCol}>
               <Text style={styles.navBrandTitle}>
                 EzBill <Text style={styles.navBrandHighlight}>POS</Text>
               </Text>
-              <Text style={styles.navBrandSubtitle} numberOfLines={1}>BY PRODEVOPZ · RESTAURANT ERP</Text>
+              {!isPhone && <Text style={styles.navBrandSubtitle} numberOfLines={1}>BY PRODEVOPZ · RESTAURANT ERP</Text>}
             </View>
           </TouchableOpacity>
 
           {/* Desktop Navigation Links */}
-          {isDesktop ? (
+          {showFullNav ? (
             <View style={styles.desktopNavLinks}>
               <TouchableOpacity
                 onPress={() => {
@@ -635,7 +636,7 @@ export default function Index() {
               testID="landing-cart-btn"
             >
               <Ionicons name="cart" size={17} color="#FFFFFF" />
-              {isDesktop && <Text style={styles.navCartBtnText}>Cart</Text>}
+              {showFullNav && <Text style={styles.navCartBtnText}>Cart</Text>}
               {cartCount > 0 && (
                 <View style={styles.navCartBadge}>
                   <Text style={styles.navCartBadgeText}>{cartCount}</Text>
@@ -643,7 +644,7 @@ export default function Index() {
               )}
             </TouchableOpacity>
 
-            {isDesktop ? (
+            {showFullNav ? (
               <>
                 <TouchableOpacity
                   style={styles.navLoginBtn}
@@ -701,7 +702,7 @@ export default function Index() {
         </View>
 
         {/* Mobile Dropdown Menu */}
-        {mobileMenuOpen && !isDesktop && (
+        {mobileMenuOpen && !showFullNav && (
           <View style={styles.mobileDropdown}>
             <TouchableOpacity
               style={styles.mobileDropdownItem}
@@ -802,7 +803,7 @@ export default function Index() {
                 <Text style={styles.pillText}>INDIA'S #1 RESTAURANT POS &amp; ERP SOLUTION</Text>
               </View>
 
-              <Text style={styles.heroTitle}>
+              <Text style={[styles.heroTitle, isPhone && { fontSize: 28, lineHeight: 36 }]}>
                 EzBill — Restaurant POS, ERP{"\n"}
                 <Text style={styles.heroTitleAccent}>&amp; Restaurant Management System</Text>
               </Text>
@@ -905,18 +906,18 @@ export default function Index() {
                         <View style={[styles.windowDot, { backgroundColor: "#F59E0B" }]} />
                         <View style={[styles.windowDot, { backgroundColor: "#10B981" }]} />
                       </View>
-                      <Text style={styles.laptopUrlBar}>ezbill.jobsio.in / takeaway-billing-pos</Text>
+                      <Text style={styles.laptopUrlBar} numberOfLines={1}>ezbill.jobsio.in / takeaway-billing-pos</Text>
                       <View style={{ width: 40 }} />
                     </View>
                     <Image
                       source={{ uri: getScreenshotUri("web-pos.png") }}
-                      style={styles.laptopScreenImg}
+                      style={[styles.laptopScreenImg, isPhone && { height: 190 }]}
                       resizeMode="cover"
                     />
                   </View>
 
                   {/* Overlapping Floating Smartphone Mockup */}
-                  <View style={styles.heroPhoneOverlay}>
+                  <View style={[styles.heroPhoneOverlay, isPhone && { width: 84, height: 168, borderRadius: 16 }]}>
                     <View style={styles.phoneNotch} />
                     <Image
                       source={{ uri: getScreenshotUri("mobile-dashboard.png") }}
@@ -930,7 +931,7 @@ export default function Index() {
                 <View style={styles.bannerCarouselCard}>
                   <Image
                     source={{ uri: getImgUri("baner_photo_.jpeg") }}
-                    style={styles.bannerImg}
+                    style={[styles.bannerImg, isPhone && { height: 220 }]}
                     resizeMode="cover"
                   />
                   <View style={styles.bannerFloatingTag}>
@@ -1766,7 +1767,7 @@ const styles = StyleSheet.create({
     boxSizing: "border-box" as any,
   },
   navContainerDesktop: {
-    maxWidth: 1280,
+    maxWidth: 1440,
     width: "100%",
     alignSelf: "center",
     paddingHorizontal: 24,
@@ -1816,7 +1817,7 @@ const styles = StyleSheet.create({
   desktopNavLinks: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 22,
+    gap: 8,
   },
   navLinkItem: {
     paddingVertical: 6,
@@ -2003,6 +2004,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   heroLeftCol: {
+    minWidth: 0,
     marginBottom: 32,
   },
   pillBadge: {
@@ -2010,6 +2012,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     alignSelf: "flex-start",
+    maxWidth: "100%",
     backgroundColor: "rgba(255, 94, 43, 0.12)",
     borderWidth: 1,
     borderColor: "rgba(255, 94, 43, 0.3)",
@@ -2025,6 +2028,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#10B981",
   },
   pillText: {
+    flexShrink: 1,
     color: "#FF8A3D",
     fontSize: 11,
     fontWeight: "800",
@@ -2118,6 +2122,8 @@ const styles = StyleSheet.create({
     height: 40,
   },
   heroFeaturePill: {
+    flexShrink: 1,
+    maxWidth: "100%",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -2129,15 +2135,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   heroFeaturePillText: {
+    flexShrink: 1,
     color: "#34D399",
     fontSize: 12,
     fontWeight: "700",
   },
   heroRightCol: {
+    minWidth: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   heroToggleBar: {
+    maxWidth: "100%",
     flexDirection: "row",
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 12,
@@ -2146,6 +2155,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   heroToggleBtn: {
+    flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -2157,6 +2167,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF5E2B",
   },
   heroToggleText: {
+    flexShrink: 1,
     color: "#94A3B8",
     fontSize: 13,
     fontWeight: "700",
@@ -2201,6 +2212,8 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   laptopUrlBar: {
+    flexShrink: 1,
+    marginHorizontal: 8,
     color: "#94A3B8",
     fontSize: 11,
     fontFamily: Platform.OS === "web" ? "monospace" : undefined,
@@ -2370,6 +2383,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   deviceViewPillGroup: {
+    maxWidth: "100%",
     flexDirection: "row",
     flexWrap: "wrap",
     backgroundColor: "rgba(255, 255, 255, 0.05)",
