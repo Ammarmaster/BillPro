@@ -238,8 +238,8 @@ export default function TakeawayScreen() {
         table_number: "Takeaway",
         restaurant_snapshot: item.raw?.restaurant_snapshot || r
       };
-      await printBill(printable);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const printed = await printBill(printable);
+      if (printed) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (err: any) {
       console.warn("Print receipt error:", err);
     } finally {
@@ -251,8 +251,8 @@ export default function TakeawayScreen() {
     try {
       setPrintingId(`kot_${item.id}`);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      await printKitchenKOT(item.raw, true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const printed = await printKitchenKOT(item.raw, true);
+      if (printed) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (err: any) {
       console.warn("Print KOT error:", err);
     } finally {

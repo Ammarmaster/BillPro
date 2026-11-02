@@ -18,7 +18,7 @@ import {
   connectWebSerialPrinter, isWebSerialSupported,
   autoReconnectAllWebPrinters,
   kickCashDrawer,
-  printBillLegacy, printKOTLegacy,
+  printBillLegacy, printKOTLegacy, notifyPrintProblem,
   PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
 } from "@/src/lib/print";
 
@@ -495,7 +495,7 @@ export default function PrinterSettingsScreen() {
         Alert.alert("Print Test", "Test ticket sent to thermal printer successfully!");
       }
     } catch (e: any) {
-      Alert.alert("Print Test", e.message || "Failed to print test ticket.");
+      notifyPrintProblem("Print Test", e.message || "Failed to print test ticket.");
     } finally {
       setTestingPrint(false);
     }

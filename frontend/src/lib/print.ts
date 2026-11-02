@@ -219,7 +219,13 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
 
   try {
     if (Platform.OS === "web") {
-      if (activeWebSerialWriter || activeWebBluetoothCharacteristic || (activeWebUsbDevice && activeWebUsbDevice.opened)) {
+      // A WebUSB printer is only "connected" if its own device is present, not any other transport
+      if (settings.type === "usb" && parseUsbAddress(settings.address)) {
+        const status = (await findConfiguredUsbDevice(settings.address)) ? "connected" : "unavailable";
+        setPrinterStatus(role, status);
+        return status;
+      }
+      if (activeWebSerialWriter || activeWebBluetoothCharacteristic) {
         setPrinterStatus(role, "connected");
         return "connected";
       }
@@ -435,7 +441,11 @@ export async function connectWebBluetoothPrinter(role: "cashier" | "kitchen" = "
   }
 }
 
-export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean> {
+export function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean> {
+  return enqueueDirectPrint(() => writeWebBluetoothBytes(bytes));
+}
+
+async function writeWebBluetoothBytes(bytes: Uint8Array): Promise<boolean> {
   if (!activeWebBluetoothCharacteristic) {
     await tryAutoReconnectWebBluetooth();
     if (!activeWebBluetoothCharacteristic && activeWebBluetoothDevice && activeWebBluetoothDevice.gatt) {
@@ -518,6 +528,164 @@ export async function sendWebBluetoothPrint(bytes: Uint8Array): Promise<boolean>
 // ============================================================================
 // WEB USB & WEB SERIAL THERMAL PRINTER DRIVERS (ESC/POS)
 // ============================================================================
+export type DirectSendResult =
+  | { outcome: "sent" }
+  // Nothing reached the printer, so printing another way cannot duplicate the job
+  | { outcome: "not_sent"; reason: string }
+  // Some bytes may have reached the printer: never resend automatically, a person must check the paper
+  | { outcome: "ambiguous"; reason: string };
+
+// Thrown by printThermalDirect when output may exist on paper, so callers must not fall back to the spooler
+export class PrintIncompleteError extends Error {}
+
+// react-native-web's Alert.alert does nothing, which would hide printer failures in the browser
+export function notifyPrintProblem(title: string, message: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.alert) {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
+
+const USB_CHUNK_SIZE = 512;
+const USB_SETUP_TIMEOUT_MS = 10000;
+const USB_TRANSFER_TIMEOUT_MS = 15000;
+const USB_CLEANUP_TIMEOUT_MS = 2000;
+
+// One job at a time across this tab; the Web Lock extends that to other tabs of the app
+let directPrintQueue: Promise<unknown> = Promise.resolve();
+function enqueueDirectPrint<T>(job: () => Promise<T>): Promise<T> {
+  const run = (): Promise<T> => {
+    const locks = Platform.OS === "web" && typeof navigator !== "undefined" ? (navigator as any).locks : null;
+    return locks?.request ? locks.request("billpro-direct-print", job) : job();
+  };
+  const result = directPrintQueue.then(run, run);
+  directPrintQueue = result.catch(() => {});
+  return result;
+}
+
+// WebUSB transfers have no timeout of their own and a jammed printer would hold the queue forever
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: any;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+function usbAddress(device: any): string {
+  const base = `USB-${device.vendorId || "0"}-${device.productId || "0"}`;
+  return device.serialNumber ? `${base}-${device.serialNumber}` : base;
+}
+
+function parseUsbAddress(address?: string): { vendorId: number; productId: number; serial?: string } | null {
+  const match = (address || "").trim().match(/^USB-(\d+)-(\d+)(?:-(.+))?$/);
+  if (!match) return null;
+  return { vendorId: Number(match[1]), productId: Number(match[2]), serial: match[3] };
+}
+
+async function findConfiguredUsbDevice(address?: string): Promise<any | null> {
+  if (!isWebUsbSupported() || !(navigator as any).usb?.getDevices) return null;
+  const devices: any[] = (await (navigator as any).usb.getDevices()) || [];
+  const wanted = parseUsbAddress(address);
+  // Presets save a placeholder such as "USB-Direct": only safe when there is no choice to get wrong
+  if (!wanted) return devices.length === 1 ? devices[0] : null;
+  const sameModel = devices.filter(d => d.vendorId === wanted.vendorId && d.productId === wanted.productId);
+  if (wanted.serial) return sameModel.find(d => d.serialNumber === wanted.serial) || null;
+  return sameModel[0] || null;
+}
+
+// Finds a bulk OUT endpoint, preferring the USB printer class (7) over other functions of a composite device
+function findUsbPrinterTarget(device: any): { interfaceNumber: number; alternateSetting: number; endpointNumber: number } | null {
+  let fallback: { interfaceNumber: number; alternateSetting: number; endpointNumber: number } | null = null;
+  for (const iface of device.configuration?.interfaces || []) {
+    for (const alt of iface.alternates || []) {
+      const out = (alt.endpoints || []).find((ep: any) => ep.direction === "out" && ep.type === "bulk");
+      if (!out) continue;
+      const target = { interfaceNumber: iface.interfaceNumber, alternateSetting: alt.alternateSetting, endpointNumber: out.endpointNumber };
+      if (alt.interfaceClass === 7) return target;
+      fallback = fallback || target;
+    }
+  }
+  return fallback;
+}
+
+async function openUsbPrinter(device: any) {
+  if (!device.opened) await device.open();
+  if (!device.configuration) {
+    const value = device.configurations?.[0]?.configurationValue;
+    if (value === undefined) throw new Error("USB device has no configuration");
+    await device.selectConfiguration(value);
+  }
+  const target = findUsbPrinterTarget(device);
+  if (!target) throw new Error("USB device has no printer output endpoint");
+  await device.claimInterface(target.interfaceNumber);
+  if (target.alternateSetting !== 0) {
+    await device.selectAlternateInterface(target.interfaceNumber, target.alternateSetting);
+  }
+  return target;
+}
+
+// Holding the device between jobs would block other tabs and keep stale state, so every job ends closed
+async function closeUsbPrinter(device: any, interfaceNumber?: number) {
+  const cleanup = async () => {
+    if (interfaceNumber !== undefined) {
+      try { await device.releaseInterface(interfaceNumber); } catch {}
+    }
+    if (device.opened) await device.close();
+  };
+  try { await withTimeout(cleanup(), USB_CLEANUP_TIMEOUT_MS, "USB cleanup"); } catch {}
+}
+
+async function writeUsbJob(address: string | undefined, bytes: Uint8Array): Promise<DirectSendResult> {
+  let device: any = null;
+  let target: { interfaceNumber: number; alternateSetting: number; endpointNumber: number };
+  try {
+    device = await findConfiguredUsbDevice(address);
+    if (!device) return { outcome: "not_sent", reason: "The configured USB printer is not connected or not authorized in this browser." };
+    activeWebUsbDevice = device;
+    target = await withTimeout(openUsbPrinter(device), USB_SETUP_TIMEOUT_MS, "USB setup");
+  } catch (e: any) {
+    console.warn("WebUSB setup error:", e);
+    if (device) await closeUsbPrinter(device);
+    return { outcome: "not_sent", reason: `Could not open the USB printer: ${e?.message || e}` };
+  }
+
+  let accepted = 0;
+  try {
+    for (let i = 0; i < bytes.length; i += USB_CHUNK_SIZE) {
+      const chunk = bytes.slice(i, i + USB_CHUNK_SIZE);
+      const result: any = await withTimeout<any>(device.transferOut(target.endpointNumber, chunk), USB_TRANSFER_TIMEOUT_MS, "USB transfer");
+      accepted += result.bytesWritten || 0;
+      if (result.status !== "ok" || result.bytesWritten !== chunk.length) {
+        if (result.status === "stall") {
+          try { await device.clearHalt("out", target.endpointNumber); } catch {}
+        }
+        const reason = `USB transfer ended with status "${result.status}" after ${accepted} of ${bytes.length} bytes.`;
+        return accepted === 0 ? { outcome: "not_sent", reason } : { outcome: "ambiguous", reason };
+      }
+      if (i + USB_CHUNK_SIZE < bytes.length) {
+        await new Promise(r => setTimeout(r, 10));
+      }
+    }
+    return { outcome: "sent" };
+  } catch (e: any) {
+    console.warn("WebUSB transferOut error:", e);
+    // InvalidStateError is raised before any data moves. Anything else, like a timeout or an
+    // unplug, may have left an unreported number of bytes in the printer.
+    if (accepted === 0 && e?.name === "InvalidStateError") {
+      return { outcome: "not_sent", reason: `USB printer was busy: ${e.message}` };
+    }
+    return { outcome: "ambiguous", reason: `${e?.message || e} (${accepted} of ${bytes.length} bytes confirmed).` };
+  } finally {
+    await closeUsbPrinter(device, target.interfaceNumber);
+  }
+}
+
+export function sendWebUsbJob(address: string | undefined, bytes: Uint8Array): Promise<DirectSendResult> {
+  return enqueueDirectPrint(() => writeUsbJob(address, bytes));
+}
+
 export function isWebUsbSupported(): boolean {
   return Platform.OS === "web" && typeof navigator !== "undefined" && "usb" in navigator;
 }
@@ -568,43 +736,29 @@ export async function tryAutoReconnectWebSerial(role: "cashier" | "kitchen" = "c
 }
 
 export async function tryAutoReconnectWebUsb(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
-  if (!isWebUsbSupported() || !(navigator as any).usb?.getDevices) return false;
+  // Only locates the configured printer. Opening and claiming happen per job so this timer never races a print.
   try {
-    const devices = await (navigator as any).usb.getDevices();
-    if (devices && devices.length > 0) {
-      for (const device of devices) {
-        try {
-          if (!device.opened) {
-            await device.open();
-          }
-          if (!device.configuration || device.configuration.configurationValue !== 1) {
-            try { await device.selectConfiguration(1); } catch {}
-          }
-          let ifaceNumber = 0;
-          if (device.configuration?.interfaces?.length) {
-            const printerIface = device.configuration.interfaces.find((iface: any) =>
-              iface.alternates?.some((alt: any) => alt.interfaceClass === 7)
-            );
-            ifaceNumber = printerIface ? printerIface.interfaceNumber : device.configuration.interfaces[0].interfaceNumber;
-          }
-          try { await device.claimInterface(ifaceNumber); } catch {}
-          activeWebUsbDevice = device;
-          setPrinterStatus(role, "connected");
-          return true;
-        } catch (usbErr) {
-          console.warn("Error opening remembered usb device:", usbErr);
-        }
-      }
-    }
+    const settings = await getPrinterSettings(role);
+    const device = await findConfiguredUsbDevice(settings?.address);
+    if (!device) return false;
+    activeWebUsbDevice = device;
+    setPrinterStatus(role, "connected");
+    return true;
   } catch (err) {
     console.warn("Web USB auto-reconnect error:", err);
+    return false;
   }
-  return false;
 }
 
 export async function autoReconnectAllWebPrinters(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
   if (Platform.OS !== "web") return false;
-  if (activeWebSerialWriter || activeWebBluetoothCharacteristic || (activeWebUsbDevice && activeWebUsbDevice.opened)) {
+  const settings = await getPrinterSettings(role);
+  // Roles using the spooler or no printer must not grab remembered ports from a role that does
+  if (!settings || settings.type === "none" || settings.type === "system") return false;
+  if (settings.type === "usb" && parseUsbAddress(settings.address)) {
+    return tryAutoReconnectWebUsb(role);
+  }
+  if (activeWebSerialWriter || activeWebBluetoothCharacteristic) {
     setPrinterStatus(role, "connected");
     return true;
   }
@@ -642,8 +796,8 @@ if (Platform.OS === "web" && typeof navigator !== "undefined") {
         autoReconnectAllWebPrinters("cashier").catch(() => {});
         autoReconnectAllWebPrinters("kitchen").catch(() => {});
       });
-      (navigator as any).usb.addEventListener("disconnect", () => {
-        activeWebUsbDevice = null;
+      (navigator as any).usb.addEventListener("disconnect", (event: any) => {
+        if (!event?.device || event.device === activeWebUsbDevice) activeWebUsbDevice = null;
         checkPrinterConnection("cashier").catch(() => {});
         checkPrinterConnection("kitchen").catch(() => {});
       });
@@ -661,32 +815,20 @@ export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashie
     const device = await navUsb.requestDevice({ filters: [] });
     if (!device) return false;
 
-    if (!device.opened) {
-      await device.open();
-    }
-    if (!device.configuration || device.configuration.configurationValue !== 1) {
+    // Prove the printer is usable before saving it as connected
+    await enqueueDirectPrint(async () => {
       try {
-        await device.selectConfiguration(1);
-      } catch (confErr) {
-        console.warn("selectConfiguration skipped:", confErr);
+        const target = await withTimeout(openUsbPrinter(device), USB_SETUP_TIMEOUT_MS, "USB setup");
+        await closeUsbPrinter(device, target.interfaceNumber);
+      } catch (setupErr) {
+        await closeUsbPrinter(device);
+        throw setupErr;
       }
-    }
-    let ifaceNumber = 0;
-    if (device.configuration?.interfaces?.length) {
-      const printerIface = device.configuration.interfaces.find((iface: any) =>
-        iface.alternates?.some((alt: any) => alt.interfaceClass === 7)
-      );
-      ifaceNumber = printerIface ? printerIface.interfaceNumber : device.configuration.interfaces[0].interfaceNumber;
-    }
-    try {
-      await device.claimInterface(ifaceNumber);
-    } catch (claimErr) {
-      console.warn("claimInterface note:", claimErr);
-    }
+    });
 
     activeWebUsbDevice = device;
     const devName = device.productName || "USB Thermal POS Printer";
-    const devAddress = `USB-${device.vendorId || "0"}-${device.productId || "0"}`;
+    const devAddress = usbAddress(device);
     await autoConnectPrinter(role, {
       name: devName,
       address: devAddress,
@@ -702,9 +844,9 @@ export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashie
   } catch (err: any) {
     if (err.name !== "NotFoundError") {
       console.warn("WebUSB connect error:", err);
-      Alert.alert(
+      notifyPrintProblem(
         "USB Connection Tip",
-        "Could not claim USB interface directly. On Windows, if this printer has a CH340 chip, install the free CH340 driver to connect via 'Windows Serial / COM Port', or connect wirelessly via Bluetooth."
+        `${err?.message ? err.message + "\n\n" : ""}Could not claim USB interface directly. Windows only lets the browser use a USB printer that is not held by its printer driver. Use 'Windows USB Printer' to print through the driver. If this printer has a CH340 chip, install the free CH340 driver to connect via 'Windows Serial / COM Port', or connect wirelessly via Bluetooth.`
       );
     }
     return false;
@@ -784,7 +926,11 @@ async function writeSerialChunks(writer: any, bytes: Uint8Array): Promise<void> 
   }
 }
 
-export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
+export function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
+  return enqueueDirectPrint(() => writeWebSerialBytes(bytes));
+}
+
+async function writeWebSerialBytes(bytes: Uint8Array): Promise<boolean> {
   if (activeWebSerialPort?.writable) {
     try {
       if (activeWebSerialWriter) {
@@ -812,48 +958,20 @@ export async function sendWebUsbPrint(bytes: Uint8Array): Promise<boolean> {
       }
     }
   }
-  if (activeWebUsbDevice) {
-    try {
-      if (!activeWebUsbDevice.opened) {
-        await activeWebUsbDevice.open();
-      }
-      let ifaceNumber = 0;
-      if (activeWebUsbDevice.configuration?.interfaces?.length) {
-        const printerIface = activeWebUsbDevice.configuration.interfaces.find((iface: any) =>
-          iface.alternates?.some((alt: any) => alt.interfaceClass === 7)
-        );
-        ifaceNumber = printerIface ? printerIface.interfaceNumber : activeWebUsbDevice.configuration.interfaces[0].interfaceNumber;
-      }
-      try {
-        await activeWebUsbDevice.claimInterface(ifaceNumber);
-      } catch {}
-
-      let outEndpoint = 1;
-      try {
-        const currentInterface = activeWebUsbDevice.configuration?.interfaces?.find(
-          (iface: any) => iface.interfaceNumber === ifaceNumber
-        ) || activeWebUsbDevice.configuration?.interfaces?.[0];
-        const alternate = currentInterface?.alternates?.[0];
-        const foundOut = alternate?.endpoints?.find((ep: any) => ep.direction === "out");
-        if (foundOut) {
-          outEndpoint = foundOut.endpointNumber;
-        }
-      } catch {}
-
-      const chunkSize = 512;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.slice(i, i + chunkSize);
-        await activeWebUsbDevice.transferOut(outEndpoint, chunk);
-        if (i + chunkSize < bytes.length) {
-          await new Promise(r => setTimeout(r, 10));
-        }
-      }
-      return true;
-    } catch (e) {
-      console.warn("WebUSB transferOut error:", e);
-    }
-  }
   return false;
+}
+
+// Sends over WebUSB, or Web Serial for USB settings with no WebUSB identity (e.g. "USB-Serial")
+async function sendUsbSettingsBytes(address: string | undefined, bytes: Uint8Array, role: "cashier" | "kitchen"): Promise<DirectSendResult> {
+  if (parseUsbAddress(address)) return sendWebUsbJob(address, bytes);
+  if (!activeWebSerialWriter && !activeWebSerialPort?.writable) {
+    const usbResult = await sendWebUsbJob(address, bytes);
+    if (usbResult.outcome !== "not_sent") return usbResult;
+    await tryAutoReconnectWebSerial(role);
+  }
+  return (await sendWebUsbPrint(bytes))
+    ? { outcome: "sent" }
+    : { outcome: "not_sent", reason: "No connected USB or serial printer was found." };
 }
 
 export function getDrawerKickCommand(): Uint8Array {
@@ -871,13 +989,16 @@ export async function kickCashDrawer(role: "cashier" | "kitchen" = "cashier"): P
   const kickBytes = getDrawerKickCommand();
 
   if (Platform.OS === "web") {
+    if (settings.type === "usb") {
+      return (await sendUsbSettingsBytes(settings.address, kickBytes, role)).outcome === "sent";
+    }
     if (activeWebBluetoothCharacteristic || (activeWebBluetoothDevice && activeWebBluetoothDevice.gatt?.connected)) {
       try {
         await sendWebBluetoothPrint(kickBytes);
         return true;
       } catch {}
     }
-    if (activeWebUsbDevice || activeWebSerialWriter) {
+    if (activeWebSerialWriter) {
       try {
         await sendWebUsbPrint(kickBytes);
         return true;
@@ -1267,37 +1388,20 @@ export function convertThermalPayloadToEscPos(
 export function printViaIframe(html: string) {
   if (typeof document === "undefined") return;
 
-  // Inject automatic onload print trigger directly into HTML document
-  let printableHtml = html;
-  if (!printableHtml.includes("window.print()")) {
-    printableHtml = printableHtml.replace(
-      "</body>",
-      `<script>
-        window.addEventListener("load", function() {
-          setTimeout(function() {
-            try { window.focus(); window.print(); } catch(e) {}
-          }, 120);
-        });
-      </script></body>`
-    );
-  }
-
-  let iframe = document.getElementById("ezbill-print-frame") as HTMLIFrameElement;
-  if (!iframe) {
-    iframe = document.createElement("iframe");
-    iframe.id = "ezbill-print-frame";
-    iframe.style.position = "fixed";
-    iframe.style.top = "-9999px";
-    iframe.style.left = "-9999px";
-    iframe.style.width = "420px";
-    iframe.style.height = "600px";
-    iframe.style.border = "none";
-    document.body.appendChild(iframe);
-  }
+  // A fresh frame per job: reusing one let a second job overwrite the first before it printed.
+  // Printing is triggered once, from here; a second trigger inside the document printed twice.
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.top = "-9999px";
+  iframe.style.left = "-9999px";
+  iframe.style.width = "420px";
+  iframe.style.height = "600px";
+  iframe.style.border = "none";
+  document.body.appendChild(iframe);
   const doc = iframe.contentWindow?.document || iframe.contentDocument;
   if (doc) {
     doc.open();
-    doc.write(printableHtml);
+    doc.write(html);
     doc.close();
     setTimeout(() => {
       try {
@@ -1308,7 +1412,7 @@ export function printViaIframe(html: string) {
         try {
           const win = window.open("", "_blank", "width=420,height=600");
           if (win) {
-            win.document.write(printableHtml);
+            win.document.write(html);
             win.document.close();
             win.focus();
             win.print();
@@ -1316,6 +1420,7 @@ export function printViaIframe(html: string) {
           }
         } catch {}
       }
+      setTimeout(() => iframe.remove(), 60000);
     }, 280);
   }
 }
@@ -1681,7 +1786,7 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
   const now = Date.now();
   
   // De-duplicate: Never print the exact same KOT twice within 30 seconds
-  if (orderSig && recentPrintedKOTs.has(orderSig)) {
+  if (!isManual && orderSig && recentPrintedKOTs.has(orderSig)) {
     const lastTime = recentPrintedKOTs.get(orderSig) || 0;
     if (now - lastTime < 30000) {
       console.log("[PRINT] Suppressed duplicate KOT print for:", orderSig);
@@ -1703,10 +1808,19 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
   
   // 1. Try dedicated kitchen printer first (if manual or auto_print is on)
   let handled = false;
-  if (hasKitchenPrinter && (isManual || kSettings?.auto_print)) {
-    handled = await printThermalDirect("kitchen", order, true);
-  } else if (hasCashierPrinter && (isManual || cSettings?.print_kot)) {
-    handled = await printThermalDirect("cashier", order, true);
+  try {
+    if (hasKitchenPrinter && (isManual || kSettings?.auto_print)) {
+      handled = await printThermalDirect("kitchen", order, true);
+    } else if (hasCashierPrinter && (isManual || cSettings?.print_kot)) {
+      handled = await printThermalDirect("cashier", order, true);
+    }
+  } catch (err: any) {
+    if (err instanceof PrintIncompleteError) {
+      // Keep the duplicate guard: automatic triggers must not reprint, a manual reprint still can
+      notifyPrintProblem("Check the KOT", err.message);
+      return false;
+    }
+    console.warn("[PRINT] KOT direct print error:", err);
   }
 
   // Fallback to system print on web so KOT NEVER fails on laptop / PC
@@ -1718,6 +1832,9 @@ export async function printKitchenKOT(order: any, isManual = false): Promise<boo
       console.warn("[PRINT] KOT system fallback error:", kotErr);
     }
   }
+
+  // A failed job must stay retryable
+  if (!handled && orderSig) recentPrintedKOTs.delete(orderSig);
 
   return handled;
 }
@@ -1845,7 +1962,7 @@ export async function scanNearbyPrinters(): Promise<{ name: string; address: str
     if (activeWebUsbDevice) {
       discovered.push({
         name: activeWebUsbDevice.productName || "Connected USB Thermal Printer",
-        address: `USB-${activeWebUsbDevice.vendorId || "0"}`,
+        address: usbAddress(activeWebUsbDevice),
         type: "usb",
         brand: "USB"
       });
@@ -2116,33 +2233,21 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
       // 2. Direct WebUSB / Web Serial ESC/POS
       if (settings.type === "usb") {
-        if (activeWebUsbDevice || activeWebSerialWriter || activeWebSerialPort?.writable) {
-          try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
-            const success = await sendWebUsbPrint(escPosBytes);
-            if (success) {
-              if (c === copiesCount - 1) return true;
-              continue;
-            }
-          } catch (e) {
-            console.warn("Web USB print error:", e);
-          }
+        const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
+        const result = await sendUsbSettingsBytes(settings.address, escPosBytes, role);
+        if (result.outcome === "sent") {
+          if (c === copiesCount - 1) return true;
+          continue;
         }
-
-        // Attempt silent reconnection with previously granted USB/Serial ports (NO popups!)
-        const usbOk = await tryAutoReconnectWebUsb(role) || await tryAutoReconnectWebSerial(role);
-        if (usbOk && (activeWebUsbDevice || activeWebSerialWriter || activeWebSerialPort?.writable)) {
-          try {
-            const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness);
-            const success = await sendWebUsbPrint(escPosBytes);
-            if (success) {
-              if (c === copiesCount - 1) return true;
-              continue;
-            }
-          } catch (e) {
-            console.warn("Web USB print retry failed:", e);
-          }
+        setPrinterStatus(role, "unavailable");
+        // An earlier copy or some of this one may be on paper: no automatic resend of any kind
+        if (result.outcome === "ambiguous" || c > 0) {
+          throw new PrintIncompleteError(
+            `The USB printer stopped during copy ${c + 1} of ${copiesCount}: ${result.reason} Check the printed slip and reprint only if it is incomplete.`
+          );
         }
+        console.warn("[PRINT] USB printer not reached, using system print:", result.reason);
+        notifyPrintProblem("USB Printer Not Reached", `${result.reason}\n\nOpening the system print dialog instead.`);
 
         // Direct WebUSB failed or claimed by Windows driver:
         // Automatically fallback to Windows Spooler on Web so prints NEVER get lost!
@@ -2255,7 +2360,11 @@ export async function printBill(bill: any): Promise<boolean> {
   let handled = false;
   try {
     handled = await printThermalDirect("cashier", bill, false);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof PrintIncompleteError) {
+      notifyPrintProblem("Check the Receipt", err.message);
+      return false;
+    }
     console.warn("[PRINT] printThermalDirect failed:", err);
   }
 
