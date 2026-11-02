@@ -1239,7 +1239,7 @@ export const api = {
       return handleLocalBill();
     }
   },
-  markBillPaid: async (idOrBill: string | any, paymentMethod = "UPI") => {
+  markBillPaid: async (idOrBill: string | any, paymentMethod = "UPI", discount?: number) => {
     const passedObj = typeof idOrBill === "object" && idOrBill !== null ? idOrBill : null;
     const rawId = passedObj ? (passedObj.id || passedObj.order_id || "") : String(idOrBill || "");
     let resolvedId = tempIdMap[rawId] || rawId;
@@ -1330,6 +1330,7 @@ export const api = {
           customer_name: passedObj?.customer_name || matchingOrder?.customer_name || "Guest",
           items,
           subtotal,
+          discount: discount ?? passedObj?.discount ?? 0,
           total,
           status: "paid",
           payment_method: paymentMethod,
@@ -1369,6 +1370,7 @@ export const api = {
         table_number: targetBill.table_number,
         total: targetBill.total,
         subtotal: targetBill.subtotal,
+        discount: discount ?? targetBill.discount,
         payment_method: paymentMethod
       });
 
@@ -1376,7 +1378,7 @@ export const api = {
     };
 
     try {
-      const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod }) });
+      const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod, discount: discount ?? passedObj?.discount }) });
       const bList = memoryCache["/bills"] || [];
       const targetOids = res.order_ids || (res.order_id ? [res.order_id] : [resolvedId]);
       const isMatchingBill = (b: any) =>
@@ -1426,7 +1428,7 @@ export const api = {
       return handleLocalMarkPaid();
     }
   },
-  settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number) => {
+  settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number, discount?: number) => {
     const handleLocalSettle = async () => {
       const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
       const cleanOrderIds = (orderIds || []).filter((id: string) => id && !String(id).startsWith("temp-"));
@@ -1494,7 +1496,7 @@ export const api = {
           cgst: gst ? Math.round((tax / 2) * 100) / 100 : 0,
           sgst: gst ? Math.round((tax - Math.round((tax / 2) * 100) / 100) * 100) / 100 : 0,
           gst_enabled: !!gst,
-          discount: 0,
+          discount: discount || 0,
           total: finalTotal,
           status: "paid",
           payment_method: paymentMethod,
@@ -1525,7 +1527,8 @@ export const api = {
         table_number: tableNumber,
         payment_method: paymentMethod,
         order_ids: targetOrderIds,
-        total: finalTotal
+        total: finalTotal,
+        discount
       });
 
       return { ok: true, table_number: tableNumber, status: "settled" };
@@ -1538,7 +1541,8 @@ export const api = {
           table_number: tableNumber,
           payment_method: paymentMethod,
           order_ids: orderIds,
-          total
+          total,
+          discount
         })
       });
       const oList = memoryCache["/orders"] || [];

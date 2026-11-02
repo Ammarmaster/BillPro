@@ -1,6 +1,6 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { Platform, Alert, PermissionsAndroid } from "react-native";
+import { Platform, Alert, PermissionsAndroid, NativeModules } from "react-native";
 import { storage } from "@/src/utils/storage";
 import * as Haptics from "expo-haptics";
 import QRCode from "qrcode";
@@ -10,6 +10,9 @@ let ThermalPrinterModule: any = null;
 try {
   ThermalPrinterModule = require("react-native-thermal-printer").default;
 } catch {}
+
+// Android app only: sends ready-made ESC/POS bytes. APKs built before Fast QR do not have it.
+const RawBluetoothPrinter: any = Platform.OS === "android" ? NativeModules.RawBluetoothPrinter : null;
 
 const PRINTER_SETTINGS_PREFIX = "lumina_printer_settings_";
 
@@ -29,7 +32,7 @@ export interface PrinterSettings {
   auto_cut?: boolean;   // Auto paper cut
   copies?: number;      // 1, 2, or 3 copies
   darkness?: "normal" | "dark" | "extra_dark"; // Thermal heating density & darkness
-  native_qr?: boolean;  // Web ESC/POS: printer draws the QR itself (not supported by every printer)
+  native_qr?: boolean;  // Web and Android Bluetooth ESC/POS: printer draws the QR itself (not supported by every printer)
   saved_at?: string;
   last_status?: PrinterConnectionStatus;
 }
@@ -201,6 +204,14 @@ export async function getPrinterSettings(role: "cashier" | "kitchen"): Promise<P
 }
 
 export async function forgetPrinter(role: "cashier" | "kitchen"): Promise<void> {
+  // Also revoke the browser's permission, or autoAdoptPairedUsbPrinter would set it straight back up
+  const settings = await getPrinterSettings(role);
+  if (settings?.type === "usb") {
+    try {
+      const device = await findConfiguredUsbDevice(settings.address);
+      await device?.forget?.();
+    } catch {}
+  }
   await storage.removeItem(`${PRINTER_SETTINGS_PREFIX}${role}`);
   setPrinterStatus(role, "none");
 }
@@ -794,6 +805,7 @@ if (Platform.OS === "web" && typeof navigator !== "undefined") {
   if ("usb" in navigator) {
     try {
       (navigator as any).usb.addEventListener("connect", () => {
+        autoAdoptPairedUsbPrinter().catch(() => {});
         autoReconnectAllWebPrinters("cashier").catch(() => {});
         autoReconnectAllWebPrinters("kitchen").catch(() => {});
       });
@@ -806,14 +818,63 @@ if (Platform.OS === "web" && typeof navigator !== "undefined") {
   }
 }
 
-export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashier"): Promise<boolean> {
+function isUsbPrinter(device: any): boolean {
+  return (device.configurations || []).some((config: any) =>
+    (config.interfaces || []).some((iface: any) =>
+      (iface.alternates || []).some((alt: any) => alt.interfaceClass === 7)
+    )
+  );
+}
+
+// The one printer this browser already allows ("Paired"). With several there is a choice to get wrong.
+async function findSinglePairedUsbPrinter(): Promise<any | null> {
+  if (!isWebUsbSupported() || !(navigator as any).usb?.getDevices) return null;
+  const printers = ((await (navigator as any).usb.getDevices()) || []).filter(isUsbPrinter);
+  return printers.length === 1 ? printers[0] : null;
+}
+
+// Sets up an already allowed printer with no clicks when this browser has no printer saved yet
+export async function autoAdoptPairedUsbPrinter(): Promise<boolean> {
+  if (await getPrinterSettings("cashier")) return false;
+  const device = await findSinglePairedUsbPrinter();
+  if (!device) return false;
+  activeWebUsbDevice = device;
+  await autoConnectPrinter("cashier", {
+    name: device.productName || "USB Thermal POS Printer",
+    address: usbAddress(device),
+    type: "usb",
+    brand: "USB",
+    darkness: "extra_dark",
+  });
+  return true;
+}
+
+// Skips the browser's list when the only allowed printer is not in use yet. Tapping again still opens the list.
+async function findUnusedPairedUsbPrinter(): Promise<any | null> {
+  const device = await findSinglePairedUsbPrinter();
+  if (!device) return null;
+  const address = usbAddress(device);
+  const [cashier, kitchen] = await Promise.all([getPrinterSettings("cashier"), getPrinterSettings("kitchen")]);
+  return cashier?.address === address || kitchen?.address === address ? null : device;
+}
+
+// Printers with no serial number can lose the browser's permission on unplug or restart.
+// Only the browser's list can bring it back, and that list needs a real tap.
+async function chooseWebUsbPrinterDuringTap(role: "cashier" | "kitchen", address?: string): Promise<boolean> {
+  if (!isWebUsbSupported() || !(navigator as any).userActivation?.isActive) return false;
+  if (await findConfiguredUsbDevice(address)) return false;
+  const wanted = parseUsbAddress(address);
+  return connectWebUsbPrinter(role, wanted ? [{ vendorId: wanted.vendorId, productId: wanted.productId }] : []);
+}
+
+export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashier", filters: any[] = []): Promise<boolean> {
   if (!isWebUsbSupported()) {
     Alert.alert("WebUSB Not Supported", "Direct USB connection requires a Chromium browser (Chrome or Edge).");
     return false;
   }
   try {
     const navUsb = (navigator as any).usb;
-    const device = await navUsb.requestDevice({ filters: [] });
+    const device = (await findUnusedPairedUsbPrinter()) || await navUsb.requestDevice({ filters });
     if (!device) return false;
 
     // Prove the printer is usable before saving it as connected
@@ -835,8 +896,6 @@ export async function connectWebUsbPrinter(role: "cashier" | "kitchen" = "cashie
       address: devAddress,
       type: "usb",
       brand: "USB",
-      width: 58,
-      auto_cut: false,
       darkness: "extra_dark"
     });
     setPrinterStatus(role, "connected");
@@ -1062,7 +1121,7 @@ function encodeUtf8(str: string): Uint8Array {
 export function generateEscPosNativeQr(text: string, paperWidth: 58 | 80 = 58): number[] {
   if (!text || !text.trim()) return [];
   try {
-    const data = Array.from(new TextEncoder().encode(text.trim()));
+    const data = Array.from(encodeUtf8(text.trim()));
     if (data.length > 1000) return [];
 
     // Same printed size as the raster QR
@@ -1897,6 +1956,7 @@ export function startAutoReconnect() {
   const attempt = async () => {
     try {
       if (Platform.OS === "web") {
+        await autoAdoptPairedUsbPrinter();
         await autoReconnectAllWebPrinters("cashier");
         await autoReconnectAllWebPrinters("kitchen");
       }
@@ -2105,8 +2165,8 @@ export async function autoConnectPrinter(
     (printer.address && printer.address.toUpperCase().includes("MPT")) ||
     (printer.name && printer.name.includes("58")) ||
     (existing && existing.width === 58);
-  const resolvedWidth: 58 | 80 = is58 ? 58 : (printer.width || existing?.width || 58);
-  const resolvedAutoCut = resolvedWidth === 58 ? false : (printer.auto_cut ?? (existing ? existing.auto_cut : false));
+  const resolvedWidth: 58 | 80 = is58 ? 58 : (printer.width || existing?.width || 80);
+  const resolvedAutoCut = resolvedWidth === 58 ? false : (printer.auto_cut ?? (existing ? existing.auto_cut : true));
   const resolvedDarkness = printer.darkness || existing?.darkness || "extra_dark";
 
   const settings: PrinterSettings = {
@@ -2130,13 +2190,61 @@ export async function autoConnectPrinter(
   return status;
 }
 
+export function supportsFastQr(type: PrinterConnectionType): boolean {
+  if (Platform.OS === "web") return type === "usb" || type === "bluetooth";
+  return !!RawBluetoothPrinter && type === "bluetooth";
+}
+
+async function findAndroidBluetoothMac(cleanAddress: string): Promise<string> {
+  let targetMac = cleanAddress === "inner" ? "" : cleanAddress;
+
+  try {
+    if (ThermalPrinterModule?.getBluetoothDeviceList) {
+      const list: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
+      if (list && Array.isArray(list) && list.length > 0) {
+        if (cleanAddress && !cleanAddress.includes(":")) {
+          const match = list.find(d =>
+            (d.deviceName || d.name || "").toLowerCase().includes(cleanAddress.toLowerCase())
+          );
+          if (match?.macAddress) {
+            targetMac = match.macAddress;
+          }
+        }
+        if (!targetMac && list[0]?.macAddress) {
+          targetMac = list[0].macAddress;
+        }
+      }
+    }
+  } catch (devErr) {
+    console.warn("Could not pre-fetch bluetooth device list:", devErr);
+  }
+
+  return targetMac;
+}
+
+async function sendAndroidBluetoothBytes(macAddress: string, bytes: Uint8Array): Promise<DirectSendResult> {
+  try {
+    await enqueueDirectPrint(() => RawBluetoothPrinter.print(macAddress, Array.from(bytes)));
+    return { outcome: "sent" };
+  } catch (err: any) {
+    const reason = err?.message || "The Bluetooth printer could not be reached.";
+    return err?.code === "NOT_CONNECTED" ? { outcome: "not_sent", reason } : { outcome: "ambiguous", reason };
+  }
+}
+
 // Prints a harmless text QR with the printer's own command, whatever the Fast QR switch says
 export async function printNativeQrTest(role: "cashier" | "kitchen"): Promise<boolean> {
   const settings = await getPrinterSettings(role);
-  if (Platform.OS !== "web" || !settings) return false;
+  if (!settings || !supportsFastQr(settings.type)) return false;
 
   const payload = "[C]Fast QR test\n[C]<qrcode>BillPro Fast QR test OK. This is not a payment code, so nothing can be paid by scanning it.</qrcode>\n[C]If a QR is above, it should scan.\n";
-  const bytes = convertThermalPayloadToEscPos(payload, settings.width || 58, false, settings.darkness || "extra_dark", true);
+  const bytes = convertThermalPayloadToEscPos(payload, settings.width || 80, false, settings.darkness || "extra_dark", true);
+
+  if (Platform.OS !== "web") {
+    await requestBluetoothPermissions();
+    const mac = await findAndroidBluetoothMac((settings.address || "").trim());
+    return (await sendAndroidBluetoothBytes(mac, bytes)).outcome === "sent";
+  }
 
   if (settings.type === "usb") {
     return (await sendUsbSettingsBytes(settings.address, bytes, role)).outcome === "sent";
@@ -2186,7 +2294,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
     !!activeWebSerialPort ||
     (activeWebUsbDevice && (activeWebUsbDevice.productName || "").toUpperCase().includes("MPT")) ||
     (activeWebBluetoothDevice && (activeWebBluetoothDevice.name || "").toUpperCase().includes("MPT"));
-  const effectiveWidth: 58 | 80 = is58 ? 58 : (settings.width || 58);
+  const effectiveWidth: 58 | 80 = is58 ? 58 : (settings.width || 80);
   const effectiveAutoCut = effectiveWidth === 58 ? false : (settings.auto_cut !== false);
   const effectiveDarkness = settings.darkness || cashierSettings?.darkness || "extra_dark";
 
@@ -2305,7 +2413,11 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
       // 2. Direct WebUSB / Web Serial ESC/POS
       if (settings.type === "usb") {
         const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, !!settings.native_qr);
-        const result = await sendUsbSettingsBytes(settings.address, escPosBytes, role);
+        let result = await sendUsbSettingsBytes(settings.address, escPosBytes, role);
+        if (result.outcome === "not_sent" && await chooseWebUsbPrinterDuringTap(role, settings.address)) {
+          const chosen = await getPrinterSettings(role);
+          result = await sendUsbSettingsBytes(chosen?.address, escPosBytes, role);
+        }
         if (result.outcome === "sent") {
           if (c === copiesCount - 1) return true;
           continue;
@@ -2368,27 +2480,20 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
 
         await requestBluetoothPermissions();
 
-        let targetMac = cleanAddress === "inner" ? "" : cleanAddress;
+        const targetMac = await findAndroidBluetoothMac(cleanAddress);
 
-        try {
-          if (ThermalPrinterModule.getBluetoothDeviceList) {
-            const list: any[] = await ThermalPrinterModule.getBluetoothDeviceList();
-            if (list && Array.isArray(list) && list.length > 0) {
-              if (cleanAddress && !cleanAddress.includes(":")) {
-                const match = list.find(d => 
-                  (d.deviceName || d.name || "").toLowerCase().includes(cleanAddress.toLowerCase())
-                );
-                if (match?.macAddress) {
-                  targetMac = match.macAddress;
-                }
-              }
-              if (!targetMac && list[0]?.macAddress) {
-                targetMac = list[0].macAddress;
-              }
-            }
+        // Fast QR: the same bytes as the web app, so the printer draws the QR itself
+        if (settings.type === "bluetooth" && settings.native_qr && RawBluetoothPrinter) {
+          const escPosBytes = convertThermalPayloadToEscPos(payload, effectiveWidth, effectiveAutoCut, effectiveDarkness, true);
+          const result = await sendAndroidBluetoothBytes(targetMac, escPosBytes);
+          if (result.outcome === "sent") continue;
+          // Part of the slip may be on paper: no automatic resend of any kind
+          if (result.outcome === "ambiguous") {
+            throw new PrintIncompleteError(
+              `The Bluetooth printer stopped during copy ${c + 1} of ${copiesCount}: ${result.reason} Check the printed slip and reprint only if it is incomplete.`
+            );
           }
-        } catch (devErr) {
-          console.warn("Could not pre-fetch bluetooth device list:", devErr);
+          console.warn("[PRINT] Fast QR printer not reached, using the print library:", result.reason);
         }
 
         try {
@@ -2418,6 +2523,7 @@ export async function printThermalDirect(role: "cashier" | "kitchen", data: any,
         }
       }
     } catch (e: any) {
+      if (e instanceof PrintIncompleteError) throw e;
       console.warn("Direct thermal printing failed:", e);
       return false;
     }

@@ -4312,6 +4312,7 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
 
 class PayIn(BaseModel):
     payment_method: str = "UPI"
+    discount: Optional[float] = None  # The bill's whole discount, so repeating the request changes nothing
 
 
 class SettleTableIn(BaseModel):
@@ -4319,6 +4320,43 @@ class SettleTableIn(BaseModel):
     payment_method: str = "UPI"
     order_ids: Optional[List[str]] = None
     total: Optional[float] = None
+    discount: Optional[float] = None  # Taken off the table's bills on top of any discount they already have
+
+
+def discounted_bill_fields(bill: dict, discount: float) -> dict:
+    subtotal = float(bill.get("subtotal", 0.0))
+    if subtotal <= 0:
+        subtotal = sum(float(i.get("price", 0.0)) * int(i.get("quantity", 1)) for i in bill.get("items", []))
+    before_discount = round(subtotal + float(bill.get("tax", 0.0)), 2)
+    applied = round(min(max(float(discount), 0.0), before_discount), 2)
+    return {"discount": applied, "total": round(before_discount - applied, 2)}
+
+
+async def apply_settlement_discount(tid: str, order_ids: List[str], discount: float) -> None:
+    remaining = round(float(discount), 2)
+    bills = await db.bills.find({
+        "tenant_id": tid,
+        "$or": [{"order_id": {"$in": order_ids}}, {"order_ids": {"$in": order_ids}}]
+    }, {"_id": 0}).to_list(200)
+
+    # Same de-duplication as the sales reports, so the whole discount lands on bills they count
+    seen_oids = set()
+    for b in bills:
+        oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
+        if oids and oids.issubset(seen_oids):
+            continue
+        seen_oids.update(oids)
+        total = float(b.get("total", 0.0))
+        taken = round(min(remaining, total), 2)
+        if taken <= 0:
+            continue
+        await db.bills.update_one({"id": b["id"], "tenant_id": tid}, {"$set": {
+            "discount": round(float(b.get("discount", 0.0)) + taken, 2),
+            "total": round(total - taken, 2),
+        }})
+        remaining = round(remaining - taken, 2)
+        if remaining <= 0:
+            break
 
 
 @api.post("/bills/settle-table")
@@ -4434,6 +4472,10 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
         bill_filter["table_number"] = {"$in": tbl_patterns}
 
     await db.bills.update_many(bill_filter, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+
+    # order_id_list only holds unpaid orders, so a repeated request cannot discount the bills twice
+    if payload.discount and payload.discount > 0 and order_id_list:
+        await apply_settlement_discount(tid, order_id_list, payload.discount)
 
     # 4. Mark active orders for this table as paid
     target_order_filter = {"id": {"$in": order_id_list}, "tenant_id": tid} if order_id_list else {
@@ -4580,6 +4622,21 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
 
     # Mark ONLY the target order(s) associated with this bill as paid, AND all sibling bills
     target_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
+
+    if payload and payload.discount is not None:
+        full_total = float(bill.get("total", 0.0))
+        discount_upd = discounted_bill_fields(bill, payload.discount)
+        await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": discount_upd})
+        # Duplicate bills for the same orders must agree, because reports count only one of them
+        if target_oids:
+            await db.bills.update_many({
+                "$or": [{"order_id": {"$in": target_oids}}, {"order_ids": {"$in": target_oids}}],
+                "tenant_id": tid,
+                "id": {"$ne": bill["id"]},
+                "total": full_total,
+            }, {"$set": discount_upd})
+        bill.update(discount_upd)
+
     if target_oids:
         now_iso = datetime.now(timezone.utc).isoformat()
         await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now_iso}})
@@ -4857,7 +4914,7 @@ async def calculate_session_metrics(tid: str, session_doc: dict) -> dict:
     card_sales = round(card_sales, 2)
     other_sales = round(other_sales, 2)
     gross_sales = round(gross_sales, 2)
-    net_sales = round(gross_sales - discount_total, 2)
+    net_sales = gross_sales  # Bill totals already have their discounts taken off
     tax_collected = round(tax_collected, 2)
     discount_total = round(discount_total, 2)
     unpaid_bills_total = round(unpaid_bills_total, 2)

@@ -374,7 +374,7 @@ export async function processSyncQueue(
             const billId = idMap[payload.id] || payload.id;
             res = await reqFn(`/bills/${billId}/pay`, {
               method: "PATCH",
-              body: JSON.stringify({ payment_method: payload.payment_method || "UPI" }),
+              body: JSON.stringify({ payment_method: payload.payment_method || "UPI", discount: payload.discount || undefined }),
             });
             break;
           }
@@ -390,6 +390,7 @@ export async function processSyncQueue(
                 payment_method: payload.payment_method || "UPI",
                 order_ids: mappedOrderIds,
                 total: payload.total,
+                discount: payload.discount || undefined,
               }),
             });
             break;

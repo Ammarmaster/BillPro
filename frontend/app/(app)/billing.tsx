@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar, BackHandler, Platform,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, SafeAreaView, StatusBar, BackHandler, Platform, TextInput, Switch,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -8,7 +8,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
-import { printBill, sharePdf, getPrinterSettings, DEFAULT_EZBILL_LOGO_BASE64, getBillLogo, formatCurrency } from "@/src/lib/print";
+import { printBill, sharePdf, getPrinterSettings, savePrinterSettings, PrinterSettings, DEFAULT_EZBILL_LOGO_BASE64, getBillLogo, formatCurrency } from "@/src/lib/print";
 import { BillingEngine } from "@/src/lib/billingEngine";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
@@ -195,13 +195,46 @@ export default function Billing() {
   
   // Payment Modal state
   const [payModal, setPayModal] = useState(false);
+  const [printSettings, setPrintSettings] = useState<PrinterSettings | null>(null);
+
+  // What the customer actually pays when it is less than the bill, like 200 on a 210 bill
+  const [receivedText, setReceivedText] = useState("");
+  const fullTotal = Number(bill?.total || order?.subtotal || 0);
+  const receivedAmount = receivedText.trim() === "" || bill?.status === "paid" ? null : Number(receivedText);
+  const receivedInvalid = receivedAmount !== null && !(receivedAmount > 0 && receivedAmount <= fullTotal);
+  const adjustedTotal = receivedAmount !== null && !receivedInvalid && receivedAmount < fullTotal
+    ? Math.round(receivedAmount * 100) / 100
+    : null;
+  const amountReduction = adjustedTotal !== null ? Math.round((fullTotal - adjustedTotal) * 100) / 100 : 0;
+  const adjustedFields = adjustedTotal !== null
+    // A saved UPI link still holds the full amount, so it is dropped for one built from the new total
+    ? { total: adjustedTotal, discount: Math.round((Number(bill?.discount || 0) + amountReduction) * 100) / 100, upi_url: "" }
+    : null;
+
+  const checkReceivedAmount = () => {
+    if (!receivedInvalid) return true;
+    setErr(`Amount received must be more than 0 and no more than ${formatCurrency(fullTotal)}.`);
+    return false;
+  };
 
   // 1. Immediately reset state on route param changes (Eliminates old bill flashing completely)
   useEffect(() => {
     const { initialOrder, initialBill } = computeInitialState();
     setOrder(initialOrder);
     setBill(initialBill);
+    setReceivedText("");
   }, [orderId, tableNumber, orderIds]);
+
+  useEffect(() => {
+    if (payModal) getPrinterSettings("cashier").then(setPrintSettings).catch(() => {});
+  }, [payModal]);
+
+  const togglePrintWhenPaid = async (value: boolean) => {
+    if (!printSettings) return;
+    const next = { ...printSettings, auto_print: value };
+    setPrintSettings(next);
+    await savePrinterSettings("cashier", next);
+  };
 
   useEffect(() => {
     const { subscribeToCache } = require("@/src/lib/api");
@@ -473,6 +506,8 @@ export default function Billing() {
         : [];
     const activeSubtotal = Number(bill?.subtotal || order?.subtotal || 0) || activeItems.reduce((s: number, it: any) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
     const activeTotal = Number(bill?.total || activeSubtotal);
+    const paidDiscount = adjustedFields?.discount;
+    const tableReduction = amountReduction || undefined;
 
     // Optimistic UI updates
     const updatedLocalBill = {
@@ -484,11 +519,13 @@ export default function Billing() {
       customer_name: bill?.customer_name || order?.customer_name || "Guest",
       status: "paid",
       payment_method: method,
-      restaurant_snapshot: bill?.restaurant_snapshot || restaurant || api.getCachedRestaurant()
+      restaurant_snapshot: bill?.restaurant_snapshot || restaurant || api.getCachedRestaurant(),
+      ...adjustedFields,
     };
     setBill(updatedLocalBill);
     setPayModal(false);
-    
+    setReceivedText("");
+
     // Update local cache
     api.updateCachedBill(bill.id, updatedLocalBill);
     const oList = api.getCachedOrders() || [];
@@ -498,9 +535,9 @@ export default function Billing() {
         api.markBillPaid(updatedLocalBill, method).catch(() => {});
       } else {
         const targetOrderIds = bill?.order_ids || (order?.id ? [order.id] : undefined);
-        const finalAmt = Number(bill?.total || order?.subtotal || 0);
+        const finalAmt = Number(updatedLocalBill.total || order?.subtotal || 0);
         if (targetTbl && targetTbl !== "Takeaway") {
-          api.settleTable(targetTbl, method, targetOrderIds, finalAmt).catch(() => {});
+          api.settleTable(targetTbl, method, targetOrderIds, finalAmt, tableReduction).catch(() => {});
         } else {
           api.markBillPaid(updatedLocalBill, method).catch(() => {});
         }
@@ -542,15 +579,15 @@ export default function Billing() {
       // Perform targeted mutation for both bill and order
       const mutationId = (!realBillId || realBillId.startsWith("temp-")) ? targetOid : realBillId;
       if (mutationId && !mutationId.startsWith("temp-")) {
-        api.markBillPaid(mutationId, method).catch((e: any) => {
+        api.markBillPaid(mutationId, method, paidDiscount).catch((e: any) => {
           console.warn("Individual markBillPaid sync failed:", e.message);
         });
       }
       if (bill.id && !String(bill.id).startsWith("temp-") && bill.id !== mutationId) {
-        api.markBillPaid(bill.id, method).catch(() => {});
+        api.markBillPaid(bill.id, method, paidDiscount).catch(() => {});
       }
       if (targetOid && !String(targetOid).startsWith("temp-") && targetOid !== mutationId) {
-        api.markBillPaid(targetOid, method).catch(() => {});
+        api.markBillPaid(targetOid, method, paidDiscount).catch(() => {});
       }
     } else {
       // 2. SETTLE ENTIRE TABLE: Update all active orders on that table to PAID!
@@ -565,12 +602,12 @@ export default function Billing() {
 
       // Perform single table settlement mutation
       if (targetTbl && targetTbl !== "Takeaway") {
-        const finalAmt = Number(bill?.total || order?.subtotal || 0);
-        api.settleTable(targetTbl, method, targetOrderIds, finalAmt).catch((e: any) => {
+        const finalAmt = Number(updatedLocalBill.total || order?.subtotal || 0);
+        api.settleTable(targetTbl, method, targetOrderIds, finalAmt, tableReduction).catch((e: any) => {
           console.warn("Table settlement sync failed:", e.message);
         });
       } else {
-        api.markBillPaid(bill.id, method).catch(() => {});
+        api.markBillPaid(bill.id, method, paidDiscount).catch(() => {});
       }
     }
 
@@ -606,7 +643,7 @@ export default function Billing() {
   };
 
   const doPrint = async () => {
-    if (!bill) return;
+    if (!bill || !checkReceivedAmount()) return;
     try {
       const activeItems = (bill?.items && bill.items.length > 0)
         ? bill.items
@@ -623,7 +660,8 @@ export default function Billing() {
         total: activeTotal,
         table_number: bill?.table_number || order?.table_number || tableNumber || "Takeaway",
         customer_name: bill?.customer_name || order?.customer_name || "Guest",
-        restaurant_snapshot: bill.restaurant_snapshot || restaurant || api.getCachedRestaurant()
+        restaurant_snapshot: bill.restaurant_snapshot || restaurant || api.getCachedRestaurant(),
+        ...adjustedFields,
       };
       await printBill(printableBill);
     }
@@ -640,12 +678,13 @@ export default function Billing() {
   const restaurantPhone2 = (bill?.restaurant_snapshot?.phone2) || restaurant?.phone2 || "";
   const logoBase64 = getBillLogo(bill?.restaurant_snapshot || restaurant);
   const upiId = restaurant?.upi_id || "8152075375-2@ybl";
-  const totalAmt = bill?.total || order?.subtotal || 760;
+  const totalAmt = adjustedTotal ?? (bill?.total || order?.subtotal || 760);
+  const shownDiscount = adjustedFields?.discount ?? (bill?.discount || order?.discount);
   const itemsList = bill?.items || order?.items || [];
 
   // Local QR Code Generator (runs instantly in < 1ms offline without canvas dependencies)
   useEffect(() => {
-    const upi = bill?.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(restaurantName)}&am=${totalAmt}&cu=INR`;
+    const upi = (adjustedTotal === null && bill?.upi_url) || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(restaurantName)}&am=${totalAmt}&cu=INR`;
     if (upi) {
       QRCode.toString(upi, { type: 'svg', margin: 1, width: 220 })
         .then(svgString => {
@@ -654,7 +693,7 @@ export default function Billing() {
         })
         .catch(() => {});
     }
-  }, [bill?.upi_url, upiId, restaurantName, totalAmt]);
+  }, [bill?.upi_url, upiId, restaurantName, totalAmt, adjustedTotal]);
 
   if (!order && !bill) {
     return (
@@ -795,10 +834,10 @@ export default function Billing() {
               <Text style={[styles.summaryVal, { color: theme.onSurface }]}>{formatCurrency(bill?.subtotal || order?.subtotal || totalAmt)}</Text>
             </View>
             
-            {!!(bill?.discount || order?.discount) && (
+            {!!shownDiscount && (
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLbl, { color: theme.onSurfaceSecondary }]}>Discount</Text>
-                <Text style={[styles.summaryVal, { color: theme.onSurface }]}>-{formatCurrency(bill?.discount || order?.discount || 0)}</Text>
+                <Text style={[styles.summaryVal, { color: theme.onSurface }]}>-{formatCurrency(shownDiscount)}</Text>
               </View>
             )}
 
@@ -814,6 +853,31 @@ export default function Billing() {
               <Text style={[styles.totalLbl, { color: theme.onSurface }]}>TOTAL</Text>
               <Text style={[styles.totalVal, { color: theme.onSurface }]} testID="bill-total">{formatCurrency(totalAmt)}</Text>
             </View>
+
+            {!isPaid && (
+              <View style={[styles.receivedRow, { borderColor: receivedInvalid ? "#EF4444" : theme.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.receivedLbl, { color: theme.onSurface }]}>Amount received</Text>
+                  <Text style={[styles.receivedHint, { color: receivedInvalid ? "#EF4444" : theme.onSurfaceSecondary }]}>
+                    {receivedInvalid
+                      ? `Must be more than 0 and no more than ${formatCurrency(fullTotal)}`
+                      : adjustedTotal !== null
+                        ? `${formatCurrency(amountReduction)} taken off the bill`
+                        : "Change this if the customer pays less"}
+                  </Text>
+                </View>
+                <TextInput
+                  style={[styles.receivedInput, { color: theme.onSurface, backgroundColor: theme.surface, borderColor: theme.border }]}
+                  value={receivedText}
+                  onChangeText={setReceivedText}
+                  placeholder={String(fullTotal)}
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="decimal-pad"
+                  accessibilityLabel="Amount received"
+                  testID="bill-received-input"
+                />
+              </View>
+            )}
 
             {isPaid && (
               <>
@@ -867,7 +931,7 @@ export default function Billing() {
             </Pressable>
 
             {!isPaid ? (
-              <Pressable style={styles.markPaidBtn} onPress={() => setPayModal(true)} testID="bill-mark-paid-btn">
+              <Pressable style={styles.markPaidBtn} onPress={() => { if (checkReceivedAmount()) { setErr(null); setPayModal(true); } }} testID="bill-mark-paid-btn">
                 <Text style={styles.markPaidBtnText}>Mark Paid  ✓</Text>
               </Pressable>
             ) : (
@@ -918,6 +982,20 @@ export default function Billing() {
             >
               <View style={[styles.modalHandle, { backgroundColor: theme.borderStrong }]} />
               <Text style={[styles.modalTitle, { color: theme.onSurface }]}>Mark paid by</Text>
+
+              {printSettings && printSettings.type !== "none" && (
+                <View style={styles.printToggleRow}>
+                  <Text style={[styles.printToggleLbl, { color: theme.onSurface }]}>Print bill when paid</Text>
+                  <Switch
+                    value={!!printSettings.auto_print}
+                    onValueChange={togglePrintWhenPaid}
+                    trackColor={{ false: isDark ? "#334155" : "#E2E8F0", true: "#635BFF" }}
+                    thumbColor="#FFFFFF"
+                    accessibilityLabel="Print bill when paid"
+                    testID="bill-print-when-paid"
+                  />
+                </View>
+              )}
 
               <View style={styles.methodsRow}>
                 <Pressable
@@ -988,6 +1066,12 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 },
   totalLbl: { color: "#0F172A", fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
   totalVal: { color: "#0F172A", fontSize: 20, fontWeight: "900" },
+  receivedRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.sm, padding: spacing.md, borderWidth: 1, borderRadius: radius.lg },
+  receivedLbl: { fontSize: 14, fontWeight: "800" },
+  receivedHint: { fontSize: 12, fontWeight: "500", marginTop: 2 },
+  receivedInput: { width: 110, minHeight: 44, paddingHorizontal: spacing.md, borderWidth: 1, borderRadius: radius.md, fontSize: 16, fontWeight: "800", textAlign: "right" },
+  printToggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
+  printToggleLbl: { fontSize: 15, fontWeight: "700" },
 
   upiBox: {
     backgroundColor: "#FFFFFF",

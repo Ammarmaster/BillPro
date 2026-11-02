@@ -16,9 +16,9 @@ import {
   connectWebBluetoothPrinter, isWebBluetoothSupported,
   connectWebUsbPrinter, isWebUsbSupported,
   connectWebSerialPrinter, isWebSerialSupported,
-  autoReconnectAllWebPrinters,
+  autoReconnectAllWebPrinters, autoAdoptPairedUsbPrinter,
   kickCashDrawer,
-  printBillLegacy, printKOTLegacy, notifyPrintProblem, printNativeQrTest,
+  printBillLegacy, printKOTLegacy, notifyPrintProblem, printNativeQrTest, supportsFastQr,
   PrinterSettings, PrinterConnectionStatus, PrinterConnectionType, PRINTER_PRESETS, PrinterPreset
 } from "@/src/lib/print";
 
@@ -52,7 +52,7 @@ export default function PrinterSettingsScreen() {
   const [cashierMAC, setCashierMAC] = useState("MPT-II");
   const [cashierName, setCashierName] = useState("Cashier Thermal Printer");
   const [cashierBrand, setCashierBrand] = useState("TVS");
-  const [cashierWidth, setCashierWidth] = useState<58 | 80>(58);
+  const [cashierWidth, setCashierWidth] = useState<58 | 80>(80);
   const [cashierAuto, setCashierAuto] = useState(true);
   const [cashierPrintKOT, setCashierPrintKOT] = useState(false);
   const [cashierOpenDrawer, setCashierOpenDrawer] = useState(true);
@@ -69,7 +69,7 @@ export default function PrinterSettingsScreen() {
   const [kitchenMAC, setKitchenMAC] = useState("");
   const [kitchenName, setKitchenName] = useState("Kitchen Thermal Printer");
   const [kitchenBrand, setKitchenBrand] = useState("Epson");
-  const [kitchenWidth, setKitchenWidth] = useState<58 | 80>(58);
+  const [kitchenWidth, setKitchenWidth] = useState<58 | 80>(80);
   const [kitchenAuto, setKitchenAuto] = useState(true);
   const [kitchenAutoCut, setKitchenAutoCut] = useState(false);
   const [kitchenCopies, setKitchenCopies] = useState<number>(1);
@@ -89,6 +89,7 @@ export default function PrinterSettingsScreen() {
 
   const loadSettings = async () => {
     setLoading(true);
+    if (Platform.OS === "web") await autoAdoptPairedUsbPrinter().catch(() => {});
     const cashier = await getPrinterSettings("cashier");
     if (cashier) {
       setCashierType(cashier.type);
@@ -101,7 +102,7 @@ export default function PrinterSettingsScreen() {
       setCashierName(cashier.name);
       setCashierBrand(cashier.brand || "Generic");
       const isMptC = (cashier.name && cashier.name.toUpperCase().includes("MPT")) || (cashier.address && cashier.address.toUpperCase().includes("MPT"));
-      setCashierWidth(isMptC ? 58 : (cashier.width || 58));
+      setCashierWidth(isMptC ? 58 : (cashier.width || 80));
       setCashierAuto(cashier.auto_print ?? true);
       setCashierPrintKOT(cashier.print_kot ?? false);
       setCashierOpenDrawer(cashier.open_drawer ?? true);
@@ -262,7 +263,7 @@ export default function PrinterSettingsScreen() {
             name: "Windows USB Printer (Spooler)",
             brand: "Windows USB",
             type: "system",
-            defaultWidth: 58,
+            defaultWidth: 80,
             description: "Laptop & PC Windows spooler",
             icon: "desktop"
           });
@@ -780,7 +781,7 @@ export default function PrinterSettingsScreen() {
                     name: "Windows USB Printer (Spooler)",
                     brand: "Windows USB",
                     type: "system",
-                    defaultWidth: 58,
+                    defaultWidth: 80,
                     description: "Laptop & PC Windows spooler",
                     icon: "desktop"
                   }),
@@ -1298,8 +1299,8 @@ export default function PrinterSettingsScreen() {
             />
           </View>
 
-          {/* Fast QR: web ESC/POS only, the mobile app prints through its own library */}
-          {Platform.OS === "web" && activeTab === "cashier" && (cashierType === "usb" || cashierType === "bluetooth") && (
+          {/* Fast QR: direct ESC/POS on the web, and Bluetooth on the Android app */}
+          {activeTab === "cashier" && supportsFastQr(cashierType) && (
             <View style={[styles.switchRow, { borderTopColor: theme.border }]}>
               <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
