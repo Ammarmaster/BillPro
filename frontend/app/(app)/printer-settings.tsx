@@ -26,7 +26,8 @@ export default function PrinterSettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
-  const { isDesktop } = useResponsive();
+  const { isDesktop, width: screenWidth } = useResponsive();
+  const isPhone = screenWidth < 600;
 
   const [activeTab, setActiveTab] = useState<"cashier" | "kitchen">("cashier");
   const [loading, setLoading] = useState(false);
@@ -601,7 +602,7 @@ export default function PrinterSettingsScreen() {
           <Ionicons name="chevron-back" size={20} color="#635BFF" />
         </Pressable>
         <View style={{ marginLeft: 14, flex: 1, minWidth: 0 }}>
-          <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>Printer Setup</Text>
+          <Text style={[styles.title, isPhone && { fontSize: 20 }, { color: theme.onSurface }]} numberOfLines={1}>Printer Setup</Text>
           <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
             Choose the printers for bills and kitchen tickets
           </Text>
@@ -639,18 +640,18 @@ export default function PrinterSettingsScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, isPhone && { paddingHorizontal: 12, paddingTop: 4 }]} showsVerticalScrollIndicator={false}>
         
         {/* Active Remembered Printer Hero Card */}
-        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+        <View style={[styles.card, isPhone && styles.cardPhone, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <View style={[styles.cardHeader, isPhone && styles.cardHeaderPhone]}>
+            <View style={isPhone ? { minWidth: 0 } : { flex: 1, minWidth: 0, paddingRight: 8 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={[styles.printerNameTitle, { color: theme.onSurface }]} numberOfLines={1}>
                   {currentName || (currentType !== "none" ? "Thermal Printer" : "No Printer Configured")}
                 </Text>
               </View>
-              <Text style={[styles.printerTypeSubtitle, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
+              <Text style={[styles.printerTypeSubtitle, { color: theme.onSurfaceSecondary }]} numberOfLines={isPhone ? 2 : 1}>
                 Type: {currentType.toUpperCase()} • Width: {activeTab === "cashier" ? cashierWidth : kitchenWidth}mm {currentAddress ? `• ${currentAddress}` : ""}
               </Text>
             </View>
@@ -661,10 +662,10 @@ export default function PrinterSettingsScreen() {
           </View>
 
           {/* Quick Diagnostics Action Grid */}
-          <View style={[styles.cardActions, { borderTopColor: theme.border }]}>
+          <View style={[styles.cardActions, isPhone && { flexWrap: "wrap" }, { borderTopColor: theme.border }]}>
             {Platform.OS === "web" && currentType === "bluetooth" && (
               <Pressable 
-                style={[styles.cardActionBtn, { backgroundColor: currentStatus === "connected" ? "rgba(16,185,129,0.15)" : "#635BFF", borderColor: currentStatus === "connected" ? "#10B981" : "#635BFF" }]} 
+                style={[styles.cardActionBtn, isPhone && styles.cardActionBtnPhone, { backgroundColor: currentStatus === "connected" ? "rgba(16,185,129,0.15)" : "#635BFF", borderColor: currentStatus === "connected" ? "#10B981" : "#635BFF" }]} 
                 onPress={async () => {
                   const ok = await connectWebBluetoothPrinter(activeTab);
                   if (ok) await loadSettings();
@@ -678,7 +679,7 @@ export default function PrinterSettingsScreen() {
             )}
 
             <Pressable 
-              style={[styles.cardActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
+              style={[styles.cardActionBtn, isPhone && styles.cardActionBtnPhone, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
               onPress={handleTestPrint}  
               disabled={testingPrint}
             >
@@ -696,7 +697,7 @@ export default function PrinterSettingsScreen() {
 
             {activeTab === "cashier" && (
               <Pressable 
-                style={[styles.cardActionBtn, { backgroundColor: "transparent", borderColor: theme.border }]}
+                style={[styles.cardActionBtn, isPhone && styles.cardActionBtnPhone, { backgroundColor: "transparent", borderColor: theme.border }]}
                 onPress={handleTestDrawer}  
                 disabled={testingDrawer}
               >
@@ -713,7 +714,7 @@ export default function PrinterSettingsScreen() {
 
             {currentType !== "none" && (
               <Pressable 
-                style={[styles.cardActionBtn, { backgroundColor: "transparent", borderColor: theme.border }]}  
+                style={[styles.cardActionBtn, isPhone && styles.cardActionBtnPhone, { backgroundColor: "transparent", borderColor: theme.border }]}  
                 onPress={() => handleForget(activeTab)}
               >
                 <Ionicons name="trash-outline" size={16} color="#EF4444" />
@@ -724,9 +725,9 @@ export default function PrinterSettingsScreen() {
         </View>
 
         {/* 1. DISCOVERED & QUICK CONNECT PRINTERS (BLUETOOTH, LAN/WI-FI, USB) */}
-        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-          <View style={styles.scanHeader}>
-            <View style={{ flex: 1, paddingRight: 6 }}>
+        <View style={[styles.card, isPhone && styles.cardPhone, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+          <View style={[styles.scanHeader, isPhone && styles.cardHeaderPhone]}>
+            <View style={isPhone ? undefined : { flex: 1, paddingRight: 6 }}>
               <Text style={[styles.sectionTitle, { color: theme.onSurface, marginBottom: 2 }]}>
                 Connect a printer
               </Text>
@@ -734,9 +735,9 @@ export default function PrinterSettingsScreen() {
                 Choose how this printer is connected to this device
               </Text>
             </View>
-            <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
               <Pressable
-                style={[styles.scanBtn, { backgroundColor: "transparent", borderColor: theme.border }]}
+                style={[styles.scanBtn, isPhone && styles.scanBtnPhone, { backgroundColor: "transparent", borderColor: theme.border }]}
                 onPress={handleScan}
                 disabled={scanning}
               >
@@ -751,7 +752,7 @@ export default function PrinterSettingsScreen() {
               </Pressable>
 
               <Pressable
-                style={[styles.scanBtn, { backgroundColor: "transparent", borderColor: theme.border }]}
+                style={[styles.scanBtn, isPhone && styles.scanBtnPhone, { backgroundColor: "transparent", borderColor: theme.border }]}
                 onPress={handleSubnetScan}
                 disabled={scanningSubnet}
               >
@@ -878,7 +879,7 @@ export default function PrinterSettingsScreen() {
         </View>
 
         {/* 2. Popular Brand & Model 1-Click Presets */}
-        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+        <View style={[styles.card, isPhone && styles.cardPhone, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.onSurface }]}>
             Printer presets
           </Text>
@@ -894,6 +895,7 @@ export default function PrinterSettingsScreen() {
                   key={preset.id}
                   style={[
                     styles.presetCard,
+                    isPhone && styles.twoColumnPhone,
                     {
                       backgroundColor: isBrandMatch ? (isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF") : theme.surface,
                       borderColor: isBrandMatch ? "#635BFF" : theme.border
@@ -918,7 +920,7 @@ export default function PrinterSettingsScreen() {
         </View>
 
         {/* 3. Advanced Manual Hardware & Print Fine-Tuning */}
-        <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+        <View style={[styles.card, isPhone && styles.cardPhone, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <Pressable 
             style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
             onPress={() => setShowAdvanced(!showAdvanced)}
@@ -954,6 +956,7 @@ export default function PrinterSettingsScreen() {
                         key={t.id}
                         style={[
                           styles.selectorGridBtn,
+                          isPhone && styles.twoColumnPhone,
                           { backgroundColor: isSel ? "#635BFF" : (isDark ? "rgba(255,255,255,0.05)" : "#F1F5F9"), borderColor: isSel ? "#635BFF" : theme.border }
                         ]}
                         onPress={() => activeTab === "cashier" ? setCashierType(t.id) : setKitchenType(t.id)}
@@ -1321,10 +1324,10 @@ export default function PrinterSettingsScreen() {
           )}
 
           {/* Print Darkness / Density Selector */}
-          <View style={[styles.switchRow, { borderTopColor: theme.border, alignItems: "center" }]}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
+          <View style={[styles.switchRow, { borderTopColor: theme.border, alignItems: "center" }, isPhone && { flexDirection: "column", alignItems: "stretch", gap: 10 }]}>
+            <View style={isPhone ? undefined : { flex: 1, paddingRight: 10 }}>
               <Text style={[styles.switchLabel, { color: theme.onSurface }]}>
-                Print Darkness / Density
+                Print darkness
               </Text>
               <Text style={[styles.switchDesc, { color: theme.onSurfaceSecondary }]}>
                 Boosts thermal heating energy for rich, deep black receipts
@@ -1339,6 +1342,8 @@ export default function PrinterSettingsScreen() {
                   <Pressable
                     key={d}
                     style={{
+                      flex: isPhone ? 1 : undefined,
+                      alignItems: "center",
                       paddingHorizontal: 9,
                       paddingVertical: 6,
                       borderRadius: 8,
@@ -1362,9 +1367,9 @@ export default function PrinterSettingsScreen() {
       </View>
 
         {/* Bottom Save & Action Buttons */}
-        <View style={styles.actionsRow}>
+        <View style={[styles.actionsRow, isPhone && { flexDirection: "column-reverse" }]}>
           <Pressable 
-            style={[styles.testBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
+            style={[styles.testBtn, isPhone && { flex: 0 }, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
             onPress={handleTestPrint} 
             disabled={testingPrint}
           >
@@ -1374,7 +1379,8 @@ export default function PrinterSettingsScreen() {
 
           <Pressable 
             style={[
-              styles.saveMainBtn, 
+              styles.saveMainBtn,
+              isPhone && { flex: 0 },
               saveSuccess && { backgroundColor: "#10B981", shadowColor: "#10B981" }
             ]} 
             onPress={handleSaveManual}
@@ -1464,6 +1470,31 @@ const styles = StyleSheet.create({
     padding: 18,
     marginBottom: spacing.lg,
   },
+  cardPhone: {
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+  },
+  cardHeaderPhone: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: 10,
+  },
+  cardActionBtnPhone: {
+    flex: 0,
+    flexGrow: 1,
+    flexBasis: "47%",
+    minHeight: 44,
+  },
+  scanBtnPhone: {
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  twoColumnPhone: {
+    flexGrow: 1,
+    flexBasis: "47%",
+  },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1480,6 +1511,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   statusPill: {
+    alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
