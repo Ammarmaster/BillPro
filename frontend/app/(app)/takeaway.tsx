@@ -606,10 +606,10 @@ export default function TakeawayScreen() {
       >
         <View style={styles.itemLeftRow}>
           <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <View style={styles.redSquare} />
-              <Text style={[styles.itemName, { color: theme.onSurface }]}>{item.name}</Text>
+              <Text style={[styles.itemName, { color: theme.onSurface, flex: 1 }]} numberOfLines={2}>{item.name}</Text>
             </View>
             <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary }]}>₹{item.price} · GST 0%</Text>
           </View>
@@ -759,7 +759,10 @@ export default function TakeawayScreen() {
   // DESKTOP LAYOUT
   // -------------------------------------------------------------
   if (isDesktop) {
-    const dishCols = isGrid ? (isLargeDesktop ? 3 : 2) : (isLargeDesktop ? 2 : 1);
+    const dishCols = isGrid ? (isLargeDesktop ? 3 : 2) : (isLargeDesktop ? 3 : 1);
+    // Blank cells keep a short last row on the same column widths as the rows above
+    const dishCells: any[] = [...filtered];
+    while (dishCols > 1 && dishCells.length % dishCols !== 0) dishCells.push({ id: `blank-${dishCells.length}`, blank: true });
     const unpaidGridCols = isLargeDesktop ? 3 : 2;
 
     return (
@@ -878,13 +881,13 @@ export default function TakeawayScreen() {
                 ) : (
                   <FlatList
                     key={`takeaway-desktop-${menuLayout}-${dishCols}`}
-                    data={filtered}
+                    data={dishCells}
                     keyExtractor={i => i.id}
                     numColumns={dishCols}
                     contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 40, gap: spacing.md }}
                     columnWrapperStyle={dishCols > 1 ? { gap: spacing.md } : undefined}
                     showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => renderDishItem(item, isGrid)}
+                    renderItem={({ item }) => item.blank ? <View style={{ flex: 1 }} /> : renderDishItem(item, isGrid)}
                   />
                 )}
               </View>
@@ -908,7 +911,7 @@ export default function TakeawayScreen() {
                       keyExtractor={l => l.menu_item_id}
                       contentContainerStyle={{ padding: spacing.md, gap: spacing.sm }}
                       renderItem={({ item }) => (
-                        <View style={[styles.itemCard, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, padding: 12 }]}>
+                        <View style={[styles.itemCard, { flex: 0, minHeight: 0, backgroundColor: theme.surfaceTertiary, borderColor: theme.border, padding: 12 }]}>
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.itemName, { color: theme.onSurface, fontSize: 14 }]}>{item.name}</Text>
                             <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary, fontSize: 12 }]}>₹{item.price} × {item.quantity} = ₹{item.price * item.quantity}</Text>
@@ -1211,6 +1214,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   
   itemCard: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 88,
+    gap: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1226,9 +1233,9 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   itemLeftRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
-  itemThumbImg: { width: 44, height: 44, borderRadius: radius.md },
-  redSquare: { width: 14, height: 14, borderRadius: 3, backgroundColor: "#EF4444" },
-  itemName: { color: "#0F172A", fontSize: 16, fontWeight: "800" },
+  itemThumbImg: { width: 52, height: 52, borderRadius: radius.md },
+  redSquare: { width: 10, height: 10, borderRadius: 2, backgroundColor: "#EF4444" },
+  itemName: { color: "#0F172A", fontSize: 15, fontWeight: "700" },
   itemMeta: { color: "#64748B", fontSize: 13, marginTop: 2, fontWeight: "500" },
   
   addCircleBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#635BFF", alignItems: "center", justifyContent: "center" },

@@ -540,6 +540,7 @@ export default function PrinterSettingsScreen() {
   };
 
   const badge = getStatusBadge(currentStatus);
+  const listedDevices = devices.filter(d => !d.address.startsWith("web-"));
 
   if (loading) {
     return (
@@ -579,9 +580,9 @@ export default function PrinterSettingsScreen() {
           <Ionicons name="chevron-back" size={20} color="#635BFF" />
         </Pressable>
         <View style={{ marginLeft: 14, flex: 1, minWidth: 0 }}>
-          <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>Thermal & POS Printers</Text>
+          <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>Printer Setup</Text>
           <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]} numberOfLines={1}>
-            Universal auto-connection & automatic background printing
+            Choose the printers for bills and kitchen tickets
           </Text>
         </View>
       </View>
@@ -598,7 +599,7 @@ export default function PrinterSettingsScreen() {
             color={activeTab === "cashier" ? "#FFFFFF" : theme.onSurfaceSecondary} 
           />
           <Text style={[styles.tabText, { color: activeTab === "cashier" ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-            Cashier Billing Printer
+            Billing Printer
           </Text>
         </Pressable>
 
@@ -612,7 +613,7 @@ export default function PrinterSettingsScreen() {
             color={activeTab === "kitchen" ? "#FFFFFF" : theme.onSurfaceSecondary} 
           />
           <Text style={[styles.tabText, { color: activeTab === "kitchen" ? "#FFFFFF" : theme.onSurfaceSecondary }]}>
-            Kitchen KOT Printer
+            Kitchen Printer
           </Text>
         </Pressable>
       </View>
@@ -656,16 +657,16 @@ export default function PrinterSettingsScreen() {
             )}
 
             <Pressable 
-              style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
-              onPress={handleTestPrint} 
+              style={[styles.cardActionBtn, { backgroundColor: "#635BFF", borderColor: "#635BFF" }]}
+              onPress={handleTestPrint}  
               disabled={testingPrint}
             >
               {testingPrint ? (
-                <ActivityIndicator size="small" color="#635BFF" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
-                  <Ionicons name="print-outline" size={16} color="#635BFF" />
-                  <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>
+                  <Ionicons name="print-outline" size={16} color="#FFFFFF" />
+                  <Text style={[styles.cardActionBtnText, { color: "#FFFFFF" }]}>
                     {activeTab === "cashier" ? "Test Receipt" : "Test KOT"}
                   </Text>
                 </>
@@ -674,32 +675,24 @@ export default function PrinterSettingsScreen() {
 
             {activeTab === "cashier" && (
               <Pressable 
-                style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(16,185,129,0.12)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0" }]} 
-                onPress={handleTestDrawer} 
+                style={[styles.cardActionBtn, { backgroundColor: "transparent", borderColor: theme.border }]}
+                onPress={handleTestDrawer}  
                 disabled={testingDrawer}
               >
                 {testingDrawer ? (
-                  <ActivityIndicator size="small" color="#10B981" />
+                  <ActivityIndicator size="small" color={theme.onSurface} />
                 ) : (
                   <>
-                    <Ionicons name="cash-outline" size={16} color="#10B981" />
-                    <Text style={[styles.cardActionBtnText, { color: "#10B981" }]}>Kick Drawer</Text>
+                    <Ionicons name="cash-outline" size={16} color={theme.onSurface} />
+                    <Text style={[styles.cardActionBtnText, { color: theme.onSurface }]}>Open Drawer</Text>
                   </>
                 )}
               </Pressable>
             )}
 
-            <Pressable 
-              style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.12)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]} 
-              onPress={handleScan}
-            >
-              <Ionicons name="scan-outline" size={16} color="#635BFF" />
-              <Text style={[styles.cardActionBtnText, { color: "#635BFF" }]}>Scan All</Text>
-            </Pressable>
-
             {currentType !== "none" && (
               <Pressable 
-                style={[styles.cardActionBtn, { backgroundColor: isDark ? "rgba(239,68,68,0.12)" : "#FEF2F2", borderColor: isDark ? "rgba(239,68,68,0.3)" : "#FECDD3" }]} 
+                style={[styles.cardActionBtn, { backgroundColor: "transparent", borderColor: theme.border }]}  
                 onPress={() => handleForget(activeTab)}
               >
                 <Ionicons name="trash-outline" size={16} color="#EF4444" />
@@ -713,16 +706,16 @@ export default function PrinterSettingsScreen() {
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <View style={styles.scanHeader}>
             <View style={{ flex: 1, paddingRight: 6 }}>
-              <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>
-                DISCOVERED & QUICK CONNECT
+              <Text style={[styles.sectionTitle, { color: theme.onSurface, marginBottom: 2 }]}>
+                Connect a printer
               </Text>
-              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>
-                1-Tap Auto Connect Bluetooth, USB & LAN Network Printers
+              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 12 }]}>
+                Choose how this printer is connected to this device
               </Text>
             </View>
             <View style={{ flexDirection: "row", gap: 6 }}>
               <Pressable
-                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}
+                style={[styles.scanBtn, { backgroundColor: "transparent", borderColor: theme.border }]}
                 onPress={handleScan}
                 disabled={scanning}
               >
@@ -730,14 +723,14 @@ export default function PrinterSettingsScreen() {
                   <ActivityIndicator size="small" color="#635BFF" />
                 ) : (
                   <>
-                    <Ionicons name="bluetooth" size={14} color="#635BFF" />
-                    <Text style={[styles.scanBtnText, { color: "#635BFF" }]}>Scan BT/USB</Text>
+                    <Ionicons name="search-outline" size={14} color={theme.onSurface} />
+                    <Text style={[styles.scanBtnText, { color: theme.onSurface }]}>Find Printers</Text>
                   </>
                 )}
               </Pressable>
 
               <Pressable
-                style={[styles.scanBtn, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5", borderColor: isDark ? "#10B981" : "#A7F3D0" }]}
+                style={[styles.scanBtn, { backgroundColor: "transparent", borderColor: theme.border }]}
                 onPress={handleSubnetScan}
                 disabled={scanningSubnet}
               >
@@ -745,8 +738,8 @@ export default function PrinterSettingsScreen() {
                   <ActivityIndicator size="small" color="#10B981" />
                 ) : (
                   <>
-                    <Ionicons name="wifi-outline" size={14} color="#10B981" />
-                    <Text style={[styles.scanBtnText, { color: "#10B981" }]}>Scan LAN</Text>
+                    <Ionicons name="wifi-outline" size={14} color={theme.onSurface} />
+                    <Text style={[styles.scanBtnText, { color: theme.onSurface }]}>Find on Network</Text>
                   </>
                 )}
               </Pressable>
@@ -755,56 +748,12 @@ export default function PrinterSettingsScreen() {
 
           {/* Web Quick Pair Shortcuts */}
           {Platform.OS === "web" && (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 140,
-                  backgroundColor: (currentName && currentName.includes("Hallet")) ? "rgba(16,185,129,0.2)" : (isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2"),
-                  borderColor: (currentName && currentName.includes("Hallet")) ? "#10B981" : (isDark ? "#EF4444" : "#FECDD3"),
-                  borderWidth: 1.5,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={async () => {
-                  await handleApplyPreset({
-                    id: "hallet_h80i",
-                    name: "Hallet H80i (80mm / 3 Inch)",
-                    brand: "Hallet",
-                    type: "system",
-                    defaultWidth: 80,
-                    description: "Hallet H80i 80mm thermal POS receipt & KOT printer",
-                    icon: "receipt"
-                  });
-                }}
-              >
-                <Ionicons name="receipt" size={18} color="#EF4444" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#EF4444" }}>Hallet H80i (80mm)</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>3-Inch Billing & KOT</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 140,
-                  backgroundColor: currentType === "system" ? "rgba(16,185,129,0.2)" : (isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB"),
-                  borderColor: currentType === "system" ? "#10B981" : (isDark ? "#F59E0B" : "#FDE68A"),
-                  borderWidth: 1.5,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={async () => {
-                  await handleApplyPreset({
+            <View style={styles.connectGrid}>
+              {([
+                {
+                  key: "windows", icon: "desktop-outline", title: "Windows printer", desc: "USB printer with its driver installed",
+                  active: currentType === "system",
+                  onPress: () => handleApplyPreset({
                     id: "windows_spooler",
                     name: "Windows USB Printer (Spooler)",
                     brand: "Windows USB",
@@ -812,90 +761,42 @@ export default function PrinterSettingsScreen() {
                     defaultWidth: 58,
                     description: "Laptop & PC Windows spooler",
                     icon: "desktop"
-                  });
-                }}
-              >
-                <Ionicons name="desktop-outline" size={18} color="#F59E0B" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#F59E0B" }}>Windows USB</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>PC Spooler (100% Reliable)</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 140,
-                  backgroundColor: isDark ? "rgba(99,91,255,0.15)" : "#EEF2FF",
-                  borderColor: isDark ? "#635BFF" : "#C7D2FE",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={() => handleConnectDevice({ name: "Direct USB Thermal Printer", address: "web-usb-pair", type: "usb" })}
-              >
-                <Ionicons name="hardware-chip-outline" size={18} color="#635BFF" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#635BFF" }}>Direct USB</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>Plug & Play (Raw)</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 140,
-                  backgroundColor: isDark ? "rgba(59,130,246,0.15)" : "#EFF6FF",
-                  borderColor: isDark ? "#3B82F6" : "#BFDBFE",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={() => handleConnectDevice({ name: "Web Bluetooth Printer", address: "web-bluetooth-pair", type: "bluetooth" })}
-              >
-                <Ionicons name="bluetooth-outline" size={18} color="#3B82F6" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#3B82F6" }}>Pair Bluetooth</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>Wireless (No Driver)</Text>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={{
-                  flex: 1,
-                  minWidth: 140,
-                  backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "#ECFDF5",
-                  borderColor: isDark ? "#10B981" : "#A7F3D0",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={() => handleConnectDevice({ name: "Windows Serial COM Port", address: "web-serial-pair", type: "usb" })}
-              >
-                <Ionicons name="flash-outline" size={18} color="#10B981" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#10B981" }}>Windows COM</Text>
-                  <Text style={{ fontSize: 10, color: theme.onSurfaceSecondary }}>CH340 / USB-Serial</Text>
-                </View>
-              </Pressable>
-
-              <View style={{ width: "100%", paddingVertical: 4 }}>
-                <Text style={{ fontSize: 11, color: theme.onSurfaceSecondary, lineHeight: 16 }}>
-                  ℹ️ <Text style={{ fontWeight: "700", color: theme.onSurface }}>Hallet H80i & Desktop Printers:</Text> Hallet H80i uses Bluetooth Classic & USB. On laptop/desktop browsers, Web Bluetooth cannot see Classic devices. Since your Hallet H80i is plugged in via USB, tap <Text style={{ fontWeight: "800", color: "#EF4444" }}>Hallet H80i (80mm)</Text> above to print bills and KOTs instantly via your Windows driver!
-                </Text>
-              </View>
+                  }),
+                },
+                {
+                  key: "usb", icon: "hardware-chip-outline", title: "Direct USB", desc: "USB printer without a Windows driver",
+                  active: currentType === "usb",
+                  onPress: () => handleConnectDevice({ name: "Direct USB Thermal Printer", address: "web-usb-pair", type: "usb" }),
+                },
+                {
+                  key: "bluetooth", icon: "bluetooth-outline", title: "Bluetooth", desc: "Bluetooth Low Energy printers",
+                  active: currentType === "bluetooth" && currentAddress !== "MPT-II",
+                  onPress: () => handleConnectDevice({ name: "Web Bluetooth Printer", address: "web-bluetooth-pair", type: "bluetooth" }),
+                },
+                {
+                  key: "serial", icon: "flash-outline", title: "COM port", desc: "CH340 USB or Bluetooth Classic",
+                  active: currentType === "bluetooth" && currentAddress === "MPT-II",
+                  onPress: () => handleConnectDevice({ name: "Windows Serial COM Port", address: "web-serial-pair", type: "usb" }),
+                },
+              ] as const).map(option => (
+                <Pressable
+                  key={option.key}
+                  style={[styles.connectOption, {
+                    backgroundColor: option.active ? (isDark ? "rgba(99,91,255,0.14)" : "#EEF2FF") : theme.surface,
+                    borderColor: option.active ? "#635BFF" : theme.border,
+                  }]}
+                  onPress={option.onPress}
+                >
+                  <View style={[styles.deviceIconBox, { backgroundColor: isDark ? "rgba(99,91,255,0.2)" : "#EEF2FF" }]}>
+                    <Ionicons name={option.icon} size={20} color="#635BFF" />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.deviceName, { color: theme.onSurface }]} numberOfLines={1}>{option.title}</Text>
+                    <Text style={[styles.deviceAddress, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>{option.desc}</Text>
+                  </View>
+                  {option.active && <Ionicons name="checkmark-circle" size={20} color="#635BFF" />}
+                </Pressable>
+              ))}
             </View>
           )}
 
@@ -908,8 +809,8 @@ export default function PrinterSettingsScreen() {
             </View>
           )}
 
-          {!scanning && devices.length > 0 ? (
-            devices.map((dev, i) => {
+          {!scanning && listedDevices.length > 0 ? (
+            listedDevices.map((dev, i) => {
               const isCurrent = (dev.address && currentAddress && dev.address.toLowerCase() === currentAddress.toLowerCase());
               const isConnecting = connectingAddress === dev.address;
 
@@ -948,23 +849,23 @@ export default function PrinterSettingsScreen() {
                 </Pressable>
               );
             })
-          ) : !scanning ? (
+          ) : !scanning && Platform.OS !== "web" ? (
             <Text style={[styles.noDeviceText, { color: theme.onSurfaceSecondary }]}>
-              Tap "Scan BT/USB" or "Scan LAN" to discover and auto-pair your printer.
+              Tap Find Printers or Find on Network to look for your printer.
             </Text>
           ) : null}
         </View>
 
         {/* 2. Popular Brand & Model 1-Click Presets */}
         <View style={[styles.card, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-          <Text style={[styles.sectionTitle, { color: "#635BFF" }]}>
-            POPULAR PRINTER PRESETS (1-TAP AUTO SETUP)
+          <Text style={[styles.sectionTitle, { color: theme.onSurface }]}>
+            Printer presets
           </Text>
           <Text style={[styles.sectionDesc, { color: theme.onSurfaceSecondary }]}>
-            Select your printer brand to auto-apply optimal communication protocols, ESC/POS formatting, and paper sizes:
+            Pick your printer model to apply its usual connection and paper size.
           </Text>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
+          <View style={styles.presetsRow}>
             {PRINTER_PRESETS.map(preset => {
               const isBrandMatch = (activeTab === "cashier" ? cashierBrand : kitchenBrand) === preset.brand;
               return (
@@ -992,7 +893,7 @@ export default function PrinterSettingsScreen() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
 
         {/* 3. Advanced Manual Hardware & Print Fine-Tuning */}
@@ -1002,14 +903,14 @@ export default function PrinterSettingsScreen() {
             onPress={() => setShowAdvanced(!showAdvanced)}
           >
             <View style={{ flex: 1, paddingRight: 8 }}>
-              <Text style={[styles.sectionTitle, { color: "#635BFF", marginBottom: 2 }]}>
-                {activeTab === "cashier" ? "ADVANCED MANUAL SETTINGS" : "KITCHEN ADVANCED SETTINGS"}
+              <Text style={[styles.sectionTitle, { color: theme.onSurface, marginBottom: 2 }]}>
+                Print settings
               </Text>
-              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 11 }]}>
-                {showAdvanced ? "Tap to collapse manual configuration" : "Tap to adjust paper width, darkness, drawer kick & IP"}
+              <Text style={[styles.sub, { color: theme.onSurfaceSecondary, fontSize: 12 }]}>
+                Paper width, darkness, auto-print, cash drawer and more
               </Text>
             </View>
-            <Ionicons name={showAdvanced ? "chevron-up-circle" : "chevron-down-circle"} size={22} color="#635BFF" />
+            <Ionicons name={showAdvanced ? "chevron-up" : "chevron-down"} size={20} color={theme.onSurfaceSecondary} />
           </Pressable>
 
           {showAdvanced && (
@@ -1569,11 +1470,27 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: "800",
-    letterSpacing: 0.5,
     marginBottom: 6,
-    textTransform: "uppercase",
+  },
+  connectGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 4,
+  },
+  connectOption: {
+    flexGrow: 1,
+    flexBasis: 280,
+    minWidth: 0,
+    minHeight: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   sectionDesc: {
     fontSize: 12,
@@ -1582,11 +1499,15 @@ const styles = StyleSheet.create({
   },
 
   presetsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
     paddingVertical: 4,
   },
   presetCard: {
-    width: 170,
+    flexGrow: 1,
+    flexBasis: 200,
+    minWidth: 0,
     borderRadius: 16,
     borderWidth: 1,
     padding: 12,
