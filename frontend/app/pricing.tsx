@@ -1,34 +1,44 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
-  Platform,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { spacing, radius } from "@/src/theme";
+import {
+  Display,
+  Mono,
+  PaperEdge,
+  ReceiptBarcode,
+  ReceiptButton,
+  ReceiptRow,
+  ReceiptRule,
+  ReceiptSectionTitle,
+  ReceiptTopBar,
+  receipt,
+} from "@/src/components/ReceiptKit";
 import { useResponsive } from "@/src/hooks/useResponsive";
 
 export default function PricingScreen() {
   const router = useRouter();
   const { isDesktop } = useResponsive();
+  const isPhone = useWindowDimensions().width < 576;
   const [isYearly, setIsYearly] = useState(false);
 
   const tiers = [
     {
       id: "starter",
       name: "Starter Plan",
-      badge: "STANDALONE & LOCAL BILLING",
+      badge: "Standalone and local billing",
       popular: false,
       priceMonthly: 299,
       priceYearly: 2999,
       tagline: "Fast 100% offline billing for standalone restaurants, cafes & bakeries",
-      cursiveNote: "✨ 1 Owner account · No internet required",
+      cursiveNote: "1 owner account · No internet required",
       features: [
         "1 Owner Account (Fast Offline Billing)",
         "100% Offline Fast Billing (Zero Internet Lag)",
@@ -46,12 +56,12 @@ export default function PricingScreen() {
     {
       id: "growth",
       name: "Growth Dine-In",
-      badge: "⭐ MOST POPULAR · MULTI-STAFF",
+      badge: "Multi-staff",
       popular: true,
       priceMonthly: 499,
       priceYearly: 4999,
       tagline: "Designed for busy dine-in spots with captain apps, staff logins and live kitchen displays",
-      cursiveNote: "📱 Up to 5 Users (Owner + 4 Staff) · Realtime Sync",
+      cursiveNote: "Up to 5 users (owner + 4 staff) · Realtime sync",
       features: [
         "Everything in Starter Plan",
         "Up to 5 Users (Owner + 4 Waiter Captains)",
@@ -70,12 +80,12 @@ export default function PricingScreen() {
     {
       id: "pro",
       name: "Pro Digital Restaurant",
-      badge: "👑 ENTERPRISE & DIGITAL QR",
+      badge: "Enterprise and digital QR",
       popular: false,
       priceMonthly: 999,
       priceYearly: 9999,
       tagline: "For high-volume multi-floor restaurants, bars, breweries, franchises & cloud kitchens",
-      cursiveNote: "🚀 Up to 15 Users · QR Table Ordering & Standees",
+      cursiveNote: "Up to 15 users · QR table ordering and standees",
       features: [
         "Everything in Growth Plan",
         "Up to 15 Users (Owner + 14 Staff/Captains)",
@@ -117,212 +127,152 @@ export default function PricingScreen() {
     { feature: "Customer Support Level", starter: "Standard", growth: "Priority Email & Chat", pro: "24/7 Dedicated VIP" },
   ];
 
+  const showCell = (value: string) => (value === "✅" ? "yes" : value === "—" ? "-" : value);
+
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#08090C" />
-      <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          isDesktop && { maxWidth: 1180, alignSelf: "center", width: "100%" },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Top Header */}
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-          <View style={styles.logoRow}>
-            <View style={styles.logoBadge}>
-              <Ionicons name="restaurant" size={18} color="#FFFFFF" />
-            </View>
-            <Text style={styles.logoText}>EzBill <Text style={styles.logoSubText}>Pricing</Text></Text>
-          </View>
-          <TouchableOpacity
-            style={styles.loginBtn}
-            onPress={() => router.push("/login")}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.loginBtnText}>Portal Login</Text>
-          </TouchableOpacity>
-        </View>
+      <StatusBar barStyle="dark-content" backgroundColor={receipt.page} />
+      <ReceiptTopBar
+        label="Pricing"
+        onBack={() => router.back()}
+        right={
+          <ReceiptButton label="Login" variant="outline" style={styles.smallBtn} onPress={() => router.push("/login")} />
+        }
+      />
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.column}>
+          <View style={styles.hero}>
+            <Display accessibilityRole="header" style={[styles.heroTitle, isPhone && styles.heroTitlePhone]}>
+              Simple bills. Simple plans.
+            </Display>
+            <Mono style={styles.heroSub}>
+              Zero setup fees. Zero commission on food orders. Upgrade, switch, or cancel anytime.
+            </Mono>
 
-        {/* Hero Section */}
-        <View style={styles.hero}>
-          <View style={styles.pillBadge}>
-            <View style={styles.pillDot} />
-            <Text style={styles.pillText}>HONEST & TRANSPARENT RESTAURANT PRICING</Text>
-          </View>
-          
-          <Text style={styles.heroTitle}>
-            Simple, Transparent Plans for Every Restaurant
-          </Text>
-
-          <Text style={styles.heroSub}>
-            Zero setup fees. Zero commission on food orders. Upgrade, switch, or cancel anytime.
-          </Text>
-
-          {/* Cursive Accent Tag */}
-          <Text style={styles.cursiveTag}>
-            ✨ Keep 100% of your restaurant profits · Zero hidden charges
-          </Text>
-
-          {/* Billing Cycle Toggle */}
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, !isYearly && styles.toggleBtnActive]}
-              onPress={() => setIsYearly(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.toggleText, !isYearly && styles.toggleTextActive]}>
-                Monthly Billing
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.toggleBtn, isYearly && styles.toggleBtnActive]}
-              onPress={() => setIsYearly(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.toggleText, isYearly && styles.toggleTextActive]}>
-                Annual Billing
-              </Text>
-              <View style={styles.discountBadge}>
-                <Text style={styles.discountText}>SAVE 20%</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Pricing Cards Grid */}
-        <View style={styles.cardsGrid}>
-          {tiers.map((tier) => {
-            const price = isYearly ? tier.priceYearly : tier.priceMonthly;
-            return (
-              <View
-                key={tier.id}
-                style={[
-                  styles.card,
-                  tier.popular && styles.cardPopular,
-                  isDesktop && { flex: 1, minWidth: 320 },
-                ]}
+            <View style={styles.toggle}>
+              <TouchableOpacity
+                style={[styles.toggleBtn, !isYearly && styles.toggleBtnActive]}
+                onPress={() => setIsYearly(false)}
+                activeOpacity={0.8}
               >
-                {tier.popular && (
-                  <View style={styles.popularBadge}>
-                    <Text style={styles.popularBadgeText}>{tier.badge}</Text>
+                <Mono style={[styles.toggleText, !isYearly && styles.toggleTextActive]}>Monthly</Mono>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toggleBtn, isYearly && styles.toggleBtnActive]}
+                onPress={() => setIsYearly(true)}
+                activeOpacity={0.8}
+              >
+                <Mono style={[styles.toggleText, isYearly && styles.toggleTextActive]}>Annual · save 20%</Mono>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={[styles.cardsGrid, isDesktop && styles.cardsGridDesktop]}>
+            {tiers.map((tier) => {
+              const price = isYearly ? tier.priceYearly : tier.priceMonthly;
+              return (
+                <View key={tier.id} style={isDesktop ? styles.cardDesktop : styles.cardStacked}>
+                  <View style={styles.card}>
+                    {tier.popular && (
+                      <View style={styles.stamp}>
+                        <Mono style={styles.stampText}>Most popular</Mono>
+                      </View>
+                    )}
+                    <Mono style={styles.cardBadge}>{tier.badge}</Mono>
+                    <Display style={styles.tierName}>{tier.name}</Display>
+                    <Mono style={styles.tierTagline}>{tier.tagline}</Mono>
+                    <ReceiptRule style={styles.rule} />
+
+                    <View style={styles.priceRow}>
+                      <Display style={styles.priceNumber}>₹{price.toLocaleString("en-IN")}</Display>
+                      <Mono style={styles.pricePeriod}>{isYearly ? "/ year" : "/ month"}</Mono>
+                    </View>
+                    {isYearly && (
+                      <Mono style={styles.effectiveMonthly}>₹{Math.round(price / 12)} / month equivalent</Mono>
+                    )}
+                    <Mono style={styles.cardNote}>{tier.cursiveNote}</Mono>
+
+                    <ReceiptRule style={styles.rule} />
+
+                    <View style={styles.featuresList}>
+                      {tier.features.map((feat, i) => (
+                        <View key={i} style={styles.featureItem}>
+                          <Mono style={styles.featureMark}>[x]</Mono>
+                          <Mono style={styles.featureText}>{feat}</Mono>
+                        </View>
+                      ))}
+                    </View>
+
+                    <ReceiptButton
+                      label={tier.cta}
+                      variant={tier.ctaPrimary ? "ink" : "outline"}
+                      style={styles.cardCta}
+                      onPress={() => router.push("/register")}
+                    />
                   </View>
-                )}
-
-                <Text style={styles.tierName}>{tier.name}</Text>
-                <Text style={styles.tierTagline}>{tier.tagline}</Text>
-
-                {/* Cursive mini callout */}
-                <Text style={styles.cardCursive}>{tier.cursiveNote}</Text>
-
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceCurrency}>₹</Text>
-                  <Text style={styles.priceNumber}>{price.toLocaleString("en-IN")}</Text>
-                  <Text style={styles.pricePeriod}>{isYearly ? "/ year" : "/ month"}</Text>
+                  <PaperEdge />
                 </View>
-                {isYearly && (
-                  <Text style={styles.effectiveMonthly}>
-                    (₹{Math.round(price / 12)} / month equivalent)
-                  </Text>
-                )}
+              );
+            })}
+          </View>
 
-                <View style={styles.divider} />
-
-                <Text style={styles.featuresHeading}>Everything included:</Text>
-                <View style={styles.featuresList}>
-                  {tier.features.map((feat, i) => (
-                    <View key={i} style={styles.featureItem}>
-                      <Ionicons name="checkmark-circle" size={17} color="#10B981" style={{ marginTop: 1 }} />
-                      <Text style={styles.featureText}>{feat}</Text>
+          <View style={styles.paperBlock}>
+            <View style={styles.paperInner}>
+              <ReceiptSectionTitle
+                label="Compare"
+                title="Every feature, line by line."
+                subtitle="Compare what each EzBill plan includes."
+                compact={isPhone}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={isPhone} contentContainerStyle={styles.tableScroll}>
+                <View style={styles.table}>
+                  <View style={[styles.tableRow, styles.tableHead]}>
+                    <Mono style={[styles.tableCell, styles.tableCellFeat, styles.tableHeadText]}>Feature</Mono>
+                    <Mono style={[styles.tableCell, styles.tableHeadText]}>Starter ₹299/mo</Mono>
+                    <Mono style={[styles.tableCell, styles.tableHeadText]}>Growth ₹499/mo</Mono>
+                    <Mono style={[styles.tableCell, styles.tableHeadText]}>Pro ₹999/mo</Mono>
+                  </View>
+                  {comparisonRows.map((row, idx) => (
+                    <View key={idx} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
+                      <Mono style={[styles.tableCell, styles.tableCellFeat]}>{row.feature}</Mono>
+                      <Mono style={styles.tableCell}>{showCell(row.starter)}</Mono>
+                      <Mono style={styles.tableCell}>{showCell(row.growth)}</Mono>
+                      <Mono style={styles.tableCell}>{showCell(row.pro)}</Mono>
                     </View>
                   ))}
                 </View>
-
-                <TouchableOpacity
-                  style={[styles.ctaButton, tier.ctaPrimary ? styles.ctaPrimary : styles.ctaSecondary]}
-                  onPress={() => router.push("/register")}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.ctaText, tier.ctaPrimary ? styles.ctaPrimaryText : styles.ctaSecondaryText]}>
-                    {tier.cta}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* Feature Comparison Matrix for Desktop / Tablet */}
-        <View style={styles.matrixSection}>
-          <Text style={styles.matrixTitle}>Detailed Feature Matrix</Text>
-          <Text style={styles.matrixSub}>Compare capabilities across all EzBill tiers</Text>
-          <View style={styles.tableWrapper}>
-            <View style={[styles.tableRow, styles.tableHeader]}>
-              <Text style={[styles.tableCell, styles.tableCellFeat, { fontWeight: "800", color: "#FFFFFF" }]}>Feature</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#FF7D52" }]}>Starter (₹299/mo)</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Growth (₹499/mo)</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#635BFF" }]}>Pro (₹999/mo)</Text>
+              </ScrollView>
             </View>
-            {comparisonRows.map((row, idx) => (
-              <View key={idx} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                <Text style={[styles.tableCell, styles.tableCellFeat]}>{row.feature}</Text>
-                <Text style={styles.tableCell}>{row.starter}</Text>
-                <Text style={styles.tableCell}>{row.growth}</Text>
-                <Text style={styles.tableCell}>{row.pro}</Text>
-              </View>
-            ))}
+            <ReceiptRule />
+            <View style={styles.paperInner}>
+              <ReceiptSectionTitle
+                label="Try first"
+                title="Want to test the billing first?"
+                subtitle="Try table ordering, GST calculations, and thermal receipt previews right in your browser."
+                compact={isPhone}
+              />
+              <ReceiptButton
+                label="Launch demo"
+                icon="play-outline"
+                style={styles.demoBtn}
+                onPress={() => router.push("/demo-billing")}
+              />
+            </View>
+            <ReceiptRule />
+            <View style={styles.paperInner}>
+              <ReceiptRow label="Accurate GST billing" value="yes" valueColor={receipt.success} />
+              <ReceiptRow label="Offline billing" value="yes" valueColor={receipt.success} />
+              <ReceiptRow label="Automatic cloud backup" value="yes" valueColor={receipt.success} />
+              <ReceiptRule style={styles.rule} />
+              <ReceiptBarcode />
+              <Mono style={styles.keywords}>
+                Restaurant POS · Table Management · Thermal Receipt Printing · Accurate GST Invoices · Kitchen KOT · Bill
+                Printing · Offline POS · Cafe & Bar Billing · QR Code Ordering · ₹299 POS
+              </Mono>
+              <Mono style={styles.copyright}>© 2026 EzBill / ProDevOpz Solutions. All rights reserved.</Mono>
+            </View>
           </View>
-        </View>
-
-        {/* Live Demo Banner */}
-        <View style={styles.demoBanner}>
-          <View style={{ flex: 1, marginRight: 16 }}>
-            <Text style={styles.demoBannerTitle}>Want to test the billing engine first?</Text>
-            <Text style={styles.demoBannerSub}>
-              Experience our 0ms table ordering, float-safe GST calculations, and thermal receipt previews right in your browser.
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.demoBannerBtn}
-            onPress={() => router.push("/demo-billing")}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="play-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.demoBannerBtnText}>Launch Demo</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Trust Badges */}
-        <View style={styles.trustFooter}>
-          <View style={styles.trustItem}>
-            <Ionicons name="shield-checkmark-outline" size={20} color="#10B981" />
-            <Text style={styles.trustText}>100% Accurate GST Billing</Text>
-          </View>
-          <View style={styles.trustItem}>
-            <Ionicons name="flash-outline" size={20} color="#FF7D52" />
-            <Text style={styles.trustText}>100% Offline Fast Billing</Text>
-          </View>
-          <View style={styles.trustItem}>
-            <Ionicons name="cloud-done-outline" size={20} color="#34D399" />
-            <Text style={styles.trustText}>Automatic Cloud Backup</Text>
-          </View>
-        </View>
-
-        {/* SEO Keywords Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerBrand}>EzBill Restaurant POS & Table Management Software</Text>
-          <Text style={styles.footerKeywords}>
-            Restaurant POS · Table Management · Thermal Receipt Printing · Accurate GST Invoices · Kitchen KOT · Bill Printing · Offline POS · Cafe & Bar Billing · QR Code Ordering · ₹299 POS
-          </Text>
-          <Text style={styles.copyright}>© 2026 EzBill / ProDevOpz Solutions. All rights reserved.</Text>
+          <PaperEdge />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -330,275 +280,245 @@ export default function PricingScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#08090C" },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
-
-  topBar: {
-    flexDirection: "row",
+  safe: {
+    flex: 1,
+    backgroundColor: receipt.page,
+  },
+  scroll: {
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.lg,
+    paddingHorizontal: 12,
+    paddingBottom: 48,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    justifyContent: "center",
-    alignItems: "center",
+  column: {
+    width: "100%",
+    maxWidth: 1180,
   },
-  logoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  logoBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: "#FF5E2B",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#FF5E2B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-  },
-  logoText: { fontSize: 18, fontWeight: "900", color: "#FFFFFF" },
-  logoSubText: {
-    color: "#34D399",
-    fontFamily: Platform.OS === "web" ? "'Playfair Display', Georgia, serif" : undefined,
-    fontStyle: "italic",
-    fontWeight: "700",
-  },
-  loginBtn: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  loginBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-
-  hero: { alignItems: "center", marginVertical: spacing.lg },
-  pillBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(255, 94, 43, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 94, 43, 0.35)",
+  smallBtn: {
+    minHeight: 38,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    marginBottom: spacing.md,
   },
-  pillDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" },
-  pillText: { color: "#FF8A3D", fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
+  hero: {
+    alignItems: "center",
+    paddingTop: 34,
+    paddingBottom: 26,
+    gap: 12,
+  },
   heroTitle: {
-    fontSize: 32,
-    fontWeight: "900",
-    color: "#FFFFFF",
+    fontSize: 60,
+    lineHeight: 62,
+    letterSpacing: -1.6,
     textAlign: "center",
-    letterSpacing: -0.8,
+  },
+  heroTitlePhone: {
+    fontSize: 38,
     lineHeight: 40,
-    marginBottom: spacing.xs,
-    maxWidth: 720,
+    letterSpacing: -0.9,
   },
   heroSub: {
     fontSize: 14,
-    color: "#94A3B8",
+    lineHeight: 22,
+    color: receipt.pageInk,
     textAlign: "center",
     maxWidth: 620,
-    marginBottom: spacing.xs,
-    lineHeight: 22,
   },
-  cursiveTag: {
-    fontFamily: Platform.OS === "web" ? "'Caveat', cursive, sans-serif" : undefined,
-    fontSize: 22,
-    color: "#FDBA74",
-    fontWeight: "600",
-    textAlign: "center",
-    marginVertical: spacing.sm,
-    letterSpacing: 0.2,
-  },
-
-  toggleContainer: {
-    flexDirection: "row",
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    padding: 4,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    gap: 4,
-    marginTop: spacing.md,
-  },
-  toggleBtn: {
-    paddingVertical: 9,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  toggleBtnActive: { backgroundColor: "#FF5E2B", shadowColor: "#FF5E2B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
-  toggleText: { color: "#94A3B8", fontSize: 13, fontWeight: "700" },
-  toggleTextActive: { color: "#FFFFFF" },
-  discountBadge: {
-    backgroundColor: "#10B981",
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 6,
-  },
-  discountText: { color: "#FFFFFF", fontSize: 9, fontWeight: "900" },
-
-  cardsGrid: {
+  toggle: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.lg,
     justifyContent: "center",
-    marginVertical: spacing.xl,
+    gap: 8,
+    marginTop: 6,
   },
-  card: {
-    backgroundColor: "rgba(18, 22, 28, 0.85)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 24,
-    padding: spacing.xl,
-    width: "100%",
-    position: "relative",
-  },
-  cardPopular: {
-    borderColor: "#FF5E2B",
-    backgroundColor: "rgba(26, 32, 42, 0.95)",
-    shadowColor: "#FF5E2B",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius: 28,
-  },
-  popularBadge: {
-    position: "absolute",
-    top: -12,
-    left: "50%",
-    transform: [{ translateX: -115 }],
-    backgroundColor: "#FF5E2B",
-    paddingVertical: 4,
+  toggleBtn: {
+    minHeight: 42,
     paddingHorizontal: 14,
-    borderRadius: 12,
-    shadowColor: "#FF5E2B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-  },
-  popularBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900", letterSpacing: 0.3 },
-
-  tierName: { fontSize: 21, fontWeight: "800", color: "#FFFFFF", marginTop: 4 },
-  tierTagline: { fontSize: 13, color: "#94A3B8", marginTop: 4, minHeight: 36, lineHeight: 18 },
-  cardCursive: {
-    fontFamily: Platform.OS === "web" ? "'Caveat', cursive, sans-serif" : undefined,
-    fontSize: 18,
-    color: "#A7F3D0",
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  priceRow: { flexDirection: "row", alignItems: "baseline", marginTop: 12 },
-  priceCurrency: { fontSize: 22, fontWeight: "800", color: "#FF5E2B" },
-  priceNumber: { fontSize: 38, fontWeight: "900", color: "#FFFFFF", marginLeft: 2, letterSpacing: -0.5 },
-  pricePeriod: { fontSize: 14, color: "#94A3B8", fontWeight: "600", marginLeft: 6 },
-  effectiveMonthly: { fontSize: 12, color: "#10B981", fontWeight: "700", marginTop: 2 },
-
-  divider: { height: 1, backgroundColor: "rgba(255, 255, 255, 0.08)", marginVertical: spacing.lg },
-  featuresHeading: { fontSize: 12, fontWeight: "800", color: "#FF8A3D", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm },
-  featuresList: { gap: 11, marginBottom: spacing.xl },
-  featureItem: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  featureText: { fontSize: 13, color: "#CBD5E1", flex: 1, lineHeight: 19 },
-
-  ctaButton: {
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: 8,
+    borderWidth: 2,
+    borderColor: receipt.ink,
+    borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
-  ctaPrimary: {
-    backgroundColor: "#FF5E2B",
-    shadowColor: "#FF5E2B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 14,
+  toggleBtnActive: {
+    backgroundColor: receipt.ink,
   },
-  ctaSecondary: { backgroundColor: "rgba(255, 255, 255, 0.04)", borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.12)" },
-  ctaText: { fontSize: 14, fontWeight: "800" },
-  ctaPrimaryText: { color: "#FFFFFF" },
-  ctaSecondaryText: { color: "#FFFFFF" },
-
-  matrixSection: { marginVertical: spacing.xxl },
-  matrixTitle: { fontSize: 24, fontWeight: "800", color: "#FFFFFF", textAlign: "center", marginBottom: 4 },
-  matrixSub: { fontSize: 13, color: "#94A3B8", textAlign: "center", marginBottom: spacing.lg },
-  tableWrapper: {
-    backgroundColor: "rgba(18, 22, 28, 0.85)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 20,
-    overflow: "hidden",
+  toggleText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  toggleTextActive: {
+    color: receipt.paper,
+  },
+  cardsGrid: {
+    gap: 22,
+    alignItems: "center",
+    marginBottom: 26,
+  },
+  cardsGridDesktop: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 16,
+  },
+  cardDesktop: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cardStacked: {
+    width: "100%",
+    maxWidth: 520,
+  },
+  card: {
+    flexGrow: 1,
+    backgroundColor: receipt.paper,
+    padding: 20,
+  },
+  stamp: {
+    position: "absolute",
+    top: 12,
+    right: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderWidth: 2,
+    borderColor: receipt.accent,
+    borderRadius: 4,
+    transform: [{ rotate: "4deg" }],
+    zIndex: 1,
+  },
+  stampText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: receipt.accent,
+  },
+  cardBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: receipt.accent,
+    marginBottom: 12,
+    paddingRight: 96,
+  },
+  tierName: {
+    fontSize: 27,
+    lineHeight: 30,
+    letterSpacing: -0.4,
+  },
+  tierTagline: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: receipt.muted,
+    marginTop: 8,
+  },
+  rule: {
+    marginVertical: 14,
+  },
+  priceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "baseline",
+    gap: 6,
+  },
+  priceNumber: {
+    fontSize: 46,
+    lineHeight: 50,
+    letterSpacing: -1.2,
+  },
+  pricePeriod: {
+    fontSize: 13,
+    color: receipt.muted,
+  },
+  effectiveMonthly: {
+    fontSize: 12,
+    color: receipt.muted,
+    marginTop: 2,
+  },
+  cardNote: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginTop: 8,
+  },
+  featuresList: {
+    gap: 6,
+    flexGrow: 1,
+  },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  featureMark: {
+    fontSize: 12,
+    lineHeight: 19,
+    fontWeight: "700",
+    color: receipt.success,
+  },
+  featureText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 19,
+  },
+  cardCta: {
+    marginTop: 18,
+  },
+  paperBlock: {
+    width: "100%",
+    backgroundColor: receipt.paper,
+  },
+  paperInner: {
+    padding: 22,
+  },
+  tableScroll: {
+    flexGrow: 1,
+    marginTop: 18,
+  },
+  table: {
+    flexGrow: 1,
+    minWidth: 720,
+    borderWidth: 2,
+    borderColor: receipt.ink,
   },
   tableRow: {
     flexDirection: "row",
-    paddingVertical: 13,
-    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.06)",
-    alignItems: "center",
+    borderBottomColor: receipt.rule,
   },
-  tableHeader: { backgroundColor: "rgba(255, 255, 255, 0.03)" },
-  tableRowAlt: { backgroundColor: "rgba(255, 255, 255, 0.015)" },
-  tableCell: { flex: 1, fontSize: 12, color: "#94A3B8", textAlign: "center" },
-  tableCellFeat: { flex: 1.8, textAlign: "left", color: "#E2E8F0", fontWeight: "600" },
-
-  demoBanner: {
-    backgroundColor: "rgba(18, 22, 28, 0.85)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 94, 43, 0.4)",
-    borderRadius: 22,
-    padding: spacing.xl,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginVertical: spacing.xl,
-    flexWrap: "wrap",
-    gap: spacing.md,
+  tableRowAlt: {
+    backgroundColor: receipt.tint,
   },
-  demoBannerTitle: { fontSize: 18, fontWeight: "800", color: "#FFFFFF" },
-  demoBannerSub: { fontSize: 13, color: "#94A3B8", marginTop: 4, lineHeight: 19 },
-  demoBannerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#10B981",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+  tableHead: {
+    backgroundColor: receipt.ink,
+    borderBottomWidth: 0,
   },
-  demoBannerBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
-
-  trustFooter: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 24,
-    flexWrap: "wrap",
-    paddingVertical: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
+  tableHeadText: {
+    fontWeight: "700",
+    color: receipt.paper,
   },
-  trustItem: { flexDirection: "row", alignItems: "center", gap: 8 },
-  trustText: { color: "#CBD5E1", fontSize: 13, fontWeight: "600" },
-
-  footer: {
-    marginTop: spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
-    paddingTop: spacing.xl,
-    alignItems: "center",
+  tableCell: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    fontSize: 12,
+    lineHeight: 18,
   },
-  footerBrand: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
-  footerKeywords: { fontSize: 11, color: "#64748B", textAlign: "center", lineHeight: 18, marginTop: 8, maxWidth: 640 },
-  copyright: { fontSize: 11, color: "#475569", marginTop: spacing.md },
+  tableCellFeat: {
+    flex: 1.6,
+    fontWeight: "700",
+  },
+  demoBtn: {
+    marginTop: 14,
+    alignSelf: "flex-start",
+  },
+  keywords: {
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: "center",
+    color: receipt.muted,
+    marginTop: 12,
+  },
+  copyright: {
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: "center",
+    color: receipt.muted,
+    marginTop: 8,
+  },
 });
