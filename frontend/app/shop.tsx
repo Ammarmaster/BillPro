@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import {
   View,
+  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -9,25 +10,13 @@ import {
   SafeAreaView,
   StatusBar,
   Linking,
+  Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useCart, ProductItem, parsePriceToNumber } from "@/src/context/CartContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import CartDrawerModal from "@/src/components/CartDrawerModal";
-import ReceiptProductModal from "@/src/components/ReceiptProductModal";
-import {
-  Display,
-  Mono,
-  PaperEdge,
-  ReceiptBarcode,
-  ReceiptButton,
-  ReceiptRule,
-  ReceiptSectionTitle,
-  ReceiptTopBar,
-  receipt,
-  receiptFonts,
-} from "@/src/components/ReceiptKit";
 
 const WHATSAPP_NUMBER = "918152075375";
 const WHATSAPP_BASE_URL = `https://api.whatsapp.com/send/?phone=${WHATSAPP_NUMBER}&text=`;
@@ -452,236 +441,413 @@ export default function Shop() {
     });
   }, [activeCategory, searchQuery, sortBy]);
 
-  const isPhone = width < 600;
-
   return (
     <SafeAreaView style={styles.safe} testID="hardware-store-screen">
-      <StatusBar barStyle="dark-content" backgroundColor={receipt.page} />
+      <StatusBar barStyle="light-content" backgroundColor="#08090C" />
 
-      <ReceiptTopBar
-        label="Hardware store"
-        right={
-          <View style={styles.navActions}>
-            <ReceiptButton label="Home" variant="outline" style={styles.smallBtn} onPress={() => router.push("/")} />
+      {/* Top Navbar */}
+      <View style={styles.navbar}>
+        <View style={[styles.navContainer, isDesktop && styles.navContainerDesktop]}>
+          <TouchableOpacity style={styles.brandRow} onPress={() => router.push("/")} activeOpacity={0.8}>
+            <View style={styles.navLogoBox}>
+              <Ionicons name="receipt" size={22} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={styles.navBrandTitle}>
+                EzBill <Text style={styles.navBrandHighlight}>Store</Text>
+              </Text>
+              <Text style={styles.navBrandSubtitle}>BY PRODEVOPZ · HARDWARE & POS</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.navActionsRow}>
+            <TouchableOpacity style={styles.navBackBtn} onPress={() => router.push("/")}>
+              <Ionicons name="home-outline" size={16} color="#CBD5E1" />
+              <Text style={styles.navBackBtnText}>Home</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
-              style={styles.navCart}
+              style={styles.navCartBtn}
               onPress={() => setIsCartOpen(true)}
               testID="shop-cart-header-btn"
-              accessibilityLabel="Open cart"
             >
-              <Ionicons name="cart-outline" size={21} color={receipt.ink} />
+              <Ionicons name="cart" size={18} color="#FFFFFF" />
+              <Text style={styles.navCartBtnText}>Cart</Text>
               {cartCount > 0 && (
                 <View style={styles.navCartBadge}>
-                  <Mono style={styles.navCartBadgeText}>{cartCount}</Mono>
+                  <Text style={styles.navCartBadgeText}>{cartCount}</Text>
                 </View>
               )}
             </TouchableOpacity>
           </View>
-        }
-      />
+        </View>
+      </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.column}>
-          <View style={styles.hero}>
-            <Display accessibilityRole="header" style={[styles.heroTitle, isPhone && styles.heroTitlePhone]}>
-              Everything for your counter.
-            </Display>
-            <Mono style={styles.heroSub}>
-              Thermal printers, billing machines and paper rolls, set up to work with EzBill, with a 1-year on-site warranty.
-            </Mono>
-            <View style={styles.pills}>
-              {["Pan-India express dispatch", "7-day replacement guarantee", "Remote setup support"].map((item) => (
-                <View key={item} style={styles.pill}>
-                  <Mono style={styles.pillText}>{item}</Mono>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Hero Banner */}
+        <View style={styles.heroBanner}>
+          <View style={[styles.sectionContainer, isDesktop && styles.heroBannerDesktop]}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.heroBadge}>
+                <Ionicons name="shield-checkmark" size={14} color="#10B981" />
+                <Text style={styles.heroBadgeText}>100% GENUINE PRODEVOPZ CERTIFIED HARDWARE</Text>
+              </View>
+              <Text style={styles.heroTitle}>
+                Official <Text style={{ color: "#FF5E2B" }}>EzBill</Text> Hardware Store
+              </Text>
+              <Text style={styles.heroSub}>
+                Pre-configured ESC/POS thermal printers, portable billing terminals, and continuous supplies. Plug & Play with 1-Year on-site warranty.
+              </Text>
+
+              {/* Guarantees row */}
+              <View style={styles.guaranteesRow}>
+                <View style={styles.guaranteePill}>
+                  <Ionicons name="flash" size={14} color="#FF8A3D" />
+                  <Text style={styles.guaranteeText}>Pan-India Express Dispatch</Text>
                 </View>
-              ))}
+                <View style={styles.guaranteePill}>
+                  <Ionicons name="sync" size={14} color="#10B981" />
+                  <Text style={styles.guaranteeText}>7-Day Replacement Guarantee</Text>
+                </View>
+                <View style={styles.guaranteePill}>
+                  <Ionicons name="headset" size={14} color="#635BFF" />
+                  <Text style={styles.guaranteeText}>Remote Setup Support Included</Text>
+                </View>
+              </View>
             </View>
           </View>
+        </View>
 
-          <View style={styles.paper}>
-            <View style={styles.section}>
+        {/* Filter & Search Bar */}
+        <View style={styles.filterSection}>
+          <View style={styles.sectionContainer}>
+            {/* Search + Sort */}
+            <View style={[styles.searchSortRow, isDesktop && { flexDirection: "row", alignItems: "center" }]}>
               <View style={styles.searchBox}>
-                <Ionicons name="search" size={18} color={receipt.muted} />
+                <Ionicons name="search" size={18} color="#94A3B8" />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Search machines, printers, rolls..."
-                  placeholderTextColor={receipt.muted}
+                  placeholder="Search machines, printers, rolls, stickers..."
+                  placeholderTextColor="#64748B"
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
                 {searchQuery ? (
-                  <TouchableOpacity style={styles.searchClear} onPress={() => setSearchQuery("")} accessibilityLabel="Clear search">
-                    <Ionicons name="close-circle" size={18} color={receipt.muted} />
+                  <TouchableOpacity onPress={() => setSearchQuery("")}>
+                    <Ionicons name="close-circle" size={18} color="#94A3B8" />
                   </TouchableOpacity>
                 ) : null}
               </View>
 
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipScroll}>
-                {[
-                  { key: "all", label: "All items" },
-                  { key: "machines", label: "Billing machines" },
-                  { key: "printers", label: "Printers" },
-                  { key: "software", label: "Software" },
-                  { key: "supplies", label: "Paper and stickers" },
-                ].map((tab) => (
-                  <TouchableOpacity
-                    key={tab.key}
-                    style={[styles.chip, activeCategory === tab.key && styles.chipActive]}
-                    onPress={() => setActiveCategory(tab.key)}
-                  >
-                    <Mono style={[styles.chipText, activeCategory === tab.key && styles.chipTextActive]}>{tab.label}</Mono>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+              <View style={styles.sortPillsRow}>
                 {[
                   { key: "featured", label: "Featured" },
-                  { key: "price_asc", label: "Price: low to high" },
-                  { key: "price_desc", label: "Price: high to low" },
-                  { key: "discount", label: "Top discount" },
+                  { key: "price_asc", label: "Price: Low to High" },
+                  { key: "price_desc", label: "Price: High to Low" },
+                  { key: "discount", label: "Top Discount" },
                 ].map((s) => (
                   <TouchableOpacity
                     key={s.key}
-                    style={[styles.chipSmall, sortBy === s.key && styles.chipActive]}
+                    style={[styles.sortPill, sortBy === s.key && styles.sortPillActive]}
                     onPress={() => setSortBy(s.key as any)}
                   >
-                    <Mono style={[styles.chipSmallText, sortBy === s.key && styles.chipTextActive]}>{s.label}</Mono>
+                    <Text style={[styles.sortPillText, sortBy === s.key && styles.sortPillTextActive]}>
+                      {s.label}
+                    </Text>
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
             </View>
 
-            <ReceiptRule />
+            {/* Category Tabs */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryTabsScroll}>
+              {[
+                { key: "all", label: "All Items", icon: "grid-outline" },
+                { key: "machines", label: "Billing Terminals", icon: "hardware-chip-outline" },
+                { key: "printers", label: "Thermal Printers", icon: "print-outline" },
+                { key: "software", label: "Software Plans", icon: "laptop-outline" },
+                { key: "supplies", label: "Paper & Stickers", icon: "layers-outline" },
+              ].map((tab) => (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[styles.catTab, activeCategory === tab.key && styles.catTabActive]}
+                  onPress={() => setActiveCategory(tab.key)}
+                >
+                  <Ionicons
+                    name={tab.icon as any}
+                    size={16}
+                    color={activeCategory === tab.key ? "#FFFFFF" : "#94A3B8"}
+                  />
+                  <Text style={[styles.catTabText, activeCategory === tab.key && styles.catTabTextActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
 
-            <View style={styles.section}>
-              <View style={styles.resultsRow}>
-                <Mono style={styles.resultsText}>{filteredProducts.length} items</Mono>
-                <Mono style={styles.resultsText}>Free Pan-India delivery</Mono>
-              </View>
+        {/* Product Grid */}
+        <View style={styles.gridSection}>
+          <View style={styles.sectionContainer}>
+            <View style={styles.resultsInfoRow}>
+              <Text style={styles.resultsCountText}>
+                Showing <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>{filteredProducts.length}</Text> certified items
+              </Text>
+              <Text style={styles.freeShipTag}>🚚 Free Pan-India Delivery on all orders</Text>
+            </View>
 
-              <View style={styles.grid}>
-                {filteredProducts.map((prod) => (
-                  <View
-                    key={prod.id}
-                    style={[styles.card, isPhone ? styles.cardPhone : { width: isDesktop ? "23.5%" : "48.5%" }]}
-                  >
+            <View style={styles.productsGrid}>
+              {filteredProducts.map((prod) => {
+                // Responsive card width calculation
+                const cardWidth = isDesktop ? "23.5%" : width < 600 ? "100%" : "48%";
+
+                return (
+                  <View key={prod.id} style={[styles.productCard, { width: cardWidth }]}>
+                    {/* Image with discount badge */}
                     <TouchableOpacity
-                      style={isPhone ? styles.imgWrapPhone : styles.imgWrap}
+                      style={styles.prodImgWrapper}
                       onPress={() => setSelectedProduct(prod)}
                       activeOpacity={0.85}
                     >
-                      <Image
-                        source={{ uri: getImgUri(prod.image) }}
-                        style={styles.img}
-                        resizeMode="cover"
-                        accessibilityLabel={prod.title}
-                      />
-                      <View style={styles.stamp}>
-                        <Mono style={styles.stampText}>{prod.discount}</Mono>
+                      <Image source={{ uri: getImgUri(prod.image) }} style={styles.prodImg} resizeMode="cover" />
+                      <View style={styles.discountBadge}>
+                        <Text style={styles.discountBadgeText}>{prod.discount}</Text>
+                      </View>
+                      <View style={styles.stockBadge}>
+                        <View style={styles.greenDot} />
+                        <Text style={styles.stockText}>In Stock</Text>
                       </View>
                     </TouchableOpacity>
 
-                    <View style={styles.info}>
-                      <Mono style={styles.rating}>
-                        * {prod.rating || 4.9} ({prod.reviewsCount || 100}+ reviews)
-                      </Mono>
-                      <TouchableOpacity onPress={() => setSelectedProduct(prod)}>
-                        <Mono style={styles.title} numberOfLines={2}>
-                          {prod.title}
-                        </Mono>
-                      </TouchableOpacity>
-                      {!isPhone && (
-                        <Mono style={styles.desc} numberOfLines={2}>
-                          {prod.shortDesc}
-                        </Mono>
-                      )}
-                      <View style={styles.priceRow}>
-                        <Mono style={styles.salePrice}>{prod.salePrice}</Mono>
-                        <Mono style={styles.originalPrice}>{prod.originalPrice}</Mono>
+                    {/* Content */}
+                    <View style={styles.prodInfo}>
+                      {/* Rating row */}
+                      <View style={styles.ratingRow}>
+                        <View style={styles.starsBox}>
+                          <Ionicons name="star" size={13} color="#F59E0B" />
+                          <Text style={styles.ratingVal}>{prod.rating || 4.9}</Text>
+                        </View>
+                        <Text style={styles.reviewsCount}>({prod.reviewsCount || 100}+ reviews)</Text>
                       </View>
-                      <View style={styles.actions}>
-                        <TouchableOpacity style={styles.actionBtn} onPress={() => addToCart(prod, 1)} activeOpacity={0.8}>
-                          <Mono style={styles.actionText}>Add</Mono>
-                        </TouchableOpacity>
+
+                      {/* Title */}
+                      <TouchableOpacity onPress={() => setSelectedProduct(prod)}>
+                        <Text style={styles.prodTitle} numberOfLines={2}>
+                          {prod.title}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <Text style={styles.prodDesc} numberOfLines={2}>
+                        {prod.shortDesc}
+                      </Text>
+
+                      {/* Price Row */}
+                      <View style={styles.priceRow}>
+                        <Text style={styles.prodSalePrice}>{prod.salePrice}</Text>
+                        <Text style={styles.prodOriginalPrice}>{prod.originalPrice}</Text>
+                      </View>
+
+                      {/* Action buttons */}
+                      <View style={styles.actionsRow}>
                         <TouchableOpacity
-                          style={[styles.actionBtn, styles.actionBtnInk]}
+                          style={styles.addToCartBtn}
+                          onPress={() => addToCart(prod, 1)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="cart-outline" size={16} color="#FFFFFF" />
+                          <Text style={styles.addToCartBtnText}>Add</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.buyNowBtn}
                           onPress={() => {
                             addToCart(prod, 1);
                             router.push("/checkout" as any);
                           }}
                           activeOpacity={0.8}
                         >
-                          <Mono style={[styles.actionText, { color: receipt.paper }]}>Buy</Mono>
+                          <Ionicons name="flash" size={14} color="#FFFFFF" />
+                          <Text style={styles.buyNowBtnText}>Buy Now</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                          style={styles.infoBtn}
+                          style={styles.detailsIconBtn}
                           onPress={() => setSelectedProduct(prod)}
-                          accessibilityLabel={`Details for ${prod.title}`}
                         >
-                          <Ionicons name="information-circle-outline" size={18} color={receipt.ink} />
+                          <Ionicons name="information-circle-outline" size={18} color="#94A3B8" />
                         </TouchableOpacity>
                       </View>
                     </View>
                   </View>
-                ))}
-              </View>
-            </View>
-
-            <ReceiptRule />
-
-            <View style={styles.section}>
-              <ReceiptSectionTitle
-                label="Need help?"
-                title="Not sure what to buy?"
-                subtitle="Our hardware team will recommend the right printers and machines for your counter."
-                compact={isPhone}
-              />
-              <ReceiptButton
-                label="Chat on WhatsApp"
-                icon="logo-whatsapp"
-                style={styles.supportBtn}
-                onPress={() => openWhatsApp("Hi, I want assistance with choosing the right POS hardware for my business.")}
-              />
-              <ReceiptRule style={styles.rule} />
-              <ReceiptBarcode />
-              <Mono style={styles.copyright}>
-                © {new Date().getFullYear()} EzBill Solutions by ProDevOpz. All rights reserved. Express courier delivery across India.
-              </Mono>
+                );
+              })}
             </View>
           </View>
-          <PaperEdge />
+        </View>
+
+        {/* Footer info */}
+        <View style={styles.footerSection}>
+          <View style={styles.sectionContainer}>
+            <View style={styles.supportCard}>
+              <View style={styles.supportHeader}>
+                <Ionicons name="headset" size={28} color="#FF5E2B" />
+                <View>
+                  <Text style={styles.supportTitle}>Need Custom Bulk Setup or Hardware Consultation?</Text>
+                  <Text style={styles.supportSub}>
+                    Our POS hardware engineers will recommend the exact printers and terminals for your counter setup.
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.supportWhatsappBtn}
+                onPress={() => openWhatsApp("Hi, I want assistance with choosing the right POS hardware for my business.")}
+              >
+                <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.supportWhatsappText}>Chat with Hardware Specialist</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.footerCopyright}>
+              © {new Date().getFullYear()} EzBill Solutions by ProDevOpz. All rights reserved. Express courier delivery across India.
+            </Text>
+          </View>
         </View>
       </ScrollView>
 
+      {/* Floating Bottom Cart Bar for Quick Checkout */}
       {cartCount > 0 && (
-        <View style={styles.floatingCart}>
-          <TouchableOpacity style={styles.floatingCartInner} onPress={() => setIsCartOpen(true)} activeOpacity={0.9}>
-            <Mono style={styles.floatingCartText}>
-              {cartCount} {cartCount === 1 ? "item" : "items"} in your cart
-            </Mono>
-            <View style={styles.floatingCartAction}>
-              <Mono style={styles.floatingCartText}>View cart</Mono>
-              <Ionicons name="arrow-forward" size={15} color={receipt.paper} />
+        <View style={styles.floatingCartBar}>
+          <View style={styles.floatingCartInfo}>
+            <View style={styles.floatingCartCount}>
+              <Text style={styles.floatingCartCountText}>{cartCount}</Text>
             </View>
+            <Text style={styles.floatingCartText}>
+              Items in your cart · Pan-India Free Delivery
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.floatingCheckoutBtn} onPress={() => setIsCartOpen(true)}>
+            <Text style={styles.floatingCheckoutText}>View Cart / Checkout</Text>
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}
 
-      <ReceiptProductModal
-        product={selectedProduct}
-        onClose={() => setSelectedProduct(null)}
-        onAddToCart={(product) => {
-          addToCart(product, 1);
-          setSelectedProduct(null);
-        }}
-        onBuyNow={(product) => {
-          addToCart(product, 1);
-          setSelectedProduct(null);
-          router.push("/checkout" as any);
-        }}
-      />
+      {/* Product Detail Modal */}
+      <Modal
+        visible={!!selectedProduct}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedProduct(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, isDesktop && styles.modalCardDesktop]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalHeaderTitle} numberOfLines={1}>
+                {selectedProduct?.title}
+              </Text>
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setSelectedProduct(null)}>
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
 
+            <ScrollView contentContainerStyle={styles.modalScrollBody}>
+              {selectedProduct && (
+                <View style={[styles.modalContentGrid, isDesktop && styles.modalContentGridDesktop]}>
+                  <View style={[styles.modalImgCol, isDesktop && { flex: 1 }]}>
+                    <Image source={{ uri: getImgUri(selectedProduct.image) }} style={styles.modalLargeImg} resizeMode="cover" />
+                  </View>
+
+                  <View style={[styles.modalInfoCol, isDesktop && { flex: 1.2 }]}>
+                    <Text style={styles.modalProdTitle}>{selectedProduct.title}</Text>
+                    <View style={styles.modalPriceRow}>
+                      <Text style={styles.modalOriginalPrice}>{selectedProduct.originalPrice}</Text>
+                      <Text style={styles.modalSalePrice}>{selectedProduct.salePrice}</Text>
+                      <View style={styles.discountBadge}>
+                        <Text style={styles.discountBadgeText}>{selectedProduct.discount}</Text>
+                      </View>
+                    </View>
+
+                    {/* Add to Cart in modal */}
+                    <View style={styles.modalCtaRow}>
+                      <TouchableOpacity
+                        style={styles.modalAddCartBtn}
+                        onPress={() => {
+                          addToCart(selectedProduct, 1);
+                          setSelectedProduct(null);
+                        }}
+                      >
+                        <Ionicons name="cart" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.modalAddCartBtnText}>Add to Cart</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.modalBuyBtn}
+                        onPress={() => {
+                          addToCart(selectedProduct, 1);
+                          setSelectedProduct(null);
+                          router.push("/checkout" as any);
+                        }}
+                      >
+                        <Ionicons name="flash" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.modalBuyBtnText}>Buy Now</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Description */}
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Description</Text>
+                      <Text style={styles.modalSectionText}>{selectedProduct.description}</Text>
+                    </View>
+
+                    {/* Features list */}
+                    {selectedProduct.features && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionTitle}>Features</Text>
+                        {selectedProduct.features.map((feat, fIdx) => (
+                          <View key={fIdx} style={styles.modalBulletRow}>
+                            <Ionicons name="checkmark-done" size={16} color="#10B981" />
+                            <Text style={styles.modalBulletText}>{feat}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Package Includes */}
+                    {selectedProduct.packageIncludes && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionTitle}>Package Includes</Text>
+                        {selectedProduct.packageIncludes.map((item, pIdx) => (
+                          <View key={pIdx} style={styles.modalBulletRow}>
+                            <Ionicons name="cube-outline" size={16} color="#FF5E2B" />
+                            <Text style={styles.modalBulletText}>{item}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Specs Table */}
+                    {selectedProduct.specs && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionTitle}>Hardware Specifications</Text>
+                        {selectedProduct.specs.map((spec, sIdx) => (
+                          <View key={sIdx} style={styles.modalSpecRow}>
+                            <Text style={styles.modalSpecLabel}>{spec.label}:</Text>
+                            <Text style={styles.modalSpecValue}>{spec.value}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Cart Drawer */}
       <CartDrawerModal />
     </SafeAreaView>
   );
@@ -690,324 +856,702 @@ export default function Shop() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: receipt.page,
+    backgroundColor: "#08090C",
   },
-  navActions: {
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 80,
+  },
+  navbar: {
+    backgroundColor: "#08090C",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+  },
+  navContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    justifyContent: "space-between",
   },
-  smallBtn: {
-    minHeight: 38,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  navContainerDesktop: {
+    maxWidth: 1280,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 24,
   },
-  navCart: {
-    width: 42,
-    height: 42,
+  brandRow: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+  },
+  navLogoBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#FF5E2B",
     justifyContent: "center",
+    alignItems: "center",
+  },
+  navBrandTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+  navBrandHighlight: {
+    color: "#FF8A3D",
+  },
+  navBrandSubtitle: {
+    fontSize: 8.5,
+    fontWeight: "800",
+    color: "#10B981",
+    letterSpacing: 1,
+  },
+  navActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  navBackBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  navBackBtnText: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  navCartBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FF5E2B",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  navCartBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
   },
   navCartBadge: {
-    position: "absolute",
-    top: 2,
-    right: 0,
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: 9,
-    backgroundColor: receipt.ink,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+    marginLeft: 2,
   },
   navCartBadgeText: {
+    color: "#FF5E2B",
     fontSize: 11,
-    fontWeight: "700",
-    color: receipt.paper,
+    fontWeight: "900",
   },
-  scroll: {
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingBottom: 96,
-  },
-  column: {
+  sectionContainer: {
+    maxWidth: 1280,
     width: "100%",
-    maxWidth: 1240,
+    alignSelf: "center",
+    paddingHorizontal: 16,
   },
-  hero: {
-    paddingTop: 30,
-    paddingBottom: 24,
-    gap: 12,
+  heroBanner: {
+    paddingVertical: 32,
+    backgroundColor: "rgba(255, 94, 43, 0.05)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 94, 43, 0.15)",
+  },
+  heroBannerDesktop: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  heroBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    marginBottom: 12,
+  },
+  heroBadgeText: {
+    color: "#34D399",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   heroTitle: {
-    fontSize: 64,
-    lineHeight: 64,
-    letterSpacing: -1.8,
-    maxWidth: 900,
-  },
-  heroTitlePhone: {
-    fontSize: 40,
-    lineHeight: 42,
-    letterSpacing: -1,
+    color: "#FFFFFF",
+    fontSize: 32,
+    fontWeight: "900",
+    lineHeight: 40,
+    marginBottom: 10,
   },
   heroSub: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: receipt.pageInk,
-    maxWidth: 660,
+    color: "#94A3B8",
+    fontSize: 15,
+    lineHeight: 24,
+    maxWidth: 720,
+    marginBottom: 18,
   },
-  pills: {
+  guaranteesRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
   },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 2,
-    borderColor: receipt.ink,
-    borderRadius: 6,
-  },
-  pillText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  paper: {
-    width: "100%",
-    backgroundColor: receipt.paper,
-  },
-  section: {
-    padding: 18,
-  },
-  searchBox: {
+  guaranteePill: {
     flexDirection: "row",
     alignItems: "center",
-    minHeight: 50,
-    paddingLeft: 12,
-    borderWidth: 2,
-    borderColor: receipt.ink,
-    borderRadius: 6,
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  guaranteeText: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  filterSection: {
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "#0D1117",
+  },
+  searchSortRow: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  searchBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
   },
   searchInput: {
     flex: 1,
-    minWidth: 0,
-    height: 46,
-    paddingHorizontal: 10,
-    fontFamily: receiptFonts.mono,
+    color: "#FFFFFF",
     fontSize: 14,
-    color: receipt.ink,
   },
-  searchClear: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  chipScroll: {
-    marginVertical: 12,
-    flexGrow: 0,
-  },
-  chips: {
+  sortPillsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
-  chip: {
-    minHeight: 40,
+  sortPill: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: receipt.ink,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  sortPillActive: {
+    backgroundColor: "rgba(255, 94, 43, 0.15)",
+    borderColor: "#FF5E2B",
+  },
+  sortPillText: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  sortPillTextActive: {
+    color: "#FF8A3D",
+  },
+  categoryTabsScroll: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  catTab: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  chipActive: {
-    backgroundColor: receipt.ink,
+  catTabActive: {
+    backgroundColor: "#FF5E2B",
+    borderColor: "#FF7D52",
   },
-  chipText: {
+  catTabText: {
+    color: "#94A3B8",
     fontSize: 13,
     fontWeight: "700",
   },
-  chipTextActive: {
-    color: receipt.paper,
+  catTabTextActive: {
+    color: "#FFFFFF",
   },
-  chipSmall: {
-    minHeight: 34,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: receipt.rule,
+  gridSection: {
+    paddingVertical: 28,
+  },
+  resultsInfoRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    marginBottom: 20,
+    gap: 10,
   },
-  chipSmallText: {
+  resultsCountText: {
+    color: "#94A3B8",
+    fontSize: 14,
+  },
+  freeShipTag: {
+    color: "#10B981",
     fontSize: 12,
+    fontWeight: "700",
   },
-  resultsRow: {
+  productsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 8,
-    marginBottom: 14,
+    rowGap: 24,
+    columnGap: 16,
+    justifyContent: "flex-start",
   },
-  resultsText: {
-    fontSize: 12,
-    color: receipt.muted,
+  productCard: {
+    backgroundColor: "#12161E",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    overflow: "hidden",
   },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    rowGap: 16,
-  },
-  card: {
-    borderWidth: 2,
-    borderColor: receipt.ink,
-  },
-  cardPhone: {
+  prodImgWrapper: {
     width: "100%",
-    flexDirection: "row",
+    height: 220,
+    backgroundColor: "#18202C",
+    overflow: "hidden",
   },
-  imgWrap: {
-    width: "100%",
-    aspectRatio: 4 / 3,
-    borderBottomWidth: 2,
-    borderBottomColor: receipt.ink,
-  },
-  imgWrapPhone: {
-    width: 116,
-    borderRightWidth: 2,
-    borderRightColor: receipt.ink,
-  },
-  img: {
+  prodImg: {
     width: "100%",
     height: "100%",
-    backgroundColor: receipt.tint,
   },
-  stamp: {
+  discountBadge: {
     position: "absolute",
-    top: 8,
-    left: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderWidth: 2,
-    borderColor: receipt.accent,
-    borderRadius: 4,
-    backgroundColor: receipt.paper,
-    transform: [{ rotate: "-5deg" }],
+    top: 10,
+    right: 10,
+    backgroundColor: "#10B981",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  stampText: {
+  discountBadgeText: {
+    color: "#FFFFFF",
     fontSize: 11,
-    fontWeight: "700",
-    color: receipt.accent,
+    fontWeight: "900",
   },
-  info: {
-    flex: 1,
-    minWidth: 0,
-    padding: 12,
+  stockBadge: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  greenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10B981",
+  },
+  stockText: {
+    color: "#E2E8F0",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  prodInfo: {
+    padding: 16,
+  },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
+    marginBottom: 6,
   },
-  rating: {
+  starsBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  ratingVal: {
+    color: "#F59E0B",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  reviewsCount: {
+    color: "#64748B",
     fontSize: 11,
-    color: receipt.muted,
   },
-  title: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: "700",
-    minHeight: 38,
+  prodTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 21,
+    height: 42,
+    marginBottom: 4,
   },
-  desc: {
+  prodDesc: {
+    color: "#94A3B8",
     fontSize: 12,
     lineHeight: 17,
-    color: receipt.muted,
-    minHeight: 34,
+    marginBottom: 10,
+    height: 34,
   },
   priceRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: 8,
+    marginBottom: 14,
   },
-  salePrice: {
+  prodSalePrice: {
+    color: "#FF8A3D",
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "900",
   },
-  originalPrice: {
-    fontSize: 12,
-    color: receipt.muted,
+  prodOriginalPrice: {
+    color: "#64748B",
+    fontSize: 13,
     textDecorationLine: "line-through",
   },
-  actions: {
+  actionsRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 2,
   },
-  actionBtn: {
+  addToCartBtn: {
     flex: 1,
-    minHeight: 40,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: receipt.ink,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+    paddingVertical: 9,
+    borderRadius: 8,
   },
-  actionBtnInk: {
-    backgroundColor: receipt.ink,
-  },
-  actionText: {
-    fontSize: 13,
+  addToCartBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
     fontWeight: "700",
   },
-  infoBtn: {
-    width: 36,
-    height: 40,
+  buyNowBtn: {
+    flex: 1.2,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
+    backgroundColor: "#FF5E2B",
+    paddingVertical: 9,
+    borderRadius: 8,
   },
-  supportBtn: {
-    marginTop: 14,
+  buyNowBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
   },
-  rule: {
-    marginVertical: 18,
+  detailsIconBtn: {
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 8,
   },
-  copyright: {
-    fontSize: 11,
-    lineHeight: 17,
-    textAlign: "center",
-    color: receipt.muted,
-    marginTop: 10,
+  footerSection: {
+    paddingVertical: 40,
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
   },
-  floatingCart: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 14,
+  supportCard: {
+    backgroundColor: "#10141D",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 24,
+    gap: 16,
+  },
+  supportHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    zIndex: 90,
+    gap: 16,
   },
-  floatingCartInner: {
-    width: "100%",
-    maxWidth: 560,
-    minHeight: 52,
+  supportTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  supportSub: {
+    color: "#94A3B8",
+    fontSize: 13,
+    lineHeight: 19,
+    maxWidth: 680,
+  },
+  supportWhatsappBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#15803D",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  supportWhatsappText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  footerCopyright: {
+    color: "#64748B",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  floatingCartBar: {
+    position: "absolute",
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: "#161B22",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 94, 43, 0.4)",
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 6,
-    backgroundColor: receipt.ink,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 8,
+    zIndex: 99,
+  },
+  floatingCartInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  floatingCartCount: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#FF5E2B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  floatingCartCountText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
   },
   floatingCartText: {
+    color: "#F1F5F9",
     fontSize: 13,
     fontWeight: "700",
-    color: receipt.paper,
+    flex: 1,
   },
-  floatingCartAction: {
+  floatingCheckoutBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: "#FF5E2B",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  floatingCheckoutText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalCard: {
+    width: "100%",
+    maxHeight: "90%",
+    backgroundColor: "#10141D",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    overflow: "hidden",
+  },
+  modalCardDesktop: {
+    maxWidth: 960,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+  },
+  modalHeaderTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+    flex: 1,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 8,
+  },
+  modalScrollBody: {
+    padding: 20,
+  },
+  modalContentGrid: {
+    gap: 20,
+  },
+  modalContentGridDesktop: {
+    flexDirection: "row",
+  },
+  modalImgCol: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalLargeImg: {
+    width: "100%",
+    height: 320,
+    borderRadius: 14,
+    backgroundColor: "#161B22",
+  },
+  modalInfoCol: {
+    gap: 12,
+  },
+  modalProdTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  modalPriceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  modalSalePrice: {
+    color: "#FF8A3D",
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  modalOriginalPrice: {
+    color: "#64748B",
+    fontSize: 16,
+    textDecorationLine: "line-through",
+  },
+  modalCtaRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginVertical: 12,
+  },
+  modalAddCartBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  modalAddCartBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  modalBuyBtn: {
+    flex: 1.2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF5E2B",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  modalBuyBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  modalSection: {
+    marginTop: 10,
+    gap: 6,
+  },
+  modalSectionTitle: {
+    color: "#CBD5E1",
+    fontSize: 14,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  modalSectionText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  modalBulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  modalBulletText: {
+    color: "#E2E8F0",
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 20,
+  },
+  modalSpecRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+  modalSpecLabel: {
+    color: "#94A3B8",
+    width: 140,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  modalSpecValue: {
+    color: "#FFFFFF",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

@@ -1,22 +1,24 @@
 import React from "react";
 import {
   View,
+  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
   ScrollView,
   Image,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCart } from "@/src/context/CartContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
-import { Display, Mono, ReceiptButton, ReceiptRow, ReceiptRule, receipt } from "@/src/components/ReceiptKit";
 
 export default function CartDrawerModal() {
   const { isCartOpen, setIsCartOpen, cartItems, cartCount, cartTotal, updateQuantity, removeFromCart, clearCart } =
     useCart();
-  const { isDesktop } = useResponsive();
+  const { isDesktop, width } = useResponsive();
   const router = useRouter();
 
   if (!isCartOpen) return null;
@@ -46,109 +48,153 @@ export default function CartDrawerModal() {
           />
         )}
 
-        <View style={[styles.drawer, isDesktop ? styles.drawerDesktop : styles.drawerMobile]}>
+        <View
+          style={[
+            styles.drawerCard,
+            isDesktop ? styles.drawerDesktop : styles.drawerMobile,
+          ]}
+        >
+          {/* Header */}
           <View style={styles.header}>
-            <Mono style={styles.headerTitle}>Your cart · {cartCount}</Mono>
+            <View style={styles.headerTitleRow}>
+              <View style={styles.cartIconCircle}>
+                <Ionicons name="cart" size={20} color="#FF5E2B" />
+              </View>
+              <Text style={styles.headerTitle}>Shopping Cart</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{cartCount}</Text>
+              </View>
+            </View>
+
             <TouchableOpacity
-              style={styles.iconBtn}
+              style={styles.closeBtn}
               onPress={() => setIsCartOpen(false)}
-              accessibilityLabel="Close cart"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="close" size={24} color={receipt.ink} />
+              <Ionicons name="close" size={22} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-          <ReceiptRule />
 
+          {/* Free Shipping Banner */}
+          <View style={styles.freeShippingBanner}>
+            <Ionicons name="shield-checkmark" size={16} color="#10B981" />
+            <Text style={styles.freeShippingText}>
+              Free Pan-India Delivery & 1-Year ProDevOpz Onsite Warranty
+            </Text>
+          </View>
+
+          {/* Cart Item List */}
           {cartItems.length === 0 ? (
-            <View style={styles.empty}>
-              <Display style={styles.emptyTitle}>Nothing on the bill yet.</Display>
-              <Mono style={styles.emptySub}>Browse EzBill machines, printers and paper rolls to build your setup.</Mono>
-              <ReceiptButton
-                label="Browse the store"
-                icon="storefront-outline"
-                style={styles.emptyBtn}
+            <View style={styles.emptyContainer}>
+              <Ionicons name="cart-outline" size={64} color="#475569" />
+              <Text style={styles.emptyTitle}>Your cart is empty</Text>
+              <Text style={styles.emptySub}>
+                Browse our EzBill certified POS hardware, printers, and rolls to build your setup.
+              </Text>
+              <TouchableOpacity
+                style={styles.exploreStoreBtn}
                 onPress={() => {
                   setIsCartOpen(false);
                   router.push("/shop" as any);
                 }}
-              />
+              >
+                <Ionicons name="storefront" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.exploreStoreBtnText}>Browse Hardware Store</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <ScrollView style={styles.items} contentContainerStyle={styles.itemsContent}>
+            <ScrollView style={styles.itemListScroll} contentContainerStyle={styles.itemListContent}>
               {cartItems.map((item) => (
-                <View key={item.product.id} style={styles.item}>
+                <View key={item.product.id} style={styles.cartItemCard}>
                   <Image
                     source={{ uri: getImgUri(item.product.image) }}
                     style={styles.itemImg}
                     resizeMode="cover"
-                    accessibilityLabel={item.product.title}
                   />
+
                   <View style={styles.itemInfo}>
-                    <Mono style={styles.itemTitle} numberOfLines={2}>
+                    <Text style={styles.itemTitle} numberOfLines={2}>
                       {item.product.title}
-                    </Mono>
+                    </Text>
                     <View style={styles.priceRow}>
-                      <Mono style={styles.salePrice}>{item.product.salePrice}</Mono>
+                      <Text style={styles.itemSalePrice}>{item.product.salePrice}</Text>
                       {item.product.originalPrice ? (
-                        <Mono style={styles.originalPrice}>{item.product.originalPrice}</Mono>
+                        <Text style={styles.itemOriginalPrice}>{item.product.originalPrice}</Text>
                       ) : null}
                     </View>
+
+                    {/* Stepper + Remove */}
                     <View style={styles.stepperRow}>
-                      <View style={styles.stepper}>
+                      <View style={styles.stepperBox}>
                         <TouchableOpacity
                           style={styles.stepperBtn}
                           onPress={() => updateQuantity(item.product.id, item.quantity - 1)}
-                          accessibilityLabel={`Remove one ${item.product.title}`}
                         >
-                          <Ionicons name="remove" size={16} color={receipt.ink} />
+                          <Ionicons name="remove" size={14} color="#FFFFFF" />
                         </TouchableOpacity>
-                        <Mono style={styles.stepperQty}>{item.quantity}</Mono>
+
+                        <Text style={styles.stepperQty}>{item.quantity}</Text>
+
                         <TouchableOpacity
                           style={styles.stepperBtn}
                           onPress={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          accessibilityLabel={`Add one ${item.product.title}`}
                         >
-                          <Ionicons name="add" size={16} color={receipt.ink} />
+                          <Ionicons name="add" size={14} color="#FFFFFF" />
                         </TouchableOpacity>
                       </View>
+
                       <TouchableOpacity
-                        style={styles.iconBtn}
+                        style={styles.trashBtn}
                         onPress={() => removeFromCart(item.product.id)}
-                        accessibilityLabel={`Delete ${item.product.title}`}
                       >
-                        <Ionicons name="trash-outline" size={18} color={receipt.danger} />
+                        <Ionicons name="trash-outline" size={18} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
                   </View>
                 </View>
               ))}
 
-              <TouchableOpacity style={styles.clearLink} onPress={clearCart}>
-                <Mono style={styles.clearText}>Clear all items</Mono>
+              <TouchableOpacity style={styles.clearCartLink} onPress={clearCart}>
+                <Ionicons name="trash-bin-outline" size={14} color="#94A3B8" />
+                <Text style={styles.clearCartText}>Clear all items</Text>
               </TouchableOpacity>
             </ScrollView>
           )}
 
+          {/* Footer Checkout Summary */}
           {cartItems.length > 0 && (
-            <View>
-              <ReceiptRule />
-              <View style={styles.footer}>
-                <ReceiptRow label="Subtotal" value={`₹${cartTotal.toLocaleString("en-IN")}`} />
-                <ReceiptRow label="GST 18% (included)" value={`₹${Math.round((cartTotal * 18) / 118).toLocaleString("en-IN")}`} />
-                <ReceiptRow label="Express delivery" value="free" valueColor={receipt.success} />
-                <ReceiptRule style={styles.footerRule} />
-                <View style={styles.totalRow}>
-                  <Display style={styles.totalText}>Total</Display>
-                  <Display style={styles.totalText}>₹{cartTotal.toLocaleString("en-IN")}</Display>
-                </View>
-                <ReceiptButton
-                  label="Proceed to checkout"
-                  icon="arrow-forward"
-                  style={styles.checkoutBtn}
-                  onPress={handleProceedToCheckout}
-                />
-                <Mono style={styles.guarantee}>1-year warranty · COD and UPI supported</Mono>
+            <View style={styles.footerContainer}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Subtotal</Text>
+                <Text style={styles.summaryValue}>₹{cartTotal.toLocaleString("en-IN")}</Text>
               </View>
+              <View style={styles.summaryRow}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Text style={styles.summaryLabel}>Estimated GST (18%)</Text>
+                  <Text style={styles.inclusiveTag}>(Included)</Text>
+                </View>
+                <Text style={styles.summaryMuted}>₹{Math.round((cartTotal * 18) / 118).toLocaleString("en-IN")}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Pan-India Express Shipping</Text>
+                <Text style={styles.freeShippingValue}>FREE</Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Payable</Text>
+                <Text style={styles.totalValue}>₹{cartTotal.toLocaleString("en-IN")}</Text>
+              </View>
+
+              <TouchableOpacity style={styles.checkoutBtn} onPress={handleProceedToCheckout}>
+                <Text style={styles.checkoutBtnText}>Proceed to Checkout</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <Text style={styles.secureGuaranteeText}>
+                🔒 256-Bit SSL Encrypted  ·  Instant Tax Invoice  ·  COD & UPI Supported
+              </Text>
             </View>
           )}
         </View>
@@ -160,16 +206,19 @@ export default function CartDrawerModal() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(31, 31, 31, 0.72)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     flexDirection: "row",
     justifyContent: "flex-end",
   },
   backdropTouch: {
     flex: 1,
   },
-  drawer: {
+  drawerCard: {
+    backgroundColor: "#0D1117",
+    borderLeftWidth: 1,
+    borderLeftColor: "rgba(255, 255, 255, 0.1)",
     height: "100%",
-    backgroundColor: receipt.paper,
+    display: "flex",
     flexDirection: "column",
   },
   drawerDesktop: {
@@ -180,144 +229,267 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   header: {
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingLeft: 18,
-    paddingRight: 8,
-    paddingVertical: 6,
   },
-  headerTitle: {
-    fontSize: 15,
-    fontWeight: "700",
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  iconBtn: {
-    width: 44,
-    height: 44,
+  cartIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 94, 43, 0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
-  empty: {
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  countBadge: {
+    backgroundColor: "#FF5E2B",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  countBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  closeBtn: {
+    padding: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 8,
+  },
+  freeShippingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(16, 185, 129, 0.2)",
+  },
+  freeShippingText: {
+    color: "#34D399",
+    fontSize: 12,
+    fontWeight: "700",
     flex: 1,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    gap: 10,
+    padding: 32,
+    gap: 12,
   },
   emptyTitle: {
-    fontSize: 34,
-    lineHeight: 36,
-    letterSpacing: -0.6,
-  },
-  emptySub: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: receipt.muted,
-  },
-  emptyBtn: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "800",
     marginTop: 8,
   },
-  items: {
+  emptySub: {
+    color: "#94A3B8",
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  exploreStoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF5E2B",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  exploreStoreBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  itemListScroll: {
     flex: 1,
   },
-  itemsContent: {
+  itemListContent: {
     padding: 16,
     gap: 14,
   },
-  item: {
+  cartItemCard: {
     flexDirection: "row",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 14,
+    padding: 12,
     gap: 12,
   },
   itemImg: {
     width: 80,
     height: 80,
-    borderWidth: 2,
-    borderColor: receipt.ink,
-    backgroundColor: receipt.tint,
+    borderRadius: 10,
+    backgroundColor: "#161B22",
   },
   itemInfo: {
     flex: 1,
-    minWidth: 0,
+    justifyContent: "space-between",
   },
   itemTitle: {
-    fontSize: 13,
-    lineHeight: 18,
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "700",
+    lineHeight: 19,
   },
   priceRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "baseline",
-    gap: 8,
+    alignItems: "center",
+    gap: 6,
     marginVertical: 4,
   },
-  salePrice: {
-    fontSize: 14,
-    fontWeight: "700",
+  itemSalePrice: {
+    color: "#FF8A3D",
+    fontSize: 15,
+    fontWeight: "800",
   },
-  originalPrice: {
+  itemOriginalPrice: {
+    color: "#64748B",
     fontSize: 12,
-    color: receipt.muted,
     textDecorationLine: "line-through",
   },
   stepperRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginTop: 4,
   },
-  stepper: {
+  stepperBox: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: receipt.ink,
-    borderRadius: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   stepperBtn: {
-    width: 38,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   stepperQty: {
-    minWidth: 24,
+    color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
+    minWidth: 24,
     textAlign: "center",
   },
-  clearLink: {
-    minHeight: 44,
+  trashBtn: {
+    padding: 6,
+  },
+  clearCartLink: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
   },
-  clearText: {
+  clearCartText: {
+    color: "#94A3B8",
     fontSize: 13,
-    color: receipt.muted,
-    textDecorationLine: "underline",
+    fontWeight: "600",
   },
-  footer: {
-    padding: 18,
+  footerContainer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#0A0D14",
+    gap: 8,
   },
-  footerRule: {
-    marginVertical: 10,
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  summaryLabel: {
+    color: "#94A3B8",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  inclusiveTag: {
+    color: "#10B981",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  summaryValue: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  summaryMuted: {
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  freeShippingValue: {
+    color: "#10B981",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    marginVertical: 4,
   },
   totalRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "baseline",
-    gap: 12,
+    marginBottom: 6,
   },
-  totalText: {
-    fontSize: 28,
-    lineHeight: 32,
-    letterSpacing: -0.5,
+  totalLabel: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  totalValue: {
+    color: "#FF5E2B",
+    fontSize: 22,
+    fontWeight: "900",
   },
   checkoutBtn: {
-    marginTop: 12,
+    backgroundColor: "#FF5E2B",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    shadowColor: "#FF5E2B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  guarantee: {
-    fontSize: 12,
-    lineHeight: 18,
+  checkoutBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  secureGuaranteeText: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "600",
     textAlign: "center",
-    color: receipt.muted,
-    marginTop: 10,
+    marginTop: 4,
   },
 });

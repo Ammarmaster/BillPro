@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
 import {
   View,
+  Text,
   StyleSheet,
   TouchableOpacity,
   Modal,
   Platform,
+  Image,
+  Dimensions,
 } from "react-native";
 import { usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Mono as Text, receipt } from "@/src/components/ReceiptKit";
+import { colors, spacing } from "@/src/theme";
 
 export default function PWAInstallPrompt() {
   const pathname = usePathname();
@@ -39,7 +42,7 @@ export default function PWAInstallPrompt() {
 
         injectTag("link", { rel: "manifest", href: "/manifest.json" });
         injectTag("link", { rel: "apple-touch-icon", href: "/apple-touch-icon.png" });
-        injectTag("meta", { name: "theme-color", content: receipt.ink });
+        injectTag("meta", { name: "theme-color", content: "#0F172A" });
         injectTag("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
         injectTag("meta", { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" });
         injectTag("meta", { name: "apple-mobile-web-app-title", content: "EzBill" });
@@ -166,7 +169,7 @@ export default function PWAInstallPrompt() {
         <View style={styles.notifBanner}>
           <View style={styles.notifBannerLeft}>
             <View style={styles.bellCircle}>
-              <Ionicons name="notifications" size={18} color={receipt.paper} />
+              <Ionicons name="notifications" size={18} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.notifBannerTitle}>Enable Live Order Alerts</Text>
@@ -184,7 +187,7 @@ export default function PWAInstallPrompt() {
               <Text style={styles.notifEnableBtnText}>Allow Alerts</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowNotifBanner(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={20} color={receipt.rule} />
+              <Ionicons name="close" size={20} color="#94A3B8" />
             </TouchableOpacity>
           </View>
         </View>
@@ -197,7 +200,7 @@ export default function PWAInstallPrompt() {
           onPress={() => setShowModal(true)}
           activeOpacity={0.85}
         >
-          <Ionicons name="download-outline" size={16} color={receipt.paper} />
+          <Ionicons name="download-outline" size={16} color="#FFFFFF" />
           <Text style={styles.floatingPillText}>Install App</Text>
         </TouchableOpacity>
       )}
@@ -218,25 +221,25 @@ export default function PWAInstallPrompt() {
                 onPress={handleDismiss}
                 activeOpacity={0.7}
               >
-                <Ionicons name="close" size={22} color={receipt.muted} />
+                <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
 
               {/* App Badge Header */}
               <View style={styles.appHeader}>
                 <View style={styles.appIconContainer}>
-                  <Ionicons name="restaurant" size={32} color={receipt.ink} />
+                  <Ionicons name="restaurant" size={32} color="#635BFF" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.appTitle}>Install EzBill</Text>
                   <Text style={styles.appSubtitle}>Smart Restaurant POS & ERP</Text>
                   <View style={styles.badgeRow}>
                     <View style={styles.badge}>
-                      <Ionicons name="flash" size={11} color={receipt.success} />
+                      <Ionicons name="flash" size={11} color="#16A34A" />
                       <Text style={styles.badgeText}>Superfast Speed</Text>
                     </View>
-                    <View style={styles.badge}>
-                      <Ionicons name="notifications" size={11} color={receipt.ink} />
-                      <Text style={[styles.badgeText, { color: receipt.ink }]}>Sound Alerts</Text>
+                    <View style={[styles.badge, { backgroundColor: "#EEF2FF" }]}>
+                      <Ionicons name="notifications" size={11} color="#635BFF" />
+                      <Text style={[styles.badgeText, { color: "#4F46E5" }]}>Sound Alerts</Text>
                     </View>
                   </View>
                 </View>
@@ -261,7 +264,7 @@ export default function PWAInstallPrompt() {
                         Tap the <Text style={styles.stepBold}>Share</Text> button in Safari:
                       </Text>
                       <View style={styles.shareIconBox}>
-                        <Ionicons name="share-outline" size={20} color={receipt.ink} />
+                        <Ionicons name="share-outline" size={20} color="#007AFF" />
                         <Text style={styles.shareIconLabel}>(Square with arrow at bottom bar)</Text>
                       </View>
                     </View>
@@ -292,7 +295,7 @@ export default function PWAInstallPrompt() {
                   </View>
 
                   <View style={styles.iosTipBox}>
-                    <Ionicons name="information-circle" size={18} color={receipt.ink} />
+                    <Ionicons name="information-circle" size={18} color="#635BFF" />
                     <Text style={styles.iosTipText}>
                       Opening EzBill from your Home Screen gives you full-screen mode, vibration & order chime alerts without App Store download.
                     </Text>
@@ -319,7 +322,7 @@ export default function PWAInstallPrompt() {
                       onPress={handleInstallClick}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name="download-outline" size={20} color={receipt.paper} style={{ marginRight: 8 }} />
+                      <Ionicons name="download-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                       <Text style={styles.primaryButtonText}>Install App (1-Click)</Text>
                     </TouchableOpacity>
                   ) : (
@@ -359,7 +362,7 @@ const styles = StyleSheet.create({
     right: 16,
     maxWidth: 520,
     marginHorizontal: "auto" as any,
-    backgroundColor: receipt.ink,
+    backgroundColor: "#0F172A",
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -372,7 +375,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     zIndex: 999999,
     borderWidth: 1,
-    borderColor: receipt.ink,
+    borderColor: "#334155",
   },
   notifBannerLeft: {
     flexDirection: "row",
@@ -385,28 +388,28 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: receipt.ink,
+    backgroundColor: "#635BFF",
     justifyContent: "center",
     alignItems: "center",
   },
   notifBannerTitle: {
-    color: receipt.paper,
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
   },
   notifBannerSub: {
-    color: receipt.rule,
+    color: "#94A3B8",
     fontSize: 11,
     marginTop: 2,
   },
   notifEnableBtn: {
-    backgroundColor: receipt.ink,
+    backgroundColor: "#635BFF",
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 8,
   },
   notifEnableBtnText: {
-    color: receipt.paper,
+    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "600",
   },
@@ -416,14 +419,14 @@ const styles = StyleSheet.create({
     position: "fixed" as any,
     bottom: 24,
     right: 24,
-    backgroundColor: receipt.ink,
+    backgroundColor: "#635BFF",
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 6,
+    borderRadius: 30,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    shadowColor: receipt.ink,
+    shadowColor: "#635BFF",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
@@ -431,7 +434,7 @@ const styles = StyleSheet.create({
     cursor: "pointer" as any,
   },
   floatingPillText: {
-    color: receipt.paper,
+    color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -449,8 +452,8 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 440,
-    backgroundColor: receipt.paper,
-    borderRadius: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
     padding: 24,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
@@ -465,7 +468,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: receipt.tint,
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 2,
@@ -481,21 +484,21 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 14,
-    backgroundColor: receipt.tint,
+    backgroundColor: "#EEF0FF",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: receipt.ink,
+    borderColor: "#E0E7FF",
   },
   appTitle: {
     fontSize: 19,
     fontWeight: "800",
-    color: receipt.ink,
+    color: "#0F172A",
     letterSpacing: -0.3,
   },
   appSubtitle: {
     fontSize: 13,
-    color: receipt.muted,
+    color: "#64748B",
     marginTop: 2,
   },
   badgeRow: {
@@ -508,7 +511,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: receipt.tint,
+    backgroundColor: "#DCFCE7",
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 6,
@@ -516,11 +519,11 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: receipt.success,
+    color: "#166534",
   },
   divider: {
     height: 1,
-    backgroundColor: receipt.tint,
+    backgroundColor: "#F1F5F9",
     marginVertical: 18,
   },
   instructionsContainer: {
@@ -529,7 +532,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 14,
     fontWeight: "600",
-    color: receipt.ink,
+    color: "#334155",
     marginBottom: 4,
   },
   stepRow: {
@@ -541,84 +544,84 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: receipt.ink,
+    backgroundColor: "#635BFF",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 1,
   },
   stepNumberText: {
-    color: receipt.paper,
+    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
   },
   stepText: {
     fontSize: 14,
-    color: receipt.ink,
+    color: "#334155",
     lineHeight: 20,
   },
   stepBold: {
     fontWeight: "700",
-    color: receipt.ink,
+    color: "#0F172A",
   },
   shareIconBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: receipt.tint,
+    backgroundColor: "#F0F9FF",
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
     marginTop: 4,
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: receipt.rule,
+    borderColor: "#BAE6FD",
   },
   shareIconLabel: {
     fontSize: 12,
-    color: receipt.ink,
+    color: "#0284C7",
     fontWeight: "600",
   },
   iosTipBox: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: receipt.tint,
+    backgroundColor: "#F8FAFC",
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: receipt.rule,
+    borderColor: "#E2E8F0",
     marginTop: 4,
   },
   iosTipText: {
     flex: 1,
     fontSize: 12,
-    color: receipt.muted,
+    color: "#64748B",
     lineHeight: 17,
   },
   genericInstallGuide: {
-    backgroundColor: receipt.tint,
+    backgroundColor: "#F8FAFC",
     padding: 14,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: receipt.rule,
+    borderColor: "#E2E8F0",
     marginVertical: 4,
   },
   primaryButton: {
-    backgroundColor: receipt.ink,
+    backgroundColor: "#635BFF",
     paddingVertical: 13,
-    borderRadius: 6,
+    borderRadius: 12,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 8,
-    shadowColor: receipt.ink,
+    shadowColor: "#635BFF",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     cursor: "pointer" as any,
   },
   primaryButtonText: {
-    color: receipt.paper,
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
   },
@@ -630,7 +633,7 @@ const styles = StyleSheet.create({
     cursor: "pointer" as any,
   },
   secondaryButtonText: {
-    color: receipt.muted,
+    color: "#64748B",
     fontSize: 14,
     fontWeight: "600",
   },

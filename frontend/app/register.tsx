@@ -1,23 +1,18 @@
 import { useState } from "react";
 import {
-  View, StyleSheet, Pressable, ScrollView, SafeAreaView, Modal,
+  View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
+  Platform, ActivityIndicator, ScrollView, SafeAreaView, StatusBar, Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { api } from "@/src/lib/api";
-import {
-  Display,
-  Mono,
-  ReceiptButton,
-  ReceiptField,
-  ReceiptFormShell,
-  ReceiptNotice,
-  ReceiptRule,
-  receipt,
-} from "@/src/components/ReceiptKit";
+import { spacing } from "@/src/theme";
 
 export default function Register() {
+  const { isDesktop } = useResponsive();
   const [restaurantName, setRestaurantName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -38,6 +33,7 @@ export default function Register() {
 
   const { register, refreshUser } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const submit = async () => {
     setErr(null);
@@ -90,186 +86,272 @@ export default function Register() {
     }
   };
 
-  const consentRows = [
-    {
-      checked: termsAccepted,
-      toggle: () => setTermsAccepted(!termsAccepted),
-      text: (
-        <Mono style={styles.termsText}>
-          I agree to the{" "}
-          <Mono style={styles.termsLink} onPress={() => setShowTermsModal(true)}>
-            Terms and Conditions *
-          </Mono>
-        </Mono>
-      ),
-    },
-    {
-      checked: privacyConsent,
-      toggle: () => setPrivacyConsent(!privacyConsent),
-      text: (
-        <Mono style={styles.termsText}>
-          I acknowledge the{" "}
-          <Mono style={styles.termsLink} onPress={() => setShowPrivacyModal(true)}>
-            Privacy Notice and Data Processing Consent *
-          </Mono>
-        </Mono>
-      ),
-    },
-    {
-      checked: marketingConsent,
-      toggle: () => setMarketingConsent(!marketingConsent),
-      text: <Mono style={styles.termsText}>I consent to receive marketing and promotional updates (optional)</Mono>,
-    },
-    {
-      checked: analyticsConsent,
-      toggle: () => setAnalyticsConsent(!analyticsConsent),
-      text: (
-        <Mono style={styles.termsText}>
-          I agree to share anonymous product telemetry to help improve app reliability (optional)
-        </Mono>
-      ),
-    },
-  ];
-
   return (
-    <>
-      <ReceiptFormShell
-        subtitle="New account"
-        title="Create account"
-        description="Create your business account to get started"
-        onBack={() => router.back()}
-        maxWidth={520}
-      >
-        <Mono style={styles.sectionHeader}>Restaurant</Mono>
-        <ReceiptField
-          label="Restaurant name"
-          icon="home-outline"
-          value={restaurantName}
-          onChangeText={setRestaurantName}
-          placeholder="Spice Garden"
-          autoCapitalize="words"
-        />
-        <ReceiptField
-          label="Owner name"
-          icon="person-outline"
-          value={ownerName}
-          onChangeText={setOwnerName}
-          placeholder="Rajesh Kumar"
-          autoCapitalize="words"
-          testID="register-name-input"
-        />
-
-        <ReceiptRule style={styles.rule} />
-        <Mono style={styles.sectionHeader}>Contact</Mono>
-        <ReceiptField
-          label="Phone"
-          icon="call-outline"
-          value={phone}
-          onChangeText={setPhone}
-          placeholder="+91 98765 43210"
-          keyboardType="phone-pad"
-        />
-        <ReceiptField
-          label="Email"
-          icon="mail-outline"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="owner@yourplace.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          testID="register-email-input"
-        />
-
-        <ReceiptRule style={styles.rule} />
-        <Mono style={styles.sectionHeader}>Security</Mono>
-        <ReceiptField
-          label="Password"
-          icon="lock-closed-outline"
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Min. 8 characters"
-          secureTextEntry={!showPassword}
-          autoCapitalize="none"
-          testID="register-password-input"
-          right={
-            <Pressable
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.eyeBtn}
-              accessibilityRole="button"
-              accessibilityLabel={showPassword ? "Hide password" : "Show password"}
-            >
-              <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={receipt.muted} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDesktop ? "#0A0A0E" : "#0D0D0D"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.wrap, { backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D" }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContainer,
+            {
+              backgroundColor: isDesktop ? "#0A0A0E" : "#0D0D0D",
+              alignItems: isDesktop ? "center" : undefined,
+              paddingTop: isDesktop ? 40 : insets.top + 20,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[isDesktop && styles.desktopCardWrapper]}>
+            {/* Back Chevron */}
+            <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12} testID="register-back-btn">
+              <Ionicons name="chevron-back" size={24} color="#FF5E2B" />
             </Pressable>
-          }
-        />
-        <ReceiptField
-          label="Confirm password"
-          icon="lock-closed-outline"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          placeholder="Re-enter password"
-          secureTextEntry={!showConfirmPassword}
-          autoCapitalize="none"
-          right={
-            <Pressable
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-              style={styles.eyeBtn}
-              accessibilityRole="button"
-              accessibilityLabel={showConfirmPassword ? "Hide password" : "Show password"}
-            >
-              <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color={receipt.muted} />
-            </Pressable>
-          }
-        />
 
-        <ReceiptRule style={styles.rule} />
-        {consentRows.map((row, idx) => (
-          <Pressable
-            key={idx}
-            style={styles.termsRow}
-            onPress={row.toggle}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: row.checked }}
-          >
-            <View style={[styles.checkbox, row.checked && styles.checkboxChecked]}>
-              {row.checked && <Ionicons name="checkmark" size={14} color={receipt.paper} />}
+          {/* Header Title section */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Create account</Text>
+            <Text style={styles.subtitle}>Create your business account to get started</Text>
+          </View>
+
+          {/* Form Content */}
+          <View style={styles.form}>
+            
+            {/* RESTAURANT SECTION */}
+            <Text style={styles.sectionHeader}>RESTAURANT</Text>
+            
+            <View style={styles.field}>
+              <Text style={styles.label}>Restaurant Name</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="home-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={restaurantName}
+                  onChangeText={setRestaurantName}
+                  style={styles.input}
+                  placeholder="Spice Garden"
+                  placeholderTextColor="#475569"
+                  autoCapitalize="words"
+                />
+              </View>
             </View>
-            {row.text}
-          </Pressable>
-        ))}
 
-        {err && <ReceiptNotice text={err} testID="register-error" />}
+            <View style={styles.field}>
+              <Text style={styles.label}>Owner Name</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="person-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={ownerName}
+                  onChangeText={setOwnerName}
+                  style={styles.input}
+                  placeholder="Rajesh Kumar"
+                  placeholderTextColor="#475569"
+                  autoCapitalize="words"
+                  testID="register-name-input"
+                />
+              </View>
+            </View>
 
-        <ReceiptButton
-          label="Create account"
-          onPress={submit}
-          busy={busy}
-          disabled={!termsAccepted || !privacyConsent}
-          style={styles.submit}
-          testID="register-submit-btn"
-        />
+            {/* CONTACT SECTION */}
+            <Text style={[styles.sectionHeader, { marginTop: 12 }]}>CONTACT</Text>
 
-        <Pressable onPress={() => router.push("/login")} testID="register-goto-login" style={styles.link}>
-          <Mono style={styles.linkText}>
-            Already have an account? <Mono style={styles.linkAccent}>Sign in</Mono>
-          </Mono>
-        </Pressable>
-      </ReceiptFormShell>
+            <View style={styles.field}>
+              <Text style={styles.label}>Phone</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="call-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={phone}
+                  onChangeText={setPhone}
+                  style={styles.input}
+                  placeholder="+91 98765 43210"
+                  placeholderTextColor="#475569"
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  style={styles.input}
+                  placeholder="owner@yourplace.com"
+                  placeholderTextColor="#475569"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  testID="register-email-input"
+                />
+              </View>
+            </View>
+
+            {/* SECURITY SECTION */}
+            <Text style={[styles.sectionHeader, { marginTop: 12 }]}>SECURITY</Text>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  style={[styles.input, { paddingRight: 44 }]}
+                  placeholder="Min. 8 characters"
+                  placeholderTextColor="#475569"
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  testID="register-password-input"
+                />
+                <Pressable
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                  hitSlop={10}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#64748B"
+                  />
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Confirm Password</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  style={[styles.input, { paddingRight: 44 }]}
+                  placeholder="Re-enter password"
+                  placeholderTextColor="#475569"
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <Pressable
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeBtn}
+                  hitSlop={10}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#64748B"
+                  />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Terms & Conditions Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setTermsAccepted(!termsAccepted)}
+            >
+              <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+                {termsAccepted && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to the{" "}
+                <Text style={styles.termsLink} onPress={() => setShowTermsModal(true)}>
+                  Terms & Conditions *
+                </Text>
+              </Text>
+            </Pressable>
+
+            {/* Privacy Policy Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setPrivacyConsent(!privacyConsent)}
+            >
+              <View style={[styles.checkbox, privacyConsent && styles.checkboxChecked]}>
+                {privacyConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I acknowledge the{" "}
+                <Text style={styles.termsLink} onPress={() => setShowPrivacyModal(true)}>
+                  Privacy Notice & Data Processing Consent *
+                </Text>
+              </Text>
+            </Pressable>
+
+            {/* Marketing Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setMarketingConsent(!marketingConsent)}
+            >
+              <View style={[styles.checkbox, marketingConsent && styles.checkboxChecked]}>
+                {marketingConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I consent to receive marketing and promotional updates (Optional)
+              </Text>
+            </Pressable>
+
+            {/* Analytics Checkbox */}
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setAnalyticsConsent(!analyticsConsent)}
+            >
+              <View style={[styles.checkbox, analyticsConsent && styles.checkboxChecked]}>
+                {analyticsConsent && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to share anonymous product telemetry to help improve app reliability (Optional)
+              </Text>
+            </Pressable>
+
+            {/* Error Message */}
+            {err && (
+              <View style={styles.errBox}>
+                <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
+                <Text style={styles.errText} testID="register-error">{err}</Text>
+              </View>
+            )}
+
+            {/* Create Button */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.submitBtn, 
+                pressed && styles.btnPressed, 
+                (busy || !termsAccepted || !privacyConsent) && { opacity: 0.5 }
+              ]}
+              onPress={submit}
+              disabled={busy || !termsAccepted || !privacyConsent}
+              testID="register-submit-btn"
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitBtnText}>Create Account</Text>
+              )}
+            </Pressable>
+
+            {/* Footer Signin Link */}
+            <Pressable onPress={() => router.push("/login")} testID="register-goto-login" style={styles.footerBtn}>
+              <Text style={styles.footerText}>
+                Already have an account? <Text style={styles.footerAccent}>Sign in</Text>
+              </Text>
+            </Pressable>
+
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
 
       {/* Terms Modal */}
       <Modal visible={showTermsModal} animationType="slide" transparent>
         <SafeAreaView style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Display style={styles.modalTitle}>Terms and Conditions</Display>
-              <Pressable onPress={() => setShowTermsModal(false)} style={styles.eyeBtn} accessibilityLabel="Close">
-                <Ionicons name="close" size={24} color={receipt.ink} />
+              <Text style={styles.modalTitle}>Terms & Conditions</Text>
+              <Pressable onPress={() => setShowTermsModal(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color="#94A3B8" />
               </Pressable>
             </View>
-            <ReceiptRule />
             <ScrollView contentContainerStyle={styles.modalScroll}>
-              <Mono style={styles.modalText}>
+              <Text style={styles.modalText}>
                 Welcome to EzBill Restaurant ERP (ProDevOpz Solutions). By creating an account, you agree to these legally binding terms:{"\n\n"}
                 1. Scope of Service: We provide billing POS, kitchen order routing (KOT), thermal printer synchronization, menu management, and sales reporting software for restaurants.{"\n\n"}
                 2. User Obligations: You are responsible for maintaining confidentiality of all waiter PINs, owner login credentials, and billing data. You agree not to misuse the platform for unauthorized purposes.{"\n\n"}
@@ -277,7 +359,7 @@ export default function Register() {
                 4. Statutory Tax Compliance: You are solely responsible for setting accurate GST rates and verifying tax invoices generated for your guests in compliance with applicable Indian GST laws.{"\n\n"}
                 5. Limitation of Liability: EzBill is provided on an "as-is" and "as-available" basis. ProDevOpz Solutions is not liable for indirect losses, network outages, or hardware printer failures.{"\n\n"}
                 6. Governing Law & Dispute Resolution: These terms are governed by the laws of India. Any disputes shall be subject to arbitration in accordance with the Arbitration and Conciliation Act, 1996.
-              </Mono>
+              </Text>
             </ScrollView>
           </View>
         </SafeAreaView>
@@ -288,128 +370,211 @@ export default function Register() {
         <SafeAreaView style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Display style={styles.modalTitle}>Privacy and DPDP notice</Display>
-              <Pressable onPress={() => setShowPrivacyModal(false)} style={styles.eyeBtn} accessibilityLabel="Close">
-                <Ionicons name="close" size={24} color={receipt.ink} />
+              <Text style={styles.modalTitle}>Privacy Notice & DPDP Notice</Text>
+              <Pressable onPress={() => setShowPrivacyModal(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color="#94A3B8" />
               </Pressable>
             </View>
-            <ReceiptRule />
             <ScrollView contentContainerStyle={styles.modalScroll}>
-              <Mono style={styles.modalText}>
+              <Text style={styles.modalText}>
                 Notice under the Digital Personal Data Protection (DPDP) Act, 2023 & DPDP Rules 2025:{"\n\n"}
                 1. Data Collected: We collect your name, email, phone number, restaurant metadata, menu details, waiter profiles, and billing logs to provide the ERP service.{"\n\n"}
                 2. Purpose of Processing: Data is processed strictly to maintain restaurant operations, sync orders in real time, generate tax-compliant bills, and handle customer support.{"\n\n"}
                 3. Sub-Processors: We use Razorpay (secure PCI-DSS payment gateway), Brevo (transactional OTP delivery), Expo (push notifications), Google Gemini (AI menu OCR), and MongoDB Atlas (encrypted database). We never sell your data to advertisers.{"\n\n"}
                 4. Data Retention & Erasure: You may exercise your DPDP Right to Erasure / Account Deletion at any time. When deleted, personal identifiers are erased; historical invoices are anonymized and retained strictly under statutory Section 36 CGST Act requirements (72-month tax audit hold).{"\n\n"}
                 5. Grievance Redressal: For any DPDP or data inquiries, contact our designated Grievance Officer at contactprodevopz@gmail.com. We acknowledge complaints within 48 hours and resolve them within statutory timelines.
-              </Mono>
+              </Text>
             </ScrollView>
           </View>
         </SafeAreaView>
       </Modal>
-    </>
+
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionHeader: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: receipt.accent,
-    marginBottom: 12,
+  safe: { flex: 1, backgroundColor: "#0D0D0D" },
+  wrap: { flex: 1, backgroundColor: "#0D0D0D" },
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 24, backgroundColor: "#0D0D0D", paddingBottom: spacing.xxxl },
+  desktopCardWrapper: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    backgroundColor: "#121216",
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
   },
-  rule: {
-    marginTop: 6,
-    marginBottom: 16,
-  },
-  eyeBtn: {
+  backBtn: {
     width: 44,
     height: 44,
-    alignItems: "center",
+    borderRadius: 22,
     justifyContent: "center",
-  },
-  termsRow: {
-    flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
-    minHeight: 44,
-    paddingVertical: 6,
+    marginBottom: 16,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: receipt.ink,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: receipt.paper,
+  header: {
+    marginBottom: 28,
   },
-  checkboxChecked: {
-    backgroundColor: receipt.ink,
+  title: {
+    color: "#FFFFFF",
+    fontSize: 32,
+    fontWeight: "bold",
+    letterSpacing: -0.5,
   },
-  termsText: {
-    flex: 1,
-    fontSize: 13,
+  subtitle: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: 8,
     lineHeight: 20,
   },
-  termsLink: {
+
+  form: {
+    flex: 1,
+  },
+  sectionHeader: {
+    color: "#FF5E2B",
+    fontSize: 11,
+    fontWeight: "bold",
+    letterSpacing: 1.5,
+    marginBottom: 16,
+  },
+  
+  field: { marginBottom: spacing.lg },
+  label: {
+    color: "#94A3B8",
     fontSize: 13,
+    fontWeight: "500",
+    marginBottom: 8,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#16161A",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#2E2E38",
+    position: "relative",
+    height: 54,
+  },
+  inputIcon: { marginLeft: 16 },
+  input: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "500",
+    height: "100%",
+  },
+  eyeBtn: {
+    position: "absolute",
+    right: 14,
+    padding: 4,
+  },
+
+  errBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderColor: "rgba(239, 68, 68, 0.2)",
+    borderWidth: 1,
+    padding: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.lg,
+  },
+  errText: { color: "#EF4444", fontSize: 13, flex: 1, fontWeight: "600" },
+  
+  submitBtn: {
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: "#FF5E2B",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 24,
+  },
+  btnPressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },
+  submitBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
+
+  footerBtn: { marginTop: 28, alignItems: "center" },
+  footerText: { color: "#64748B", fontSize: 14, fontWeight: "500" },
+  footerAccent: { color: "#FF5E2B", fontWeight: "700" },
+
+  // Terms Checkbox Styles
+  termsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+    paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#2E2E38",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+    backgroundColor: "#16161A",
+  },
+  checkboxChecked: {
+    backgroundColor: "#FF5E2B",
+    borderColor: "#FF5E2B",
+  },
+  termsText: {
+    color: "#94A3B8",
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
+  },
+  termsLink: {
+    color: "#FF5E2B",
     fontWeight: "700",
-    color: receipt.accent,
     textDecorationLine: "underline",
   },
-  submit: {
-    marginTop: 12,
-  },
-  link: {
-    minHeight: 44,
-    marginTop: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  linkText: {
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: "center",
-    color: receipt.muted,
-  },
-  linkAccent: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: receipt.accent,
-  },
+
+  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(31, 31, 31, 0.72)",
+    backgroundColor: "rgba(0,0,0,0.85)",
     justifyContent: "flex-end",
   },
   modalContent: {
-    width: "100%",
-    maxWidth: 640,
-    alignSelf: "center",
-    backgroundColor: receipt.paper,
-    padding: 20,
-    maxHeight: "85%",
+    backgroundColor: "#16161A",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: "80%",
+    borderColor: "#2E2E38",
+    borderWidth: 1,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 10,
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2E2E38",
+    paddingBottom: 12,
   },
   modalTitle: {
-    flex: 1,
-    fontSize: 24,
-    lineHeight: 28,
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "bold",
   },
   modalScroll: {
-    paddingTop: 14,
-    paddingBottom: 24,
+    paddingBottom: 40,
   },
   modalText: {
-    fontSize: 13,
-    lineHeight: 21,
+    color: "#94A3B8",
+    fontSize: 14,
+    lineHeight: 22,
   },
 });
