@@ -221,7 +221,7 @@ export async function checkPrinterConnection(role: "cashier" | "kitchen"): Promi
   try {
     if (Platform.OS === "web") {
       if (settings.type === "qz") {
-        const status = (await isQzPrinterAvailable(settings.address)) ? "connected" : "unavailable";
+        const status = (await isQzRunning()) ? "connected" : "unavailable";
         setPrinterStatus(role, status);
         return status;
       }
@@ -1015,28 +1015,42 @@ export async function connectQzPrinter(role: "cashier" | "kitchen", printerName:
   await checkPrinterConnection(role);
 }
 
-async function isQzPrinterAvailable(printerName: string): Promise<boolean> {
+// Only checks the connection: listing printers shows a QZ Tray permission popup on unsigned sites
+async function isQzRunning(): Promise<boolean> {
   try {
-    return (await listQzPrinters()).includes(printerName);
+    await getConnectedQz();
+    return true;
   } catch {
     return false;
   }
 }
 
-async function sendQzJob(printerName: string, bytes: Uint8Array): Promise<DirectSendResult> {
+// An identical job still waiting (e.g. on the permission popup) is shared, so repeat clicks cannot print twice
+const qzJobsInFlight = new Map<string, Promise<DirectSendResult>>();
+
+function sendQzJob(printerName: string, bytes: Uint8Array): Promise<DirectSendResult> {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const data = btoa(binary);
+  const key = `${printerName}:${data}`;
+
+  const inFlight = qzJobsInFlight.get(key);
+  if (inFlight) return inFlight;
+
+  const job = writeQzJob(printerName, data).finally(() => { qzJobsInFlight.delete(key); });
+  qzJobsInFlight.set(key, job);
+  return job;
+}
+
+async function writeQzJob(printerName: string, data: string): Promise<DirectSendResult> {
   let qz: any;
   try {
     qz = await getConnectedQz();
   } catch {
     return { outcome: "not_sent", reason: "QZ Tray is not running on this computer." };
   }
-  if (!(await isQzPrinterAvailable(printerName))) {
-    return { outcome: "not_sent", reason: `QZ Tray cannot find the printer "${printerName}".` };
-  }
   try {
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    await qz.print(qz.configs.create(printerName), [{ type: "raw", format: "command", flavor: "base64", data: btoa(binary) }]);
+    await qz.print(qz.configs.create(printerName), [{ type: "raw", format: "command", flavor: "base64", data }]);
     return { outcome: "sent" };
   } catch (e: any) {
     // The job may already be with the Windows print queue, so it must not be resent automatically
