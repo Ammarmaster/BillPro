@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { menuItemImageSource } from "@/src/lib/foodImage";
+import { vegMarkColor } from "@/src/lib/vegDish";
 import { useAuth } from "@/src/context/AuthContext";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
@@ -1192,7 +1193,10 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                     <Pressable style={styles.menuCard} onPress={() => add(item)} testID={`waiter-add-${item.id}`}>
                       <Image source={menuItemImageSource(item)} style={styles.menuImg} contentFit="cover" transition={200} />
                       <View style={styles.menuOverlay}>
-                        <Text style={styles.menuName} numberOfLines={2}>{item.name}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <View style={{ width: 10, height: 10, borderRadius: 2, borderWidth: 1, borderColor: "#FFFFFF", backgroundColor: vegMarkColor(item) }} />
+                          <Text style={[styles.menuName, { flex: 1 }]} numberOfLines={2}>{item.name}</Text>
+                        </View>
                         <Text style={styles.menuPrice}>₹{item.price}</Text>
                       </View>
                       <View style={styles.plus}><Ionicons name="add" size={16} color={colors.onBrand} /></View>

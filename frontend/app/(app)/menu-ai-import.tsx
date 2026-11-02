@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable,
-  ActivityIndicator, SafeAreaView, StatusBar, Alert, FlatList, Platform
+  ActivityIndicator, SafeAreaView, StatusBar, FlatList, Platform
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,10 +14,12 @@ import { api } from "@/src/lib/api";
 import { spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
 
+const MAX_MENU_PAGES = 10;
+
 type ExtractedItem = {
   name: string;
-  price: number;
-  description: string;
+  price: number | string | null;
+  description: string | null;
   is_veg: boolean;
   confidence: number;
   sourceText?: string;
@@ -34,6 +36,17 @@ type ExtractedCategory = {
   items: ExtractedItem[];
 };
 
+type Notice = { tone: "error" | "warning" | "success"; text: string };
+
+const NOTICE_LOOK = {
+  error: { background: "#FEE2E2", text: "#B91C1C", icon: "alert-circle" },
+  warning: { background: "#FEF3C7", text: "#92400E", icon: "alert-circle" },
+  success: { background: "#DCFCE7", text: "#166534", icon: "checkmark-circle" },
+} as const;
+
+const needsFixing = (item: ExtractedItem) =>
+  item.action !== "skip" && (!item.name.trim() || !(Number(item.price) > 0));
+
 export default function MenuAiImportScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -48,6 +61,17 @@ export default function MenuAiImportScreen() {
   const [importing, setImporting] = useState(false);
   const [importedData, setImportedData] = useState<{ item_ids: string[]; category_ids: string[] } | null>(null);
   const [showUndo, setShowUndo] = useState(false);
+  const [replacedPrices, setReplacedPrices] = useState(0);
+  // Shown on the page because Alert.alert does nothing on the website
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  const addImages = (uris: string[]) => {
+    const next = [...images, ...uris];
+    setImages(next.slice(0, MAX_MENU_PAGES));
+    setNotice(next.length > MAX_MENU_PAGES
+      ? { tone: "warning", text: `You can scan up to ${MAX_MENU_PAGES} pages at a time, so the extra photos were left out.` }
+      : null);
+  };
 
   // -------------------------------------------------------------
   // Step 1: Camera & Gallery Photo Picking
@@ -57,7 +81,7 @@ export default function MenuAiImportScreen() {
       if (Platform.OS !== "web") {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert("Permission Required", "Camera access is needed to capture menu pages.");
+          setNotice({ tone: "error", text: "Camera access is needed to capture menu pages." });
           return;
         }
       }
@@ -68,14 +92,14 @@ export default function MenuAiImportScreen() {
       });
 
       if (!res.canceled && res.assets && res.assets[0]?.uri) {
-        setImages(prev => [...prev, res.assets[0].uri]);
+        addImages([res.assets[0].uri]);
       }
     } catch (e: any) {
       if (Platform.OS === "web") {
         // Fall back gracefully to gallery/file picker on web if camera is unavailable
         pickGallery();
       } else {
-        Alert.alert("Camera Error", e.message || "Failed to open camera.");
+        setNotice({ tone: "error", text: e.message || "Failed to open camera." });
       }
     }
   };
@@ -85,7 +109,7 @@ export default function MenuAiImportScreen() {
       if (Platform.OS !== "web") {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert("Permission Required", "Gallery access is needed to upload menu photos.");
+          setNotice({ tone: "error", text: "Gallery access is needed to upload menu photos." });
           return;
         }
       }
@@ -97,11 +121,10 @@ export default function MenuAiImportScreen() {
       });
 
       if (!res.canceled && res.assets && res.assets.length > 0) {
-        const newImages = res.assets.map(a => a.uri);
-        setImages(prev => [...prev, ...newImages]);
+        addImages(res.assets.map(a => a.uri));
       }
     } catch (e: any) {
-      Alert.alert("Upload Error", e.message || "Failed to choose images.");
+      setNotice({ tone: "error", text: e.message || "Failed to choose images." });
     }
   };
 
@@ -114,11 +137,12 @@ export default function MenuAiImportScreen() {
   // -------------------------------------------------------------
   const processMenuPhotos = async () => {
     if (images.length === 0) {
-      Alert.alert("No Photos", "Please take or select at least one menu photo first.");
+      setNotice({ tone: "error", text: "Please take or select at least one menu photo first." });
       return;
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setNotice(null);
     setStep("analyzing");
 
     const steps = [
@@ -129,6 +153,7 @@ export default function MenuAiImportScreen() {
       "5. Checking prices & confidence..."
     ];
 
+    setAnalyzingStepText(steps[0]);
     let sIdx = 0;
     const progressTimer = setInterval(() => {
       sIdx++;
@@ -176,13 +201,22 @@ export default function MenuAiImportScreen() {
         }
 
         setCategories(normalCategories);
+        setImportedData(null);
+        setShowUndo(false);
+        const failedPages: number[] = (res.failed_pages || []).map((f: { page: number }) => f.page);
+        if (failedPages.length > 0) {
+          setNotice({
+            tone: "warning",
+            text: `We could not read page${failedPages.length === 1 ? "" : "s"} ${failedPages.join(", ")}. Check the dishes below, then scan ${failedPages.length === 1 ? "that page" : "those pages"} again with a clearer photo.`,
+          });
+        }
         setStep("review");
       } else {
         throw new Error(res?.detail || "No items or categories were detected in the photos. Please ensure the menu card text is clear and readable.");
       }
     } catch (e: any) {
       clearInterval(progressTimer);
-      Alert.alert("Processing Error", e.message || "Failed to extract menu. Please check images and try again.");
+      setNotice({ tone: "error", text: e.message || "Failed to extract menu. Please check images and try again." });
       setStep("upload");
     }
   };
@@ -193,7 +227,8 @@ export default function MenuAiImportScreen() {
   const updateCategoryName = (catIdx: number, newName: string) => {
     setCategories(prev => {
       const copy = [...prev];
-      copy[catIdx].name = newName;
+      // A renamed category is matched by its new name when importing, not filed under the old match
+      copy[catIdx] = { ...copy[catIdx], name: newName, is_existing: false, matched_id: null };
       return copy;
     });
   };
@@ -219,13 +254,10 @@ export default function MenuAiImportScreen() {
   const addItemToCategory = (catIdx: number) => {
     setCategories(prev => {
       const copy = [...prev];
-      copy[catIdx].items.push({
-        name: "New Food Item",
-        price: 150,
-        description: "",
-        is_veg: true,
-        confidence: 1.0
-      });
+      copy[catIdx] = {
+        ...copy[catIdx],
+        items: [...copy[catIdx].items, { name: "", price: null, description: "", is_veg: true, confidence: 1.0 }],
+      };
       return copy;
     });
   };
@@ -238,26 +270,41 @@ export default function MenuAiImportScreen() {
     setCategories(prev => [
       ...prev,
       {
-        name: "New Category",
+        name: "",
         is_existing: false,
         items: [
-          { name: "Sample Item", price: 100, description: "", is_veg: true, confidence: 1.0 }
+          { name: "", price: null, description: "", is_veg: true, confidence: 1.0 }
         ]
       }
     ]);
   };
 
   const handleBulkImport = async () => {
-    if (categories.length === 0) {
-      Alert.alert("Empty Menu", "Please have at least one category before importing.");
+    const toFix = categories.flatMap(c => c.items).filter(needsFixing).length;
+    if (toFix > 0) {
+      setNotice({
+        tone: "error",
+        text: `${toFix} ${toFix === 1 ? "dish needs" : "dishes need"} a name and price. Fill in the dishes marked in orange, or remove them.`,
+      });
+      return;
+    }
+
+    const categoriesToSave = categories.filter(c => c.items.some(it => it.action !== "skip"));
+    if (categoriesToSave.length === 0) {
+      setNotice({ tone: "error", text: "There is nothing new to add. Every dish here is empty or set to Skip." });
+      return;
+    }
+    if (categoriesToSave.some(c => !c.name.trim())) {
+      setNotice({ tone: "error", text: "Every category needs a name before you can add it." });
       return;
     }
 
     setImporting(true);
+    setNotice(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
 
     try {
-      const payloadCategories = categories.map(c => ({
+      const payloadCategories = categoriesToSave.map(c => ({
         name: c.name.trim(),
         category_id: c.matched_id || undefined,
         items: c.items.map(it => ({
@@ -281,18 +328,19 @@ export default function MenuAiImportScreen() {
         setShowUndo(true);
       }
 
-      Alert.alert(
-        "🎉 Import Successful!",
-        res.message || `Menu items successfully processed!`,
-        [
-          {
-            text: "View Menu",
-            onPress: () => router.back()
-          }
-        ]
-      );
+      const added = res.imported_items || 0;
+      const updated = res.updated_items || 0;
+      setReplacedPrices(updated);
+      const changes = [
+        added > 0 ? `${added} new ${added === 1 ? "dish" : "dishes"} added` : "",
+        updated > 0 ? `${updated} ${updated === 1 ? "price" : "prices"} updated` : "",
+      ].filter(Boolean).join(" and ");
+      setNotice({
+        tone: "success",
+        text: `${changes}.${added > 0 ? " You can now select them when taking an order." : ""}`,
+      });
     } catch (e: any) {
-      Alert.alert("Import Failed", e.message);
+      setNotice({ tone: "error", text: e.message || "The menu could not be saved. Please try again." });
     } finally {
       setImporting(false);
     }
@@ -303,12 +351,15 @@ export default function MenuAiImportScreen() {
     setImporting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
-      const res = await api.rollbackBulkImport(importedData.item_ids, importedData.category_ids);
+      await api.rollbackBulkImport(importedData.item_ids, importedData.category_ids);
       setShowUndo(false);
       setImportedData(null);
-      Alert.alert("Import Undone", res.message || "reverted the imported records successfully.");
+      setNotice({
+        tone: "success",
+        text: `Import undone. The new dishes were removed.${replacedPrices > 0 ? " Prices you replaced stay at the new amount." : ""}`,
+      });
     } catch (e: any) {
-      Alert.alert("Undo Failed", e.message);
+      setNotice({ tone: "error", text: e.message || "The import could not be undone. Please try again." });
     } finally {
       setImporting(false);
     }
@@ -320,7 +371,17 @@ export default function MenuAiImportScreen() {
       
       {/* Header */}
       <View style={[styles.header, isDesktop && styles.desktopContainer]}>
-        <Pressable onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border }]}>
+        <Pressable
+          onPress={() => {
+            if (step === "review" && !showUndo) {
+              setNotice(null);
+              setStep("upload");
+            } else {
+              router.back();
+            }
+          }}
+          style={[styles.backBtn, { borderColor: theme.border }]}
+        >
           <Ionicons name="chevron-back" size={20} color={theme.onSurface} />
         </Pressable>
         <View style={{ marginLeft: spacing.md, flex: 1 }}>
@@ -328,6 +389,15 @@ export default function MenuAiImportScreen() {
           <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]}>Scan physical menu cards into digital items</Text>
         </View>
       </View>
+
+      {notice && (
+        <View style={[styles.noticeWrap, isDesktop && styles.desktopContainer]}>
+          <View style={[styles.notice, { backgroundColor: NOTICE_LOOK[notice.tone].background }]} testID="menu-scan-notice">
+            <Ionicons name={NOTICE_LOOK[notice.tone].icon} size={18} color={NOTICE_LOOK[notice.tone].text} />
+            <Text style={[styles.noticeText, { color: NOTICE_LOOK[notice.tone].text }]}>{notice.text}</Text>
+          </View>
+        </View>
+      )}
 
       {/* ----------------- STEP 1: PHOTO CAPTURE ----------------- */}
       {step === "upload" && (
@@ -338,7 +408,7 @@ export default function MenuAiImportScreen() {
             </View>
             <Text style={[styles.cardTitle, { color: theme.onSurface }]}>Take Photos of Menu Pages</Text>
             <Text style={[styles.cardDesc, { color: theme.onSurfaceSecondary }]}>
-              Capture all pages of your physical restaurant menu. Our Vision AI will automatically detect categories, item names, prices, and descriptions.
+              Capture up to {MAX_MENU_PAGES} pages of your physical restaurant menu. Our Vision AI will automatically detect categories, item names, prices, and descriptions.
             </Text>
 
             <View style={styles.btnRow}>
@@ -374,7 +444,7 @@ export default function MenuAiImportScreen() {
                 ))}
               </View>
 
-              <Pressable style={styles.processBtn} onPress={processMenuPhotos}>
+              <Pressable style={styles.processBtn} onPress={processMenuPhotos} testID="menu-scan-process-btn">
                 <Ionicons name="sparkles" size={20} color="#FFFFFF" />
                 <Text style={styles.processBtnText}>Process Menu with AI</Text>
               </Pressable>
@@ -389,6 +459,7 @@ export default function MenuAiImportScreen() {
           <ActivityIndicator size="large" color="#635BFF" />
           <Text style={[styles.analyzingTitle, { color: theme.onSurface }]}>AI Menu Extraction</Text>
           <Text style={[styles.analyzingSub, { color: theme.onSurfaceSecondary }]}>{analyzingStepText}</Text>
+          <Text style={[styles.analyzingSub, { color: theme.onSurfaceSecondary }]}>This can take up to a minute.</Text>
           <View style={styles.progressTrack}>
             <View style={styles.progressBar} />
           </View>
@@ -433,8 +504,8 @@ export default function MenuAiImportScreen() {
                 {/* Items in this category */}
                 {cat.items.map((item, itemIdx) => {
                   const confidence = item.confidence ?? 1.0;
-                  const hasBadPrice = isNaN(item.price) || item.price === null || item.price <= 0;
-                  const isUncertain = confidence < 0.90 || hasBadPrice;
+                  const missingDetails = needsFixing(item);
+                  const isUncertain = missingDetails || (item.action !== "skip" && confidence < 0.90);
                   const isDuplicate = !!item.duplicate_name;
                   return (
                     <View
@@ -449,7 +520,7 @@ export default function MenuAiImportScreen() {
                       {isUncertain && (
                         <View style={styles.uncertainWarning}>
                           <Ionicons name="alert-circle" size={14} color="#F59E0B" />
-                          <Text style={styles.uncertainWarningText}>Please verify price or name</Text>
+                          <Text style={styles.uncertainWarningText}>{missingDetails ? "Add the name and price, or remove this dish" : "Please check this dish against your menu"}</Text>
                         </View>
                       )}
 
@@ -463,14 +534,6 @@ export default function MenuAiImportScreen() {
                       )}
 
                       <View style={styles.itemRowTop}>
-                        {/* Veg / Non-Veg Toggle */}
-                        <Pressable
-                          style={[styles.vegPill, item.is_veg ? styles.vegPillActive : styles.nonVegPillActive]}
-                          onPress={() => updateItem(catIdx, itemIdx, "is_veg", !item.is_veg)}
-                        >
-                          <Text style={styles.vegPillText}>{item.is_veg ? "🟢 Veg" : "🔴 Non-Veg"}</Text>
-                        </Pressable>
-
                         <TextInput
                           style={[styles.itemNameInput, { color: theme.onSurface }]}
                           value={item.name}
@@ -479,27 +542,37 @@ export default function MenuAiImportScreen() {
                           placeholderTextColor="#64748B"
                         />
 
-                        <View style={styles.priceContainer}>
-                          <Text style={styles.rupeePrefix}>₹</Text>
-                          <TextInput
-                            style={styles.priceInput}
-                            value={String(item.price)}
-                            onChangeText={txt => updateItem(catIdx, itemIdx, "price", parseFloat(txt) || 0)}
-                            keyboardType="numeric"
-                            placeholder="0"
-                            placeholderTextColor="#64748B"
-                          />
-                        </View>
-
                         <Pressable onPress={() => deleteItem(catIdx, itemIdx)} hitSlop={8}>
                           <Ionicons name="close-circle-outline" size={20} color="#94A3B8" />
                         </Pressable>
                       </View>
 
+                      <View style={styles.itemRowBottom}>
+                        {/* Veg / Non-Veg Toggle */}
+                        <Pressable
+                          style={[styles.vegPill, item.is_veg ? styles.vegPillActive : styles.nonVegPillActive]}
+                          onPress={() => updateItem(catIdx, itemIdx, "is_veg", !item.is_veg)}
+                        >
+                          <Text style={styles.vegPillText}>{item.is_veg ? "🟢 Veg" : "🔴 Non-Veg"}</Text>
+                        </Pressable>
+
+                        <View style={styles.priceContainer}>
+                          <Text style={styles.rupeePrefix}>₹</Text>
+                          <TextInput
+                            style={styles.priceInput}
+                            value={item.price === null || item.price === undefined ? "" : String(item.price)}
+                            onChangeText={txt => updateItem(catIdx, itemIdx, "price", txt.replace(/[^0-9.]/g, ""))}
+                            keyboardType="numeric"
+                            placeholder="Price"
+                            placeholderTextColor="#64748B"
+                          />
+                        </View>
+                      </View>
+
                       {/* Description Input */}
                       <TextInput
                         style={[styles.itemDescInput, { color: theme.onSurfaceSecondary }]}
-                        value={item.description}
+                        value={item.description || ""}
                         onChangeText={txt => updateItem(catIdx, itemIdx, "description", txt)}
                         placeholder="Optional description / details"
                         placeholderTextColor="#475569"
@@ -560,14 +633,14 @@ export default function MenuAiImportScreen() {
 
                 <Pressable style={styles.addItemBtn} onPress={() => addItemToCategory(catIdx)}>
                   <Ionicons name="add" size={16} color="#635BFF" />
-                  <Text style={styles.addItemBtnText}>+ Add Item to {cat.name}</Text>
+                  <Text style={styles.addItemBtnText}>Add Item{cat.name.trim() ? ` to ${cat.name.trim()}` : ""}</Text>
                 </Pressable>
               </View>
             ))}
 
             <Pressable style={styles.addCatBtn} onPress={addCategory}>
               <Ionicons name="add-circle-outline" size={20} color="#635BFF" />
-              <Text style={styles.addCatBtnText}>+ Add New Category</Text>
+              <Text style={styles.addCatBtnText}>Add New Category</Text>
             </Pressable>
           </ScrollView>
 
@@ -592,7 +665,7 @@ export default function MenuAiImportScreen() {
                   </Pressable>
                   <Pressable
                     style={[styles.importBtn, { backgroundColor: "#10B981", flex: 1 }]}
-                    onPress={() => router.back()}
+                    onPress={() => router.replace("/(app)/menu")}
                   >
                     <Text style={styles.importBtnText}>View Menu</Text>
                   </Pressable>
@@ -602,6 +675,7 @@ export default function MenuAiImportScreen() {
                   style={[styles.importBtn, importing && { opacity: 0.6 }]}
                   onPress={handleBulkImport}
                   disabled={importing}
+                  testID="menu-scan-import-btn"
                 >
                   {importing ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
@@ -646,6 +720,10 @@ const styles = StyleSheet.create({
   sub: { fontSize: 12, marginTop: 2, fontWeight: "500" },
   scroll: { padding: spacing.lg, paddingBottom: 100 },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xl },
+
+  noticeWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  notice: { flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 12, borderRadius: 14 },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: "600" },
 
   card: {
     borderRadius: 24,
@@ -713,7 +791,7 @@ const styles = StyleSheet.create({
   processBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
 
   analyzingTitle: { fontSize: 18, fontWeight: "800", marginTop: 20 },
-  analyzingSub: { fontSize: 14, marginTop: 8 },
+  analyzingSub: { fontSize: 14, marginTop: 8, textAlign: "center" },
   progressTrack: { width: 220, height: 6, backgroundColor: "#E2E8F0", borderRadius: 3, marginTop: 20, overflow: "hidden" },
   progressBar: { width: "60%", height: "100%", backgroundColor: "#635BFF" },
 
@@ -755,6 +833,7 @@ const styles = StyleSheet.create({
   uncertainWarningText: { fontSize: 11, color: "#F59E0B", fontWeight: "700" },
 
   itemRowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+  itemRowBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 },
   vegPill: { paddingHorizontal: 6, paddingVertical: 4, borderRadius: 6, backgroundColor: "#E2E8F0" },
   vegPillActive: { backgroundColor: "#DCFCE7" },
   nonVegPillActive: { backgroundColor: "#FEE2E2" },

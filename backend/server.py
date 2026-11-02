@@ -1718,10 +1718,12 @@ async def generate_dish_image_with_gemini(name: str) -> dict:
     if cache_key in _gemini_image_cache:
         return _gemini_image_cache[cache_key]
 
-    gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyAEmzSOVVIQznxt5rRaAWMhPn6aPKT1p_o"
+    gemini_key = os.environ.get("GEMINI_API_KEY")
 
     # 1. Attempt direct Gemini Image Generation models (if accessible/billed)
     try:
+        if not gemini_key:
+            raise RuntimeError("GEMINI_API_KEY is not set")
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
         for img_model_name in ["gemini-2.5-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image"]:
@@ -1746,6 +1748,8 @@ async def generate_dish_image_with_gemini(name: str) -> dict:
     # 2. Use Gemini Flash to synthesize an authentic culinary photography prompt from dish name
     gemini_prompt = None
     try:
+        if not gemini_key:
+            raise RuntimeError("GEMINI_API_KEY is not set")
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
         for m_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest"]:
@@ -1921,9 +1925,11 @@ async def generate_promo_poster_endpoint(payload: PromoPosterIn, user: dict = De
     tagline_clean = (payload.tagline or "Today's Special").strip()
 
     # Generate advertising poster prompt with Gemini
-    gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyAEmzSOVVIQznxt5rRaAWMhPn6aPKT1p_o"
+    gemini_key = os.environ.get("GEMINI_API_KEY")
     poster_prompt = None
     try:
+        if not gemini_key:
+            raise RuntimeError("GEMINI_API_KEY is not set")
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
         for m_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest"]:
@@ -3827,6 +3833,180 @@ async def qr_confirm_order(payload: QRConfirmIn, current_user: dict = Depends(ge
     return res
 
 
+# Current models first, then Google's always-current alias, so one retired name cannot break the scan
+MENU_SCAN_MODELS = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+MENU_SCAN_MAX_PAGES = 10
+MENU_SCAN_MAX_BYTES = 10 * 1024 * 1024
+MENU_SCAN_PAGES_AT_ONCE = 3
+MENU_SCAN_KEY_PROBLEM = "The menu reader's AI key is missing or blocked, so it cannot read photos right now. The EzBill admin needs to add a new key."
+MENU_SCAN_BUSY = "The menu reader is busy right now. Please wait a minute and try again."
+MENU_SCAN_UNREADABLE = "This photo could not be read. Please try a clearer, well-lit photo."
+MENU_SCAN_NOT_A_MENU = "This photo does not look like a menu. Please check the photo and try again."
+MENU_SCAN_NO_DISHES = "No dishes could be found in this photo. Please try a clearer, well-lit photo."
+MENU_SCAN_PROMPT = """
+You are a menu document extraction system.
+You are NOT allowed to create, infer, guess, complete, or hallucinate any menu item or price.
+
+First, analyze the provided image. Determine if the image is a restaurant food menu or a page from a food menu.
+If the image is a person, a random object, a receipt, a table, a wall, or any screenshot unrelated to a food menu, you MUST return:
+{
+  "is_menu": false
+}
+
+If it is a menu, extract the categories and items strictly grounded in the visible text.
+For each item, you must find its name, price, and description (if present).
+Every returned item must include:
+1. "name": The exact or near-exact item name as printed.
+2. "price": The exact numeric price in Rupees. If an item has several sizes or portions with their own prices (for example Half 120 / Full 200), return one item per size with the size in the name, such as "Chicken Biryani (Half)". If the price is unclear or missing, return null.
+3. "description": The description if printed directly below/beside the item. Do NOT invent a description. If not present, return null.
+4. "sourceText": The exact line of text from the image where this item and price were detected.
+5. "confidence": A float between 0.0 and 1.0 representing your confidence in this extraction.
+6. "is_veg": A boolean indicating if the item is veg. Look for green dots, leaf icons, or explicit labels. If there is no mark, decide from the dish name: paneer, dal or veg dishes are true; chicken, mutton, fish, prawn or egg dishes are false. If still unclear, return false.
+
+Only create a category if its heading actually appears as a section title in the image. If there are no section titles, group items under the category name "Uncategorized". Do NOT invent categories.
+
+Return STRICTLY a JSON object with this format (no markdown fences, no explanation):
+{
+  "is_menu": true,
+  "categories": [
+    {
+      "name": "Category Name",
+      "items": [
+        {
+          "name": "Item Name",
+          "price": 180.0,
+          "description": "Short description if present",
+          "sourceText": "Item Name ........ 180",
+          "is_veg": true,
+          "confidence": 0.98
+        }
+      ]
+    }
+  ]
+}
+"""
+
+
+class MenuScanError(Exception):
+    """A page that could not be read, with a message the restaurant owner can act on."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+def _menu_price(value: Any) -> Optional[float]:
+    """Returns a usable price, or None so the owner is asked to fill it in."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        match = re.fullmatch(r"\D*?(\d+(?:\.\d+)?)\D*", value.replace(",", ""))
+        value = match.group(1) if match else None
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if 0 < price < float("inf") else None
+
+
+def _menu_confidence(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _clean_menu_categories(parsed: dict) -> list:
+    """One badly formed dish from the AI is dropped or marked for checking, and never loses the whole page."""
+    categories = []
+    for cat in parsed.get("categories") or []:
+        if not isinstance(cat, dict):
+            continue
+        items = []
+        for item in cat.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            source_text = str(item.get("sourceText") or "").strip() or name
+            confidence = _menu_confidence(item.get("confidence"))
+            # A dish name that is not in the line it came from may be made up, so ask the owner to check it
+            name_words = [w.lower() for w in name.split() if len(w) > 2]
+            if name_words and not any(w in source_text.lower() for w in name_words):
+                confidence = min(confidence, 0.5)
+            items.append({
+                "name": name,
+                "price": _menu_price(item.get("price")),
+                "description": str(item.get("description") or "").strip() or None,
+                "sourceText": source_text,
+                "is_veg": item.get("is_veg") is True,
+                "confidence": confidence,
+            })
+        if items:
+            categories.append({"name": str(cat.get("name") or "").strip() or "Uncategorized", "items": items})
+    return categories
+
+
+def _parse_menu_page(raw_text: str) -> list:
+    raw_text = raw_text.strip()
+    first_brace = raw_text.find("{")
+    last_brace = raw_text.rfind("}")
+    parsed = json.loads(raw_text[first_brace:last_brace + 1] if first_brace != -1 and last_brace != -1 else raw_text)
+    if not isinstance(parsed, dict):
+        raise ValueError("Gemini did not return a JSON object")
+    if not parsed.get("is_menu", True):
+        raise MenuScanError(MENU_SCAN_NOT_A_MENU)
+    categories = _clean_menu_categories(parsed)
+    if not categories:
+        raise MenuScanError(MENU_SCAN_NO_DISHES)
+    return categories
+
+
+def _read_menu_page_with_gemini(mime: str, image_bytes: bytes) -> list:
+    """Runs in a worker thread, because this Gemini call blocks and would otherwise freeze the API for every restaurant."""
+    import google.generativeai as genai
+
+    busy = False
+    for model_name in MENU_SCAN_MODELS:
+        try:
+            model = genai.GenerativeModel(model_name, generation_config={"response_mime_type": "application/json"})
+            response = model.generate_content(
+                [MENU_SCAN_PROMPT, {"mime_type": mime, "data": image_bytes}],
+                request_options={"timeout": 90},
+            )
+            return _parse_menu_page(response.text)
+        except MenuScanError:
+            raise
+        except Exception as ex:
+            message = str(ex).lower()
+            if "api key" in message or "api_key" in message:
+                logger.error("Menu scan: Gemini refused the API key: %s", ex)
+                raise MenuScanError(MENU_SCAN_KEY_PROBLEM, status_code=503)
+            busy = busy or "429" in message or "quota" in message or "exhausted" in message
+            logger.warning("Menu scan: %s failed: %s", model_name, ex)
+    if busy:
+        raise MenuScanError(MENU_SCAN_BUSY, status_code=429)
+    raise MenuScanError(MENU_SCAN_UNREADABLE)
+
+
+def _merge_menu_pages(pages: list) -> list:
+    """Joins pages into one menu: a section that runs over two pages stays one section, and a page photographed twice does not repeat dishes."""
+    merged: Dict[str, dict] = {}
+    seen_dishes = set()
+    for categories in pages:
+        for cat in categories:
+            cat_key = cat["name"].lower()
+            target = merged.setdefault(cat_key, {"name": cat["name"], "items": []})
+            for item in cat["items"]:
+                dish_key = (cat_key, item["name"].lower(), item["price"])
+                if dish_key not in seen_dishes:
+                    seen_dishes.add(dish_key)
+                    target["items"].append(item)
+    return list(merged.values())
+
+
 @api.post("/menu/ocr-process")
 async def ocr_process_menu(
     images: List[UploadFile] = File(...),
@@ -3843,210 +4023,73 @@ async def ocr_process_menu(
 
     if not images or len(images) == 0:
         raise HTTPException(status_code=400, detail="At least one menu image is required.")
+    if len(images) > MENU_SCAN_MAX_PAGES:
+        raise HTTPException(status_code=400, detail=f"Please scan up to {MENU_SCAN_MAX_PAGES} pages at a time.")
 
-    # Validation checks
-    MAX_SIZE = 10 * 1024 * 1024 # 10MB limit per image
+    pages = []
     for img in images:
         # Format validation
         content_type = img.content_type or ""
         filename = (img.filename or "").lower()
         if not (content_type.startswith("image/") or filename.endswith(('.jpg', '.jpeg', '.png', '.webp'))):
             raise HTTPException(status_code=400, detail="Unsupported image format. Please upload JPG, PNG, or WEBP.")
-        
+
         # Size validation
         img_bytes = await img.read()
-        if len(img_bytes) > MAX_SIZE:
+        if len(img_bytes) > MENU_SCAN_MAX_BYTES:
             raise HTTPException(status_code=413, detail="Image is too large (max 10MB)")
-        await img.seek(0)
 
-    # Fetch existing categories to perform smart matching
-    existing_cats = await db.categories.find({"tenant_id": tid}).to_list(length=100)
-    existing_cat_names = {c["name"].strip().lower(): c["id"] for c in existing_cats}
+        mime = content_type
+        if not mime.startswith("image/"):
+            mime = "image/png" if filename.endswith(".png") else "image/webp" if filename.endswith(".webp") else "image/jpeg"
+        pages.append((mime, img_bytes))
 
-    gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyAEmzSOVVIQznxt5rRaAWMhPn6aPKT1p_o"
-    categories_result = []
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        logger.error("Menu scan: GEMINI_API_KEY is not set")
+        raise HTTPException(status_code=503, detail=MENU_SCAN_KEY_PROBLEM)
 
-    if gemini_key:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            
-            parts = []
-            for img in images[:5]:
-                file_bytes = await img.read()
-                mime = img.content_type or ""
-                if not mime.startswith("image/"):
-                    ext = (img.filename or "").lower().split(".")[-1]
-                    mime = "image/png" if ext == "png" else "image/webp" if ext == "webp" else "image/jpeg"
-                parts.append({
-                    "mime_type": mime,
-                    "data": file_bytes
-                })
-            
-            prompt = """
-            You are a menu document extraction system.
-            You are NOT allowed to create, infer, guess, complete, or hallucinate any menu item or price.
+    import google.generativeai as genai
+    genai.configure(api_key=gemini_key)
 
-            First, analyze the provided image. Determine if the image is a restaurant food menu or a page from a food menu.
-            If the image is a person, a random object, a receipt, a table, a wall, or any screenshot unrelated to a food menu, you MUST return:
-            {
-              "is_menu": false,
-              "error_message": "This image does not appear to contain a readable menu."
-            }
+    limiter = asyncio.Semaphore(MENU_SCAN_PAGES_AT_ONCE)
 
-            If it is a menu, extract the categories and items strictly grounded in the visible text.
-            For each item, you must find its name, price, and description (if present).
-            Every returned item must include:
-            1. "name": The exact or near-exact item name as printed.
-            2. "price": The exact numeric price in Rupees. If the price is unclear, missing, or represents multiple values (e.g. ₹120/₹200), return null.
-            3. "description": The description if printed directly below/beside the item. Do NOT invent a description. If not present, return null.
-            4. "sourceText": The exact line of text from the image where this item and price were detected.
-            5. "confidence": A float between 0.0 and 1.0 representing your confidence in this extraction.
-            6. "is_veg": A boolean indicating if the item is veg. Look for green dots, leaf icons, or explicit labels. If unclear, default to false.
+    async def read_page(mime: str, img_bytes: bytes) -> list:
+        async with limiter:
+            return await asyncio.to_thread(_read_menu_page_with_gemini, mime, img_bytes)
 
-            Only create a category if its heading actually appears as a section title in the image. If there are no section titles, group items under the category name "Uncategorized". Do NOT invent categories.
+    results = await asyncio.gather(*(read_page(mime, img_bytes) for mime, img_bytes in pages), return_exceptions=True)
 
-            Return STRICTLY a JSON object with this format (no markdown fences, no explanation):
-            {
-              "is_menu": true,
-              "categories": [
-                {
-                  "name": "Category Name",
-                  "items": [
-                    {
-                      "name": "Item Name",
-                      "price": 180.0,
-                      "description": "Short description if present",
-                      "sourceText": "Item Name ........ 180",
-                      "is_veg": true,
-                      "confidence": 0.98
-                    }
-                  ]
-                }
-              ]
-            }
-            """
-            # Use free Gemini Flash models in priority order
-            candidate_models = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
-            response = None
-            last_err = None
-            for m_name in candidate_models:
-                try:
-                    gen_model = genai.GenerativeModel(m_name, generation_config={"response_mime_type": "application/json"})
-                    response = gen_model.generate_content([prompt, *parts])
-                    if response and response.text:
-                        break
-                except Exception as ex:
-                    last_err = ex
-                    continue
-
-            if not response or not response.text:
-                raise HTTPException(status_code=400, detail=f"Failed to process menu images with Vision AI: {str(last_err or 'No response from AI model')}")
-
-            raw_text = response.text.strip()
-            first_brace = raw_text.find('{')
-            last_brace = raw_text.rfind('}')
-            if first_brace != -1 and last_brace != -1:
-                json_str = raw_text[first_brace:last_brace+1]
-            else:
-                json_str = raw_text
-            
-            try:
-                parsed = json.loads(json_str)
-            except Exception as pe:
-                logger.error("JSON decode error from AI: %s. Raw: %s", pe, raw_text[:500])
-                raise HTTPException(status_code=400, detail="Could not parse AI response. Please ensure menu photos are clear and well lit.")
-
-            if not parsed.get("is_menu", True):
-                raise HTTPException(status_code=400, detail=parsed.get("error_message") or "This image does not appear to contain a readable menu.")
-            
-            raw_categories = parsed.get("categories", [])
-            for cat in raw_categories:
-                cat_name = str(cat.get("name", "Uncategorized")).strip()
-                if not cat_name:
-                    cat_name = "Uncategorized"
-                
-                validated_items = []
-                for item in cat.get("items", []):
-                    name = str(item.get("name", "")).strip()
-                    price = item.get("price")
-                    source_text = str(item.get("sourceText", "")).strip()
-                    
-                    if not name:
-                        continue
-                    if not source_text:
-                        source_text = name
-                    
-                    if price is not None:
-                        try:
-                            price = float(price)
-                        except (ValueError, TypeError):
-                            price = None
-                    
-                    # Fuzzy grounding check
-                    name_words = [w.lower() for w in name.split() if len(w) > 2]
-                    grounded = True
-                    if name_words:
-                        source_lower = source_text.lower()
-                        if not any(word in source_lower for word in name_words):
-                            grounded = False
-                    
-                    if not grounded:
-                        source_text = name
-                        
-                    validated_items.append({
-                        "name": name,
-                        "price": price,
-                        "description": item.get("description") or None,
-                        "sourceText": source_text,
-                        "is_veg": bool(item.get("is_veg", False)),
-                        "confidence": float(item.get("confidence", 0.95))
-                    })
-                
-                if validated_items:
-                    categories_result.append({
-                        "name": cat_name,
-                        "items": validated_items
-                    })
-                    
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to process menu: {str(e)}")
-    else:
-        raise HTTPException(
-            status_code=400, 
-            detail="Gemini API Key is missing. Please configure GEMINI_API_KEY in your environment variables to enable AI Menu Import."
-        )
-
-    if not categories_result:
-        raise HTTPException(
-            status_code=400,
-            detail="No readable menu items or prices could be extracted from this image. Please check image quality and try again."
-        )
-
-    for cat in categories_result:
-        cat_name_lower = cat["name"].strip().lower()
-        if cat_name_lower in existing_cat_names:
-            cat["is_existing"] = True
-            cat["matched_id"] = existing_cat_names[cat_name_lower]
+    read_pages = []
+    failures = []
+    for page_number, result in enumerate(results, start=1):
+        if isinstance(result, BaseException):
+            if not isinstance(result, MenuScanError):
+                logger.error("Menu scan: page %s failed: %s", page_number, result)
+                result = MenuScanError(MENU_SCAN_UNREADABLE)
+            failures.append((page_number, result))
         else:
-            matched = False
-            for exist_name, exist_id in existing_cat_names.items():
-                if exist_name in cat_name_lower or cat_name_lower in exist_name:
-                    cat["is_existing"] = True
-                    cat["matched_id"] = exist_id
-                    matched = True
-                    break
-            if not matched:
-                cat["is_existing"] = False
-                cat["matched_id"] = None
+            read_pages.append(result)
+
+    if not read_pages:
+        raise HTTPException(status_code=failures[0][1].status_code, detail=failures[0][1].message)
+
+    categories_result = _merge_menu_pages(read_pages)
+
+    # Only an exact name counts as the same category, so "Veg Starters" is not filed under an existing "Veg"
+    existing_cats = await db.categories.find({"tenant_id": tid}).to_list(length=1000)
+    existing_cat_names = {c["name"].strip().lower(): c["id"] for c in existing_cats}
+    for cat in categories_result:
+        matched_id = existing_cat_names.get(cat["name"].strip().lower())
+        cat["is_existing"] = matched_id is not None
+        cat["matched_id"] = matched_id
 
     return {
         "success": True,
         "categories": categories_result,
         "total_categories": len(categories_result),
-        "total_items": sum(len(c.get("items", [])) for c in categories_result)
+        "total_items": sum(len(c.get("items", [])) for c in categories_result),
+        "failed_pages": [{"page": page_number, "reason": error.message} for page_number, error in failures],
     }
 
 
@@ -4074,7 +4117,7 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
         if not cat_id:
             existing = await db.categories.find_one({
                 "tenant_id": tid,
-                "name": {"$regex": f"^{cat_data.name.strip()}$", "$options": "i"}
+                "name": {"$regex": f"^{re.escape(cat_data.name.strip())}$", "$options": "i"}
             })
             if existing:
                 cat_id = existing["id"]
@@ -4102,11 +4145,7 @@ async def bulk_import_menu(payload: BulkImportIn, current_user: dict = Depends(g
                 # Update existing item in the DB
                 await db.menu_items.update_one(
                     {"id": it.existing_item_id, "tenant_id": tid},
-                    {"$set": {
-                        "price": float(it.price),
-                        "description": it.description or "",
-                        "is_veg": bool(it.is_veg)
-                    }}
+                    {"$set": {"price": float(it.price)}}
                 )
                 updated_items_count += 1
             else:

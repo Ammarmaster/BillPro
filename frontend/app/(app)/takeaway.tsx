@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/lib/api";
 import { menuItemImageSource } from "@/src/lib/foodImage";
+import { vegMarkColor } from "@/src/lib/vegDish";
 import { useTheme } from "@/src/context/ThemeContext";
 import { colors, spacing, radius } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
@@ -608,7 +609,7 @@ export default function TakeawayScreen() {
           <Image source={menuItemImageSource(item)} style={styles.itemThumbImg} contentFit="cover" />
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <View style={styles.redSquare} />
+              <View style={[styles.vegMark, { backgroundColor: vegMarkColor(item) }]} />
               <Text style={[styles.itemName, { color: theme.onSurface, flex: 1 }]} numberOfLines={2}>{item.name}</Text>
             </View>
             <Text style={[styles.itemMeta, { color: theme.onSurfaceSecondary }]}>₹{item.price} · GST 0%</Text>
@@ -1234,7 +1235,7 @@ const styles = StyleSheet.create({
   },
   itemLeftRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
   itemThumbImg: { width: 52, height: 52, borderRadius: radius.md },
-  redSquare: { width: 10, height: 10, borderRadius: 2, backgroundColor: "#EF4444" },
+  vegMark: { width: 10, height: 10, borderRadius: 2 },
   itemName: { color: "#0F172A", fontSize: 15, fontWeight: "700" },
   itemMeta: { color: "#64748B", fontSize: 13, marginTop: 2, fontWeight: "500" },
   

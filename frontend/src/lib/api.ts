@@ -517,6 +517,22 @@ export async function startSyncRunner() {
 
 const inFlightRequests: Record<string, Promise<any> | undefined> = {};
 
+// The website uploads phone photos at full size, which is slow and can pass the server's limit. Gemini reads up to about 3000px anyway.
+async function shrinkPhotoForUpload(photo: Blob): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(photo);
+    const scale = Math.min(1, 3000 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const smaller = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    return smaller && smaller.size < photo.size ? smaller : photo;
+  } catch {
+    return photo; // A format this browser cannot draw, such as HEIC, goes up unchanged
+  }
+}
+
 async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = false): Promise<any> {
   const isGet = !opts.method || opts.method.toUpperCase() === "GET";
   const ttl = getCacheTTL(path);
@@ -1742,7 +1758,7 @@ export const api = {
     for (let idx = 0; idx < images.length; idx++) {
       const uri = images[idx];
       const cleanUri = uri.split("?")[0];
-      const rawName = cleanUri.split("/").pop() || `menu_page_${idx}.jpg`;
+      const rawName = (!uri.startsWith("data:") && cleanUri.split("/").pop()) || `menu_page_${idx + 1}.jpg`;
       const match = /\.(\w+)$/.exec(rawName);
       const ext = match ? match[1].toLowerCase() : "jpg";
       const filename = rawName.includes(".") ? rawName : `${rawName}.${ext}`;
@@ -1752,7 +1768,7 @@ export const api = {
         try {
           const res = await fetch(uri);
           const blob = await res.blob();
-          formData.append("images", blob, filename);
+          formData.append("images", await shrinkPhotoForUpload(blob), filename);
         } catch {
           if (uri.startsWith("data:")) {
             try {
@@ -1783,15 +1799,18 @@ export const api = {
     }
     return req("/menu/ocr-process", { method: "POST", body: formData });
   },
-  bulkImportMenu: (categories: any[]) => {
+  // Caches clear after the save, so a screen refreshing during the save cannot keep the old menu
+  bulkImportMenu: async (categories: any[]) => {
+    const res = await req("/menu/bulk-import", { method: "POST", body: JSON.stringify({ categories }) });
     clearCachePrefix("/categories");
     clearCachePrefix("/menu-items");
-    return req("/menu/bulk-import", { method: "POST", body: JSON.stringify({ categories }) });
+    return res;
   },
-  rollbackBulkImport: (itemIds: string[], categoryIds: string[]) => {
+  rollbackBulkImport: async (itemIds: string[], categoryIds: string[]) => {
+    const res = await req("/menu/bulk-import/rollback", { method: "POST", body: JSON.stringify({ item_ids: itemIds, category_ids: categoryIds }) });
     clearCachePrefix("/categories");
     clearCachePrefix("/menu-items");
-    return req("/menu/bulk-import/rollback", { method: "POST", body: JSON.stringify({ item_ids: itemIds, category_ids: categoryIds }) });
+    return res;
   },
   
   // Cache utilities
