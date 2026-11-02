@@ -1403,7 +1403,12 @@ export function printViaIframe(html: string) {
     doc.open();
     doc.write(html);
     doc.close();
-    setTimeout(() => {
+    // Printing before images finish loading leaves them blank on the slip
+    const imagesReady = Promise.all(Array.from(doc.images).map(img => img.complete ? null : new Promise(resolve => {
+      img.addEventListener("load", resolve);
+      img.addEventListener("error", resolve);
+    })));
+    const startPrint = () => setTimeout(() => {
       try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
@@ -1422,7 +1427,21 @@ export function printViaIframe(html: string) {
       }
       setTimeout(() => iframe.remove(), 60000);
     }, 280);
+    Promise.race([imagesReady, new Promise(resolve => setTimeout(resolve, 5000))]).then(startPrint);
   }
+}
+
+// Built locally so the bill QR needs no network request and is ready as soon as the page is
+function upiQrSvg(text: string, sizePx: number): string {
+  const qr = QRCode.create(text, { errorCorrectionLevel: "M" });
+  const n = qr.modules.size;
+  let path = "";
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if (qr.modules.get(y, x)) path += `M${x + 2} ${y + 2}h1v1h-1z`;
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 4} ${n + 4}" shape-rendering="crispEdges" style="width: ${sizePx}px; height: ${sizePx}px; display: block; margin: 0 auto;"><path d="${path}" fill="#000"/></svg>`;
 }
 
 export function getRestaurantSnapshot(data?: any): any {
@@ -2575,7 +2594,7 @@ export function billHtml(bill: any): string {
       ${upiId ? `
         <div class="qr-block" style="text-align: center; margin: 12px auto; padding: 10px; background: #fafafa; border: 1px dashed #cbd5e1; border-radius: 8px; width: 220px;">
           <div style="font-size: 13px; font-weight: 800; color: #1e293b; margin-bottom: 4px;">${isPaid ? "UPI / Restaurant QR" : "Scan & Pay (UPI)"}</div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}" style="width: 180px; height: 180px; display: block; margin: 0 auto;" />
+          ${upiQrSvg(upiUrl, 180)}
           <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 6px;">${escapeHtml(upiId)}</div>
           ${!isPaid ? `<div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 2px;">Auto-fills ${formatCurrency(totalVal)}</div>` : ""}
         </div>
