@@ -14,6 +14,7 @@ import { api } from "@/src/lib/api";
 import { menuItemImageSource } from "@/src/lib/foodImage";
 import { vegMarkColor } from "@/src/lib/vegDish";
 import { useAuth } from "@/src/context/AuthContext";
+import { confirmDelete, showDeleteError } from "@/src/lib/confirmDelete";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { colors, spacing, radius } from "@/src/theme";
@@ -638,6 +639,25 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       }
     };
 
+    const deleteOrder = (order: any) => {
+      confirmDelete("Delete this order?", `${order.customer_name || "Guest"}'s order will be removed from Table ${selectedTableObj.label}.`, async () => {
+        try {
+          await api.removeOrders([order.id]);
+          setOrders(prev => prev.filter(o => o.id !== order.id));
+          setBills(prev => prev.filter((b: any) => b.order_id !== order.id || (b.order_ids || []).length > 1));
+          if (tableOrders.length <= 1) {
+            setSelectedTableObj(null);
+            setTable("");
+            setLines([]);
+            setViewMode("tables");
+          }
+          load();
+        } catch (e: any) {
+          showDeleteError(e.message || "Please check your internet and try again.");
+        }
+      });
+    };
+
     const completeAllTableOrders = async () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setOrders(prev => prev.map(o => tableOrders.some(to => to.id === o.id) ? { ...o, status: "paid" } : o));
@@ -760,6 +780,15 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
                       </View>
 
                       <View style={styles.cardActionsWrap}>
+                        <Pressable
+                          style={[styles.guestActionBtn, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}
+                          onPress={() => deleteOrder(order)}
+                          accessibilityLabel="Delete order"
+                          testID="table-delete-order"
+                        >
+                          <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                        </Pressable>
+
                         <Pressable
                           style={[styles.guestActionBtn, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}
                           onPress={() => {

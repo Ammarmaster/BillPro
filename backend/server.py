@@ -3212,6 +3212,85 @@ async def list_orders(status_filter: Optional[str] = None, user: dict = Depends(
     return orders
 
 
+class RemoveOrdersIn(BaseModel):
+    order_ids: List[str]
+
+
+# Paid money only leaves the sales totals by an owner or manager. Removed bills are kept in deleted_bills, not erased
+@api.post("/orders/remove")
+async def remove_orders(payload: RemoveOrdersIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
+    tid = await _ensure_tenant(user)
+    order_ids = list(dict.fromkeys(oid for oid in payload.order_ids if oid))
+    orders = await db.orders.find({"id": {"$in": order_ids}, "tenant_id": tid}, {"_id": 0}).to_list(100)
+    if not orders:
+        raise HTTPException(status_code=404, detail="Order not found")
+    found_ids = [o["id"] for o in orders]
+    bills = await db.bills.find({
+        "tenant_id": tid,
+        "$or": [{"order_id": {"$in": found_ids}}, {"order_ids": {"$in": found_ids}}]
+    }).to_list(100)
+
+    has_paid = any(o.get("status") in ["paid", "completed", "settled"] for o in orders) or any(b.get("status") in ["paid", "completed"] for b in bills)
+    if has_paid and user.get("role") not in ["owner", "manager"]:
+        raise HTTPException(status_code=403, detail="Only the owner or a manager can delete a paid order")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for bill in bills:
+        bill_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
+        kept_ids = [oid for oid in bill_oids if oid not in found_ids]
+        kept_orders = await db.orders.find({"id": {"$in": kept_ids}, "tenant_id": tid, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(100)
+        if not kept_orders:
+            await db.deleted_bills.insert_one({**bill, "deleted_at": now_iso, "deleted_by": user.get("id")})
+            await db.bills.delete_one({"id": bill["id"], "tenant_id": tid})
+            continue
+        # A bill shared with other orders stays, with only the removed order's dishes taken off
+        items = []
+        for o in kept_orders:
+            for item in o.get("items", []):
+                items.append({**item, "customer_name": o.get("customer_name") or "Guest"})
+        gst_enabled = bool(bill.get("gst_enabled"))
+        calc = calculate_bill(
+            items=items,
+            discount=float(bill.get("discount") or 0.0),
+            tax_percent=float(bill.get("tax_percent") or 0.0),
+            gst_enabled=gst_enabled
+        )
+        await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": {
+            "order_id": kept_orders[0]["id"],
+            "order_ids": [o["id"] for o in kept_orders],
+            "items": items,
+            "subtotal": calc["subtotal"],
+            "tax": calc["tax"],
+            "cgst": calc["cgst"],
+            "sgst": calc["sgst"],
+            "discount": calc["discount"],
+            "total": calc["total"],
+        }})
+
+    await db.orders.update_many(
+        {"id": {"$in": found_ids}, "tenant_id": tid},
+        {"$set": {"status": "cancelled", "deleted_at": now_iso, "deleted_by": user.get("id")}}
+    )
+
+    for tbl_num in {o.get("table_number") for o in orders if o.get("table_number")}:
+        tbl_patterns = get_table_match_patterns(tbl_num)
+        remaining = await db.orders.count_documents({
+            "tenant_id": tid,
+            "table_number": {"$in": tbl_patterns},
+            "status": {"$nin": ["paid", "completed", "cancelled"]}
+        })
+        if remaining == 0:
+            await db.tables.update_many(
+                {"tenant_id": tid, "label": {"$in": tbl_patterns}, "status": "occupied"},
+                {"$set": {"status": "available"}}
+            )
+
+    dashboard_summary_cache.pop(tid, None)
+    # No "event" here: other open screens treat this as a plain change and reload their lists
+    await notify_tenant(tid, "payment", "Order Deleted", f"{len(found_ids)} order(s) deleted", {"deleted_order_ids": found_ids})
+    return {"ok": True, "removed": found_ids}
+
+
 @api.patch("/orders/{oid}/status")
 async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Depends(get_current_user)):
     valid = {"placed", "in_kitchen", "ready", "served", "cancelled"}

@@ -1444,6 +1444,17 @@ export const api = {
       return handleLocalMarkPaid();
     }
   },
+  removeOrders: async (orderIds: string[]) => {
+    const ids = orderIds.map((id: string) => tempIdMap[id] || id);
+    if (ids.some((id: string) => String(id).startsWith("temp-"))) {
+      throw new Error("This order is still saving. Please wait a moment and try again.");
+    }
+    const res = await req("/orders/remove", { method: "POST", body: JSON.stringify({ order_ids: ids }) });
+    clearCachePrefix("/orders");
+    clearCachePrefix("/bills");
+    clearCachePrefix("/dashboard/summary");
+    return res;
+  },
   settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number, discount?: number) => {
     const handleLocalSettle = async () => {
       const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));

@@ -6,6 +6,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
+import { confirmDelete, showDeleteError } from "@/src/lib/confirmDelete";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -221,6 +222,20 @@ export default function TakeawayScreen() {
         billId: item.type === "bill" ? item.id : undefined,
         orderId: item.order_id || item.id,
         backTo: "/(app)/takeaway"
+      }
+    });
+  };
+
+  const handleDeleteUnpaid = (item: any) => {
+    const orderIds: string[] = item.raw?.order_ids?.length ? item.raw.order_ids : [item.order_id];
+    confirmDelete("Delete this order?", `${item.bill_number} (₹${item.total}) will be removed.`, async () => {
+      try {
+        await api.removeOrders(orderIds);
+        setOrders(prev => prev.filter((o: any) => !orderIds.includes(o.id)));
+        setBills(prev => prev.filter((b: any) => b.id !== item.id && !orderIds.includes(b.order_id)));
+        load();
+      } catch (e: any) {
+        showDeleteError(e.message || "Please check your internet and try again.");
       }
     });
   };
@@ -488,6 +503,16 @@ export default function TakeawayScreen() {
                 </View>
 
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Pressable
+                    style={[styles.printIconBtn, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                    onPress={() => handleDeleteUnpaid(item)}
+                    hitSlop={8}
+                    accessibilityLabel="Delete order"
+                    testID="takeaway-delete-order"
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  </Pressable>
+
                   <Pressable
                     style={[styles.printIconBtn, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
                     onPress={() => handlePrintKOT(item)}

@@ -12,6 +12,8 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import * as Haptics from "expo-haptics";
+import { useAuth } from "@/src/context/AuthContext";
+import { confirmDelete, showDeleteError } from "@/src/lib/confirmDelete";
 import { isTodayBusinessDay, formatDateTime } from "@/src/lib/dateUtils";
 
 export default function BillsHistory() {
@@ -21,6 +23,7 @@ export default function BillsHistory() {
   const { theme, isDark } = useTheme();
   const { isDesktop } = useResponsive();
   const { subscribe } = useNotifications();
+  const { user } = useAuth();
 
   const [activeFilter, setActiveFilter] = useState<"today" | "all">(() => params.filter === "today" ? "today" : "all");
   const [bills, setBills] = useState<any[]>(() => api.getCachedBills() || []);
@@ -89,6 +92,27 @@ export default function BillsHistory() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const formatTimestamp = (ts: string) => formatDateTime(ts);
+
+  const canDeleteBills = user?.role === "owner" || user?.role === "manager";
+  const selBillOrderIds: string[] = selBill?.order_ids?.length ? selBill.order_ids : (selBill?.order_id ? [selBill.order_id] : []);
+
+  const handleDeleteBill = () => {
+    const bill = selBill;
+    const orderIds = selBillOrderIds;
+    const paidOnline = ["upi", "online", "razorpay"].includes(String(bill.payment_method || "").toLowerCase());
+    const refundNote = paidOnline ? " This does not send any money back to the customer." : "";
+    confirmDelete("Delete this bill?", `Bill #${bill.bill_number || ""} (₹${bill.total ?? 0}) will be removed from your sales.${refundNote}`, async () => {
+      try {
+        await api.removeOrders(orderIds);
+        setSelBill(null);
+        setBills(prev => prev.filter(b => b.id !== bill.id));
+        setOrders(prev => prev.filter(o => !orderIds.includes(o.id)));
+        load();
+      } catch (e: any) {
+        showDeleteError(e.message || "Please check your internet and try again.");
+      }
+    });
+  };
 
   const isPaidStatus = (status?: string) => {
     const s = String(status || "").toLowerCase().trim();
@@ -371,6 +395,17 @@ export default function BillsHistory() {
               </View>
 
               <View style={styles.modalActions}>
+                {canDeleteBills && selBillOrderIds.length > 0 && (
+                  <Pressable
+                    style={[styles.actionBtn, { backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2" }]}
+                    onPress={handleDeleteBill}
+                    testID="bill-delete"
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    <Text style={[styles.actionBtnText, { color: "#EF4444" }]}>Delete</Text>
+                  </Pressable>
+                )}
+
                 <Pressable
                   style={[styles.actionBtn, { backgroundColor: theme.surfaceTertiary }]}
                   onPress={() => selBill && sharePdf(selBill)}
