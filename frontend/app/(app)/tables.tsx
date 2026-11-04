@@ -217,7 +217,7 @@ export default function TablesScreen() {
                   borderRadius: isDesktop ? 20 : radius.lg,
                 }
               ]} 
-              onPress={() => Keyboard.dismiss()}
+              onPress={() => {}}
             >
               <View style={styles.modalHead}>
                 <Text style={styles.modalTitle}>New Table</Text>
