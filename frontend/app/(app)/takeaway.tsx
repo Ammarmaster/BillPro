@@ -45,6 +45,8 @@ export default function TakeawayScreen() {
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [menuLayout, setMenuLayout] = useState<"list" | "grid">("list");
+  // While editing a placed order, the cart holds its items and draftCart keeps any new order in progress
+  const [editing, setEditing] = useState<{ orderId: string; label: string; draftCart: Line[] } | null>(null);
 
   const loadLayoutPreference = useCallback(async () => {
     try {
@@ -238,6 +240,48 @@ export default function TakeawayScreen() {
         showDeleteError(e.message || "Please check your internet and try again.");
       }
     });
+  };
+
+  const handleEditOrder = (item: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const lines: Line[] = [];
+    for (const it of item.items || []) {
+      const lineId = String(it.menu_item_id || it.id || it.name);
+      const quantity = Number(it.quantity || 1);
+      const existing = lines.find(l => l.menu_item_id === lineId);
+      if (existing) {
+        existing.quantity += quantity;
+      } else {
+        lines.push({ menu_item_id: lineId, name: it.name, price: Number(it.price || 0), quantity, notes: it.notes || "" });
+      }
+    }
+    setEditing(prev => ({ orderId: item.order_id, label: item.bill_number, draftCart: prev ? prev.draftCart : cart }));
+    setCart(lines);
+    setErr(null);
+    setActiveTab("menu");
+  };
+
+  const closeEdit = () => {
+    setCart(editing?.draftCart || []);
+    setEditing(null);
+    setErr(null);
+    setActiveTab("unpaid");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing || cart.length === 0) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.editOrderItems(editing.orderId, cart);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      await load();
+      closeEdit();
+    } catch (e: any) {
+      setErr(e.message || "Could not save changes. Please check your internet and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handlePrintBill = async (item: any) => {
@@ -461,6 +505,7 @@ export default function TakeawayScreen() {
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => {
           const isPrintingThis = printingId === item.id || printingId === `kot_${item.id}`;
+          const canEdit = new Set(item.raw?.order_ids || []).size <= 1;
           return (
             <View style={[styles.unpaidCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }, cols > 1 && { flex: 1 }]}>
               <View style={styles.unpaidCardHeader}>
@@ -473,8 +518,22 @@ export default function TakeawayScreen() {
                     {formatDateTime(item.created_at)} · {item.customer_name}
                   </Text>
                 </View>
-                <View style={styles.unpaidBadge}>
-                  <Text style={styles.unpaidBadgeText}>UNPAID</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  {canEdit && (
+                    <Pressable
+                      style={[styles.editOrderBtn, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}
+                      onPress={() => handleEditOrder(item)}
+                      hitSlop={8}
+                      accessibilityLabel="Edit order"
+                      testID="takeaway-edit-order"
+                    >
+                      <Ionicons name="create-outline" size={14} color="#635BFF" />
+                      <Text style={styles.editOrderBtnText}>Edit</Text>
+                    </Pressable>
+                  )}
+                  <View style={styles.unpaidBadge}>
+                    <Text style={styles.unpaidBadgeText}>UNPAID</Text>
+                  </View>
                 </View>
               </View>
 
@@ -546,6 +605,49 @@ export default function TakeawayScreen() {
       />
     );
   };
+
+  const renderEditBanner = () => editing && (
+    <View style={[styles.editBanner, { backgroundColor: isDark ? "#26294D" : "#EEF2FF", borderColor: isDark ? "#635BFF" : "#C7D2FE" }]}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 14 }} numberOfLines={1}>Editing {editing.label}</Text>
+        <Text style={{ color: err ? "#EF4444" : theme.onSurfaceSecondary, fontSize: 12, marginTop: 2, fontWeight: err ? "700" : "400" }}>
+          {err || (cart.length > 0
+            ? "Add or remove items, then tap Save Changes."
+            : "Keep at least 1 item. To remove the whole order, delete it from Unpaid.")}
+        </Text>
+      </View>
+      <Pressable onPress={closeEdit} disabled={busy} hitSlop={8} testID="takeaway-edit-cancel">
+        <Text style={{ color: "#635BFF", fontWeight: "800", fontSize: 13 }}>Cancel</Text>
+      </Pressable>
+    </View>
+  );
+
+  // Phones have no cart panel, so this lists the order's items, including any no longer on the menu
+  const renderEditItems = () => editing && cart.length > 0 && (
+    <ScrollView
+      style={[styles.editItemsBox, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+      contentContainerStyle={{ padding: spacing.sm, gap: spacing.sm }}
+      nestedScrollEnabled
+    >
+      {cart.map(line => (
+        <View key={line.menu_item_id} style={styles.editItemRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: theme.onSurface, fontWeight: "700", fontSize: 13 }} numberOfLines={1}>{line.name}</Text>
+            <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12 }}>₹{line.price * line.quantity}</Text>
+          </View>
+          <View style={styles.counterPill}>
+            <Pressable onPress={() => dec(line.menu_item_id)} style={styles.counterBtn} hitSlop={8} accessibilityLabel={`Remove one ${line.name}`}>
+              <Ionicons name="remove" size={14} color="#635BFF" />
+            </Pressable>
+            <Text style={[styles.counterText, { fontSize: 13 }]}>{line.quantity}</Text>
+            <Pressable onPress={() => inc(line.menu_item_id)} style={styles.counterBtn} hitSlop={8} accessibilityLabel={`Add one ${line.name}`}>
+              <Ionicons name="add" size={14} color="#635BFF" />
+            </Pressable>
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
 
   const isGrid = menuLayout === "grid";
 
@@ -841,9 +943,10 @@ export default function TakeawayScreen() {
             <View style={{ flex: 1, flexDirection: "row" }}>
               {/* Left Column: Menu Items */}
               <View style={{ flex: 1, borderRightWidth: 1, borderRightColor: theme.border }}>
-                
+                {renderEditBanner()}
+
                 {/* Quick Unpaid Alert Banner if any pending today */}
-                {todaysUnpaidTakeaways.length > 0 && (
+                {!editing && todaysUnpaidTakeaways.length > 0 && (
                   <Pressable
                     style={[
                       styles.unpaidBanner,
@@ -921,8 +1024,8 @@ export default function TakeawayScreen() {
               {/* Right Column: Takeaway Cart Ticket */}
               <View style={{ width: 380, backgroundColor: theme.surfaceSecondary, display: "flex", flexDirection: "column" }}>
                 <View style={{ padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-                  <Text style={{ fontSize: 18, fontWeight: "900", color: theme.onSurface }}>Takeaway Order</Text>
-                  <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2 }}>Current items in cart</Text>
+                  <Text style={{ fontSize: 18, fontWeight: "900", color: theme.onSurface }}>{editing ? "Edit Order" : "Takeaway Order"}</Text>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2 }}>{editing ? editing.label : "Current items in cart"}</Text>
                 </View>
 
                 <View style={{ flex: 1 }}>
@@ -966,7 +1069,7 @@ export default function TakeawayScreen() {
                     <Text style={{ fontSize: 22, fontWeight: "900", color: "#635BFF" }}>₹{subtotal}</Text>
                   </View>
 
-                  {err && <Text style={{ color: colors.onError, backgroundColor: colors.error, padding: 8, borderRadius: 8, marginBottom: 8, fontSize: 12, textAlign: "center" }}>{err}</Text>}
+                  {err && !editing && <Text style={{ color: colors.onError, backgroundColor: colors.error, padding: 8, borderRadius: 8, marginBottom: 8, fontSize: 12, textAlign: "center" }}>{err}</Text>}
 
                   <Pressable
                     style={[
@@ -981,14 +1084,16 @@ export default function TakeawayScreen() {
                       }
                     ]}
                     disabled={cart.length === 0 || busy}
-                    onPress={handleGenerateBill}
+                    onPress={editing ? handleSaveEdit : handleGenerateBill}
                   >
                     {busy ? (
                       <ActivityIndicator color="#FFFFFF" />
                     ) : (
                       <>
                         <Text style={{ color: cart.length > 0 ? "#FFFFFF" : theme.onSurfaceTertiary, fontWeight: "800", fontSize: 15 }}>
-                          {cart.length > 0 ? "Generate Bill & Settle" : "Add items to generate bill"}
+                          {editing
+                            ? (cart.length > 0 ? "Save Changes" : "Add at least 1 item")
+                            : (cart.length > 0 ? "Generate Bill & Settle" : "Add items to generate bill")}
                         </Text>
                         <Ionicons name="arrow-forward" size={18} color={cart.length > 0 ? "#FFFFFF" : theme.onSurfaceTertiary} />
                       </>
@@ -1055,8 +1160,11 @@ export default function TakeawayScreen() {
           </View>
         ) : (
           <>
+            {renderEditBanner()}
+            {renderEditItems()}
+
             {/* Quick Unpaid Alert Banner if any pending today */}
-            {todaysUnpaidTakeaways.length > 0 && (
+            {!editing && todaysUnpaidTakeaways.length > 0 && (
               <Pressable
                 style={[
                   styles.unpaidBanner,
@@ -1137,7 +1245,7 @@ export default function TakeawayScreen() {
               />
             )}
 
-            {err && <Text style={styles.err}>{err}</Text>}
+            {err && !editing && <Text style={styles.err}>{err}</Text>}
 
             {/* Bottom Cart Pill */}
             {cart.length > 0 && (
@@ -1148,12 +1256,12 @@ export default function TakeawayScreen() {
                     <Text style={styles.pillPrice}>₹{subtotal}</Text>
                   </View>
 
-                  <Pressable style={styles.genBillPillBtn} onPress={handleGenerateBill} disabled={busy}>
+                  <Pressable style={styles.genBillPillBtn} onPress={editing ? handleSaveEdit : handleGenerateBill} disabled={busy}>
                     {busy ? (
                       <ActivityIndicator color="#635BFF" />
                     ) : (
                       <>
-                        <Text style={styles.genBillPillText}>Generate Bill</Text>
+                        <Text style={styles.genBillPillText}>{editing ? "Save Changes" : "Generate Bill"}</Text>
                         <Ionicons name="arrow-forward" size={18} color="#635BFF" />
                       </>
                     )}
@@ -1298,6 +1406,44 @@ const styles = StyleSheet.create({
     color: "#64748B",
     marginTop: 2,
     fontWeight: "500",
+  },
+  editOrderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  editOrderBtnText: {
+    color: "#635BFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  editBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+  },
+  editItemsBox: {
+    flexGrow: 0,
+    maxHeight: 170,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+  },
+  editItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
   },
   unpaidBadge: {
     backgroundColor: "#FEF3C7",

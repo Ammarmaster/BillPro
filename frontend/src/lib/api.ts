@@ -1109,6 +1109,42 @@ export const api = {
       return updated.find((o: any) => o.id === resolvedId || o.id === id) || { id: resolvedId, ...payload };
     }
   },
+  // Online only, with no offline fallback, so an order and its unpaid bill can't end up with different totals.
+  editOrderItems: async (id: string, items: any[]) => {
+    const orderId = tempIdMap[id] || id;
+    if (String(orderId).startsWith("temp-")) {
+      throw new Error("This order is still saving. Please wait a moment and try again.");
+    }
+    const fetchFresh = (path: string) => {
+      cacheTimestamps[path] = 0;
+      delete inFlightRequests[path];
+      return req(path);
+    };
+    const isClosed = (status: any) => ["paid", "completed", "cancelled"].includes(String(status).toLowerCase());
+    const [orders, bills] = await Promise.all([fetchFresh("/orders"), fetchFresh("/bills")]);
+    const order = (orders || []).find((o: any) => o && o.id === orderId);
+    if (!order) throw new Error("This order could not be found. Please refresh and try again.");
+    const hasClosedBill = (bills || []).some((b: any) =>
+      b && isClosed(b.status) && (b.order_id === orderId || (b.order_ids || []).includes(orderId))
+    );
+    if (isClosed(order.status) || hasClosedBill) {
+      throw new Error("This order is already paid or closed, so it can't be edited.");
+    }
+
+    // The server clears notes when they are left out, so the existing notes are sent back.
+    const res = await req(`/orders/${orderId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ items, notes: order.notes ?? "" }),
+    });
+    const updated = (memoryCache["/orders"] || []).map((o: any) => (o && o.id === orderId ? { ...o, ...res } : o));
+    memoryCache["/orders"] = updated;
+    setDiskCache("disk_cache_/orders", JSON.stringify(updated)).catch(() => {});
+    notifyCacheUpdate("/orders", updated);
+    clearCachePrefix("/tables");
+    clearCachePrefix("/dashboard/summary");
+    await fetchFresh("/bills").catch(() => {});
+    return res;
+  },
   listOrders: async (status?: string) => {
     try {
       const res = await req(`/orders${status ? `?status_filter=${status}` : ""}`);
