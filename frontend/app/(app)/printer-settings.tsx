@@ -472,7 +472,6 @@ export default function PrinterSettingsScreen() {
         address: "Halyal road Beside HP Petrol pump Athani -591304",
         phone: "8152075375",
         phone2: "9164360375",
-        upi_id: "8152075375-2@ybl",
         merchant_name: "Master Chef"
       }
     };

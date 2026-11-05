@@ -1822,28 +1822,31 @@ export async function formatReceipt(data: any, width: number = 58, isKitchen: bo
     lines.push(`[L]<b><font size='tall'>TOTAL</font></b>[R]<b><font size='tall'>Rs.${formatThermalMoney(totalVal)}</font></b>\n`);
     lines.push(`[C]${divider}\n`);
 
+    const upiId = r.upi_id || r.upi || api.getCachedRestaurant()?.upi_id || "";
+    const merchant = r.merchant_name || r.name || "Restaurant";
+    const totalAmount = Number(totalVal).toFixed(2);
+    const savedUpiUrl = data.upi_url && !/pa=(&|$)/.test(data.upi_url) ? data.upi_url : "";
+    const upiUrl = savedUpiUrl || (upiId ? `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR` : "");
+    const qrSize = width === 58 ? 35 : 44;
+
     const isPaid = data.status === "paid";
     if (isPaid) {
       const payMethod = (data.payment_method || "CASH").toUpperCase();
       lines.push(`[C]<b>*** PAID (${payMethod}) ***</b>\n`);
       lines.push(`[C]${divider}\n`);
     } else {
-      lines.push(`[C]<b>Scan & Pay with UPI</b>\n`);
+      if (upiUrl) lines.push(`[C]<b>Scan & Pay with UPI</b>\n`);
       lines.push(`[C]<b>Amount: Rs.${formatThermalMoney(totalVal)}</b>\n`);
     }
 
-    const upiId = r.upi_id || r.upi || "8152075375-2@ybl";
-    const merchant = r.merchant_name || r.name || "Restaurant";
-    const totalAmount = Number(totalVal).toFixed(2);
-    const upiUrl = data.upi_url || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalAmount}&cu=INR`;
-    const qrSize = width === 58 ? 35 : 44;
-
-    // Always output the QR code on the bill!
-    lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
-    if (!isPaid) {
-      lines.push(`[C]GPay / PhonePe / Paytm / UPI\n`);
-    } else {
-      lines.push(`[C]UPI: ${upiId}\n`);
+    // Print the QR only when it pays this restaurant
+    if (upiUrl) {
+      lines.push(`[C]<qrcode size='${qrSize}'>${upiUrl}</qrcode>\n`);
+      if (!isPaid) {
+        lines.push(`[C]GPay / PhonePe / Paytm / UPI\n`);
+      } else if (upiId) {
+        lines.push(`[C]UPI: ${upiId}\n`);
+      }
     }
     lines.push(`[C]${divider}\n`);
 
@@ -2647,7 +2650,7 @@ export function billHtml(bill: any): string {
   const tableText = isTakeaway ? "Takeaway" : (rawTable ? (rawTable.toUpperCase().startsWith("TABLE") ? rawTable : `Table ${rawTable}`) : "Dine-In");
 
   const totalVal = Number(bill.total || bill.subtotal || 0);
-  const upiId = r.upi_id || r.upi || "8152075375-2@ybl";
+  const upiId = r.upi_id || r.upi || api.getCachedRestaurant()?.upi_id || "";
   const merchant = r.merchant_name || r.name || "Master Chef";
   const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchant)}&am=${totalVal.toFixed(2)}&cu=INR`;
 
