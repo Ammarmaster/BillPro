@@ -1525,6 +1525,9 @@ export default function Index() {
               <TouchableOpacity onPress={() => router.push("/register")}>
                 <Text style={styles.footerLink}>Create Free Account</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => Linking.openURL("https://ezbill.jobsio.in/privacy-policy.html")}>
+                <Text style={styles.footerLink}>Privacy Policy</Text>
+              </TouchableOpacity>
               <Text style={styles.footerMutedText}>All-India Support (Mon - Sun)</Text>
             </View>
           </View>
