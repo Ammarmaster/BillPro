@@ -10,7 +10,7 @@ frontend/.metro-cache/
 frontend/dist/
 frontend/web-build/
 node_modules/
-.git/
+.git
 Flutterapp/
 backend/
 .emergent/
