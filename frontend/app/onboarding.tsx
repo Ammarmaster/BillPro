@@ -146,7 +146,7 @@ export default function Onboarding() {
                 <Text style={[styles.label, { color: theme.onSurfaceSecondary }]}>UPI ID (for payments) *</Text>
                 <TextInput
                   value={form.upi_id} onChangeText={t => setForm({ ...form, upi_id: t })}
-                  placeholder="e.g. 8152075375-2@ybl" placeholderTextColor={theme.onSurfaceTertiary}
+                  placeholder="e.g. yourname@okaxis" placeholderTextColor={theme.onSurfaceTertiary}
                   style={[styles.input, { backgroundColor: theme.surfaceTertiary, color: theme.onSurface, borderColor: theme.border }]}
                 />
               </View>

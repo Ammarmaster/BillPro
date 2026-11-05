@@ -312,7 +312,7 @@ export default function SettingsDetails() {
                 {field("phone", "Phone Number 1", "+91 XXXXX XXXXX", { keyboardType: "phone-pad" })}
                 {field("phone2", "Phone Number 2 (Optional)", "+91 XXXXX XXXXX", { keyboardType: "phone-pad" })}
                 {field("address", "Address", "Full address", { multiline: true })}
-                {field("upi_id", "UPI ID (for payments) *", "8152075375-2@ybl")}
+                {field("upi_id", "UPI ID (for payments) *", "yourname@okaxis")}
                 {field("gst", "GSTIN", "22AAAAA0000A1Z5")}
                 {field("fssai", "FSSAI License", "License #")}
                 {field("google_maps_link", "Google Maps Location Link", "https://maps.google.com/?cid=123")}

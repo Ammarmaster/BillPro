@@ -677,13 +677,18 @@ export default function Billing() {
   const restaurantPhone = (bill?.restaurant_snapshot?.phone) || restaurant?.phone || "";
   const restaurantPhone2 = (bill?.restaurant_snapshot?.phone2) || restaurant?.phone2 || "";
   const logoBase64 = getBillLogo(bill?.restaurant_snapshot || restaurant);
-  const upiId = restaurant?.upi_id || "8152075375-2@ybl";
+  const upiId = restaurant?.upi_id || bill?.restaurant_snapshot?.upi_id || "";
   const totalAmt = adjustedTotal ?? (bill?.total || order?.subtotal || 760);
   const shownDiscount = adjustedFields?.discount ?? (bill?.discount || order?.discount);
   const itemsList = bill?.items || order?.items || [];
 
   // Local QR Code Generator (runs instantly in < 1ms offline without canvas dependencies)
   useEffect(() => {
+    // Never show a QR without this restaurant's own UPI ID
+    if (!upiId) {
+      setQrUri(null);
+      return;
+    }
     const upi = (adjustedTotal === null && bill?.upi_url) || `upi://pay?pa=${upiId}&pn=${encodeURIComponent(restaurantName)}&am=${totalAmt}&cu=INR`;
     if (upi) {
       QRCode.toString(upi, { type: 'svg', margin: 1, width: 220 })
@@ -895,13 +900,17 @@ export default function Billing() {
                 <Text style={styles.upiTitle}>Scan & Pay (UPI)</Text>
                 {qrUri ? (
                   <Image source={{ uri: qrUri }} style={styles.qrCodeImg} contentFit="contain" testID="bill-qr-image" />
+                ) : restaurant && !upiId ? (
+                  <Text style={[styles.upiSubText, { color: "#EF4444", textAlign: "center", marginVertical: 12 }]} testID="bill-no-upi">
+                    Add your UPI ID in More, then Settings, to show the payment QR.
+                  </Text>
                 ) : (
                   <View style={[styles.qrCodeImg, { justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" }]}>
                     <ActivityIndicator color="#635BFF" />
                   </View>
                 )}
                 <Text style={[styles.upiIdText, { color: theme.onSurface }]}>{upiId}</Text>
-                <Text style={[styles.upiSubText, { color: theme.onSurfaceSecondary }]}>Auto-fills {formatCurrency(totalAmt)}</Text>
+                {!!upiId && <Text style={[styles.upiSubText, { color: theme.onSurfaceSecondary }]}>Auto-fills {formatCurrency(totalAmt)}</Text>}
               </View>
             )}
           </View>

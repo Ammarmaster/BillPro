@@ -14,6 +14,7 @@ import { spacing } from "@/src/theme";
 export default function Register() {
   const { isDesktop } = useResponsive();
   const [restaurantName, setRestaurantName] = useState("");
+  const [upiId, setUpiId] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -37,8 +38,12 @@ export default function Register() {
 
   const submit = async () => {
     setErr(null);
-    if (!restaurantName.trim() || !ownerName.trim() || !phone.trim() || !email.trim() || !password || !confirmPassword) {
+    if (!restaurantName.trim() || !upiId.trim() || !ownerName.trim() || !phone.trim() || !email.trim() || !password || !confirmPassword) {
       setErr("Please fill all fields.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/.test(upiId.trim())) {
+      setErr("Please enter a valid UPI ID, like yourname@okaxis.");
       return;
     }
     if (!termsAccepted || !privacyConsent) {
@@ -69,7 +74,7 @@ export default function Register() {
         owner_name: ownerName.trim(),
         phone: phone.trim(),
         address: "",
-        upi_id: "8152075375-2@ybl",
+        upi_id: upiId.trim(),
         merchant_name: restaurantName.trim(),
         gst_enabled: false,
       });
@@ -130,6 +135,23 @@ export default function Register() {
                   placeholder="Spice Garden"
                   placeholderTextColor="#475569"
                   autoCapitalize="words"
+                />
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Your UPI ID (customer payments come here)</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="qr-code-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  value={upiId}
+                  onChangeText={setUpiId}
+                  style={styles.input}
+                  placeholder="yourname@okaxis"
+                  placeholderTextColor="#475569"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  testID="register-upi-input"
                 />
               </View>
             </View>

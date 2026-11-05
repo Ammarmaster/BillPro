@@ -1631,6 +1631,23 @@ async def refresh(authorization: Optional[str] = Header(default=None)):
 
 
 # ---------- restaurant / tenant ----------
+async def _sync_pending_bills_upi(tenant_id: str, upi_id: str, merchant: str):
+    """Unpaid bills must pay the restaurant's current UPI ID, not the one saved when the bill was made."""
+    pending = db.bills.find(
+        {"tenant_id": tenant_id, "status": "pending"},
+        {"_id": 0, "id": 1, "upi_url": 1, "restaurant_snapshot": 1},
+    )
+    async for bill in pending:
+        changes = {}
+        if bill.get("upi_url"):
+            changes["upi_url"] = re.sub(r"pa=[^&]*", lambda _: f"pa={upi_id}", bill["upi_url"], count=1)
+        if bill.get("restaurant_snapshot"):
+            changes["restaurant_snapshot.upi_id"] = upi_id
+            changes["restaurant_snapshot.merchant_name"] = merchant
+        if changes:
+            await db.bills.update_one({"id": bill["id"], "tenant_id": tenant_id}, {"$set": changes})
+
+
 @api.post("/restaurant")
 async def create_or_update_restaurant(payload: RestaurantIn, user: dict = Depends(require_roles("owner", "super_admin"))):
     tenant_id = user.get("tenant_id")
@@ -1651,6 +1668,7 @@ async def create_or_update_restaurant(payload: RestaurantIn, user: dict = Depend
         
     if tenant_id:
         await db.restaurants.update_one({"id": tenant_id}, {"$set": {**doc_data, "updated_at": now}})
+        await _sync_pending_bills_upi(tenant_id, payload.upi_id, payload.merchant_name)
         rest = await db.restaurants.find_one({"id": tenant_id}, {"_id": 0})
         return rest
     tenant_id = str(uuid.uuid4())
@@ -4419,6 +4437,8 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
             "phone": restaurant.get("phone", ""),
             "gst": restaurant.get("gst", ""),
             "fssai": restaurant.get("fssai", ""),
+            "upi_id": upi_id,
+            "merchant_name": merchant,
             "logo_base64": "",
         },
         "created_at": datetime.now(timezone.utc).isoformat(),
