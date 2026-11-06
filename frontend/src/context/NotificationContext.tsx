@@ -3,7 +3,7 @@ import { Platform, Vibration, Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/context/AuthContext";
-import { api, clearCachePrefix, getBackendUrl } from "@/src/lib/api";
+import { api, clearCachePrefix, getLiveBackendUrl, subscribeToCache } from "@/src/lib/api";
 
 let Notifications: any = null;
 if (Platform.OS !== "web") {
@@ -70,9 +70,9 @@ interface NotificationContextProps {
 const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
 
 const PREFS_KEY = "lumina_notification_preferences";
-const getKitchenAlertSoundUrl = () => `${getBackendUrl()}/static/sounds/kitchen-alert.wav`;
-const getPaymentMoneySoundUrl = () => `${getBackendUrl()}/static/sounds/payment-money.wav`;
-const getGeneralNotificationSoundUrl = () => `${getBackendUrl()}/static/sounds/notification.wav`;
+const getKitchenAlertSoundUrl = () => `${getLiveBackendUrl()}/static/sounds/kitchen-alert.wav`;
+const getPaymentMoneySoundUrl = () => `${getLiveBackendUrl()}/static/sounds/payment-money.wav`;
+const getGeneralNotificationSoundUrl = () => `${getLiveBackendUrl()}/static/sounds/notification.wav`;
 
 
 const defaultPrefs: NotificationPreferences = {
@@ -215,6 +215,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, [user]);
 
+  // When the app moves to another server, close live updates so they reconnect there
+  useEffect(() => subscribeToCache((path) => {
+    if (path === "/system/backend-url" && ws.current) {
+      try { ws.current.close(); } catch {}
+    }
+  }), []);
+
   const loadPreferences = async () => {
     const key = user ? `${PREFS_KEY}_${user.id}` : PREFS_KEY;
     const data = await storage.getItem<string>(key, "");
@@ -266,7 +273,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (ws.current || isConnectingRef.current) return;
     isConnectingRef.current = true;
 
-    const base = getBackendUrl()
+    const base = getLiveBackendUrl()
       .replace(/\/$/, "")
       .replace(/^http/, "ws");
     

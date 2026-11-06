@@ -49,6 +49,7 @@ export async function setCustomBackendUrl(url: string): Promise<string> {
     cleaned = `https://${cleaned}`;
   }
   cleaned = cleaned.replace(/\/$/, "");
+  clearFailover(); // a server picked by hand is used straight away, even while on a backup
   activeBackendUrl = cleaned;
   await setDiskCache("custom_backend_url", cleaned);
   notifyCacheUpdate("/system/backend-url", { url: cleaned });
@@ -56,6 +57,7 @@ export async function setCustomBackendUrl(url: string): Promise<string> {
 }
 
 export async function resetCustomBackendUrl(): Promise<string> {
+  clearFailover();
   activeBackendUrl = DEFAULT_BACKEND_URL;
   await delDiskCache("custom_backend_url");
   notifyCacheUpdate("/system/backend-url", { url: DEFAULT_BACKEND_URL });
@@ -98,6 +100,169 @@ export async function testBackendHealth(targetUrl?: string): Promise<{ ok: boole
       latencyMs: Date.now() - start,
     };
   }
+}
+
+// ---------- Backup servers ----------
+// The super admin saves a named list of backup servers on the server, and every app keeps a copy.
+// When the usual server stops answering, the app moves to the first backup that works, and comes back
+// once the usual server is up again. Only where requests go changes; screens, printing and data do not.
+export type BackupServer = { name: string; url: string };
+export type ServerCheck = "ok" | "login" | "down";
+
+const BACKUP_SERVERS_KEY = "backup_backend_servers";
+let backupServers: BackupServer[] = [];
+let gotServerList = false;
+let failoverUrl: string | null = null;
+let failoverSearch: Promise<boolean> | null = null;
+let lastSearchAt = 0;
+let returnTimer: ReturnType<typeof setInterval> | null = null;
+
+function keepBackupServers(list: any) {
+  backupServers = Array.isArray(list)
+    ? list
+        .filter((s) => s && typeof s.name === "string" && typeof s.url === "string" && /^https:\/\//i.test(s.url))
+        .map((s) => ({ name: s.name, url: s.url.trim().replace(/\/+$/, "") }))
+    : [];
+}
+
+// Where requests go right now: a backup while the usual server is down. getBackendUrl() stays the usual
+// server, so menu links and table QR codes keep pointing at it.
+export function getLiveBackendUrl(): string {
+  return failoverUrl || activeBackendUrl;
+}
+
+export function getBackupServers(): BackupServer[] {
+  return backupServers;
+}
+
+async function timedFetch(url: string, init: RequestInit = {}, ms = 5000): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function isServerUp(url: string): Promise<boolean> {
+  const res = await timedFetch(`${url}/api/health`);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  return data?.status === "online";
+}
+
+// "login" means the server is up but does not accept this login: it needs the same database and
+// secret key as the main server. The app never moves to such a server.
+export async function checkServer(url: string): Promise<ServerCheck> {
+  if (!(await isServerUp(url))) return "down";
+  const token = await getAccess();
+  if (!token) return "ok";
+  const res = await timedFetch(`${url}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res) return "down";
+  return res.ok ? "ok" : res.status === 401 ? "login" : "down";
+}
+
+export async function refreshBackupServers(): Promise<BackupServer[]> {
+  const res = await timedFetch(`${getLiveBackendUrl()}/api/backend-servers`, {}, 10000);
+  if (!res?.ok) throw new Error(res ? `HTTP ${res.status}` : "Server not reachable");
+  const data = await res.json();
+  gotServerList = true;
+  keepBackupServers(data?.servers);
+  await setDiskCache(BACKUP_SERVERS_KEY, JSON.stringify(backupServers));
+  return backupServers;
+}
+
+export async function saveBackupServers(list: BackupServer[]): Promise<BackupServer[]> {
+  const data = await req("/admin/backend-servers", { method: "PUT", body: JSON.stringify({ servers: list }) });
+  gotServerList = true;
+  keepBackupServers(data?.servers);
+  await setDiskCache(BACKUP_SERVERS_KEY, JSON.stringify(backupServers));
+  return backupServers;
+}
+
+function clearFailover() {
+  failoverUrl = null;
+  if (returnTimer) {
+    clearInterval(returnTimer);
+    returnTimer = null;
+  }
+}
+
+function switchServer(url: string) {
+  clearFailover();
+  if (url !== activeBackendUrl) {
+    failoverUrl = url;
+    returnTimer = setInterval(async () => {
+      if (failoverUrl && (await isServerUp(activeBackendUrl))) {
+        switchServer(activeBackendUrl);
+      }
+    }, 60000);
+  }
+  notifyCacheUpdate("/system/backend-url", { url: getLiveBackendUrl() });
+}
+
+// Called when a request to failedUrl got no answer. Moves only if failedUrl really is down, so one slow
+// request never moves the app, and only to a server that accepts this login. With no backups saved,
+// nothing extra is sent.
+async function moveOffFailedServer(failedUrl: string): Promise<boolean> {
+  if (getLiveBackendUrl() !== failedUrl) return true; // another request already moved
+  if (failoverSearch) return failoverSearch;
+  const candidates = [activeBackendUrl, ...backupServers.map((s) => s.url)]
+    .filter((url, i, all) => url !== failedUrl && all.indexOf(url) === i);
+  if (!candidates.length || Date.now() - lastSearchAt < 30000) return false;
+  lastSearchAt = Date.now();
+  failoverSearch = Promise.all([isServerUp(failedUrl), Promise.all(candidates.map((url) => checkServer(url)))])
+    .then(([failedIsUp, checks]) => {
+      const next = failedIsUp ? undefined : candidates[checks.indexOf("ok")];
+      if (next) switchServer(next);
+      return !!next;
+    })
+    .catch(() => false)
+    .finally(() => {
+      failoverSearch = null;
+    });
+  return failoverSearch;
+}
+
+// Hosting gateways answer with an HTML error page when the server behind them is down.
+// The app's own errors are JSON, so those never count.
+function looksLikeServerDown(res: Response): boolean {
+  if (res.status !== 502 && res.status !== 503 && res.status !== 504) return false;
+  return !(res.headers.get("content-type") || "").includes("application/json");
+}
+
+// Sends one request. If the server is down it moves to a backup; requests that are safe to repeat
+// (reads and sign-in) are sent once more there. Others fail as before and go to the offline queue,
+// which later sends them to the new server.
+async function fetchFromLiveServer(path: string, init: RequestInit, safeToResend: boolean): Promise<Response> {
+  const base = getLiveBackendUrl();
+  let res: Response | null = null;
+  let error: any = null;
+  try {
+    res = await fetch(`${base}/api${path}`, init);
+    if (!looksLikeServerDown(res)) return res;
+  } catch (e) {
+    error = e;
+  }
+  const moving = moveOffFailedServer(base);
+  if (!safeToResend || !(await moving)) {
+    if (error) throw error;
+    return res as Response;
+  }
+  return fetch(`${getLiveBackendUrl()}/api${path}`, init);
+}
+
+if (Platform.OS !== "web" || typeof window !== "undefined") {
+  getDiskCache(BACKUP_SERVERS_KEY).then((saved) => {
+    if (saved && !gotServerList) {
+      try { keepBackupServers(JSON.parse(saved)); } catch {}
+    }
+  });
+  const refresh = () => { refreshBackupServers().catch(() => {}); };
+  setTimeout(refresh, 4000);
+  setInterval(refresh, 30 * 60 * 1000);
 }
 
 const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };
@@ -471,7 +636,7 @@ async function doRefreshToken(): Promise<string | null> {
     try {
       const rToken = await getRefresh();
       if (!rToken) return null;
-      const res = await fetch(`${getBackendUrl()}/api/auth/refresh`, {
+      const res = await fetch(`${getLiveBackendUrl()}/api/auth/refresh`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -566,7 +731,8 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 
     let res: Response;
     try {
-      res = await fetch(`${getBackendUrl()}/api${path}`, { ...opts, headers });
+      const safeToResend = isGet || path === "/auth/login" || path === "/auth/staff-login";
+      res = await fetchFromLiveServer(path, { ...opts, headers }, safeToResend);
     } catch (netErr: any) {
       if (isGet && memoryCache[path] !== undefined && memoryCache[path] !== null) {
         return memoryCache[path];
@@ -1710,6 +1876,7 @@ export const api = {
     req(`/admin/payments/${pid}/refund`, { method: "POST", body: JSON.stringify(payload || {}) }),
   adminBusinessSummary: () => req("/admin/reports/business-summary"),
   getBackendUrl: () => getBackendUrl(),
+  getLiveBackendUrl: () => getLiveBackendUrl(),
   getDefaultBackendUrl: () => getDefaultBackendUrl(),
   setCustomBackendUrl: (url: string) => setCustomBackendUrl(url),
   resetCustomBackendUrl: () => resetCustomBackendUrl(),

@@ -253,7 +253,7 @@ export default function Kitchen() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const isRingingRef = useRef(false);
 
-  const BACKEND_BASE = api.getBackendUrl();
+  const BACKEND_BASE = api.getLiveBackendUrl();
   const KITCHEN_SOUND_URL = `${BACKEND_BASE}/static/sounds/kitchen-alert.wav`;
   
   // Keep separate Audio players for Native vs Web

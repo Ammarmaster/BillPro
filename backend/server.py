@@ -1462,6 +1462,47 @@ async def update_legal_config(payload: LegalConfigUpdateIn, user: dict = Depends
     return {**DEFAULT_LEGAL_CONFIG, **(doc or {})}
 
 
+class BackupServerIn(BaseModel):
+    name: str
+    url: str
+
+
+class BackupServerListIn(BaseModel):
+    servers: List[BackupServerIn] = []
+
+
+@api.get("/backend-servers")
+async def get_backend_servers():
+    """Named backup servers. Every app keeps a copy and moves to one when its usual server is down."""
+    doc = await db.system_settings.find_one({"id": "backend_servers"}, {"_id": 0})
+    return {"servers": (doc or {}).get("servers", [])}
+
+
+@api.put("/admin/backend-servers")
+async def save_backend_servers(payload: BackupServerListIn, user: dict = Depends(require_roles("super_admin"))):
+    from urllib.parse import urlsplit
+    servers, seen = [], set()
+    for s in payload.servers:
+        name, url = s.name.strip(), s.url.strip().rstrip("/")
+        if not name:
+            raise HTTPException(status_code=400, detail="Every server needs a name.")
+        parts = urlsplit(url)
+        # Every app sends its login to these servers, so only full https:// addresses
+        if parts.scheme != "https" or not parts.hostname or parts.query or parts.fragment or " " in url:
+            raise HTTPException(status_code=400, detail=f'"{name}": use a full https:// address, like https://my-backup.onrender.com')
+        if url.lower() not in seen:
+            seen.add(url.lower())
+            servers.append({"name": name[:40], "url": url})
+    if len(servers) > 10:
+        raise HTTPException(status_code=400, detail="You can save up to 10 servers.")
+    await db.system_settings.update_one(
+        {"id": "backend_servers"},
+        {"$set": {"servers": servers, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user["id"]}},
+        upsert=True,
+    )
+    return {"servers": servers}
+
+
 @api.post("/users/consent")
 @api.post("/consent")
 async def update_user_consent(payload: ConsentUpdateIn, current_user: dict = Depends(get_current_user), request: Request = None):

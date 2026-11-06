@@ -9,7 +9,7 @@ import * as Haptics from "expo-haptics";
 import { useAudioPlayer } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
-import { api, getBackendUrl } from "@/src/lib/api";
+import { api, getLiveBackendUrl } from "@/src/lib/api";
 import { spacing, radius } from "@/src/theme";
 
 const { width } = Dimensions.get("window");
@@ -22,7 +22,7 @@ type Props = {
   defaultTable?: string;
 };
 
-const getScanSoundUrl = () => `${getBackendUrl()}/static/sounds/notification.wav`;
+const getScanSoundUrl = () => `${getLiveBackendUrl()}/static/sounds/notification.wav`;
 
 // Universal 0ms Audio Beep Generator
 function playInstantPOSBeep() {
