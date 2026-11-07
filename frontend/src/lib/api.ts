@@ -18,19 +18,30 @@ const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env
 
 let activeBackendUrl = DEFAULT_BACKEND_URL;
 
-// Load custom backend URL synchronously on Web or asynchronously on native
+// Which server is the main one: the one the super admin picked for every app wins, then one saved on
+// this device only, then the one built into the app.
+const MAIN_FOR_EVERYONE_KEY = "global_backend_url";
+let mainForEveryone: string | null = null;
+let deviceUrl: string | null = null;
+
+const cleanUrl = (url?: string | null) => (url && url.trim() ? url.trim().replace(/\/+$/, "") : null);
+
+function pickMainServer() {
+  activeBackendUrl = mainForEveryone || deviceUrl || DEFAULT_BACKEND_URL;
+}
+
+// Load saved choices synchronously on Web or asynchronously on native
 if (Platform.OS === "web" && typeof window !== "undefined") {
   try {
-    const saved = window.localStorage.getItem("custom_backend_url");
-    if (saved && saved.trim()) {
-      activeBackendUrl = saved.trim().replace(/\/$/, "");
-    }
+    mainForEveryone = cleanUrl(window.localStorage.getItem(MAIN_FOR_EVERYONE_KEY));
+    deviceUrl = cleanUrl(window.localStorage.getItem("custom_backend_url"));
+    pickMainServer();
   } catch {}
 } else {
-  AsyncStorage.getItem("custom_backend_url").then((saved) => {
-    if (saved && saved.trim()) {
-      activeBackendUrl = saved.trim().replace(/\/$/, "");
-    }
+  Promise.all([AsyncStorage.getItem(MAIN_FOR_EVERYONE_KEY), AsyncStorage.getItem("custom_backend_url")]).then(([main, device]) => {
+    if (mainForEveryone === null) mainForEveryone = cleanUrl(main); // the server's answer may already be here
+    deviceUrl = cleanUrl(device);
+    pickMainServer();
   }).catch(() => {});
 }
 
@@ -50,18 +61,54 @@ export async function setCustomBackendUrl(url: string): Promise<string> {
   }
   cleaned = cleaned.replace(/\/$/, "");
   clearFailover(); // a server picked by hand is used straight away, even while on a backup
-  activeBackendUrl = cleaned;
+  deviceUrl = cleaned;
+  pickMainServer();
   await setDiskCache("custom_backend_url", cleaned);
-  notifyCacheUpdate("/system/backend-url", { url: cleaned });
-  return cleaned;
+  notifyCacheUpdate("/system/backend-url", { url: activeBackendUrl });
+  return activeBackendUrl;
 }
 
 export async function resetCustomBackendUrl(): Promise<string> {
   clearFailover();
-  activeBackendUrl = DEFAULT_BACKEND_URL;
+  deviceUrl = null;
+  pickMainServer();
   await delDiskCache("custom_backend_url");
-  notifyCacheUpdate("/system/backend-url", { url: DEFAULT_BACKEND_URL });
-  return DEFAULT_BACKEND_URL;
+  notifyCacheUpdate("/system/backend-url", { url: activeBackendUrl });
+  return activeBackendUrl;
+}
+
+export function getMainServerForEveryone(): string | null {
+  return mainForEveryone;
+}
+
+// Uses the main server the super admin picked for every app. Every app learns it with the backup list.
+async function applyMainServerForEveryone(url: string | null) {
+  const next = cleanUrl(url);
+  if (next === mainForEveryone) return;
+  mainForEveryone = next;
+  if (next) await setDiskCache(MAIN_FOR_EVERYONE_KEY, next);
+  else await delDiskCache(MAIN_FOR_EVERYONE_KEY);
+  const before = activeBackendUrl;
+  pickMainServer();
+  if (activeBackendUrl !== before) {
+    clearFailover();
+    notifyCacheUpdate("/system/backend-url", { url: activeBackendUrl });
+  }
+}
+
+// Super admin only. Moves every restaurant's app to this server (null: back to the built-in one).
+// This device's own saved address is dropped, so it follows the same choice.
+export async function saveMainServerForEveryone(url: string | null): Promise<string> {
+  const data = await req("/admin/main-server", { method: "PUT", body: JSON.stringify({ url }) });
+  if (deviceUrl) {
+    deviceUrl = null;
+    await delDiskCache("custom_backend_url");
+    pickMainServer();
+  }
+  const before = activeBackendUrl;
+  await applyMainServerForEveryone(data?.main_url ?? null);
+  if (activeBackendUrl === before) notifyCacheUpdate("/system/backend-url", { url: activeBackendUrl });
+  return activeBackendUrl;
 }
 
 export async function testBackendHealth(targetUrl?: string): Promise<{ ok: boolean; status?: string; latencyMs: number; error?: string }> {
@@ -171,6 +218,7 @@ export async function refreshBackupServers(): Promise<BackupServer[]> {
   gotServerList = true;
   keepBackupServers(data?.servers);
   await setDiskCache(BACKUP_SERVERS_KEY, JSON.stringify(backupServers));
+  if (data && "main_url" in data) await applyMainServerForEveryone(data.main_url); // older servers do not send it
   return backupServers;
 }
 
@@ -262,7 +310,7 @@ if (Platform.OS !== "web" || typeof window !== "undefined") {
   });
   const refresh = () => { refreshBackupServers().catch(() => {}); };
   setTimeout(refresh, 4000);
-  setInterval(refresh, 30 * 60 * 1000);
+  setInterval(refresh, 10 * 60 * 1000);
 }
 
 const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };

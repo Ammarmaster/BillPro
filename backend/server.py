@@ -1471,25 +1471,46 @@ class BackupServerListIn(BaseModel):
     servers: List[BackupServerIn] = []
 
 
+class MainServerIn(BaseModel):
+    url: Optional[str] = None  # empty: every app goes back to the server built into it
+
+
+def clean_server_url(url: str, label: str) -> str:
+    from urllib.parse import urlsplit
+    url = url.strip().rstrip("/")
+    parts = urlsplit(url)
+    # Every app sends its login to these servers, so only full https:// addresses
+    if parts.scheme != "https" or not parts.hostname or parts.query or parts.fragment or " " in url:
+        raise HTTPException(status_code=400, detail=f'"{label}": use a full https:// address, like https://my-backup.onrender.com')
+    return url
+
+
 @api.get("/backend-servers")
 async def get_backend_servers():
-    """Named backup servers. Every app keeps a copy and moves to one when its usual server is down."""
-    doc = await db.system_settings.find_one({"id": "backend_servers"}, {"_id": 0})
-    return {"servers": (doc or {}).get("servers", [])}
+    """Named backup servers, and the main server the super admin picked for every app (None: built-in one)."""
+    doc = await db.system_settings.find_one({"id": "backend_servers"}, {"_id": 0}) or {}
+    return {"servers": doc.get("servers", []), "main_url": doc.get("main_url")}
+
+
+@api.put("/admin/main-server")
+async def save_main_server(payload: MainServerIn, user: dict = Depends(require_roles("super_admin"))):
+    url = clean_server_url(payload.url, "Main server") if (payload.url or "").strip() else None
+    await db.system_settings.update_one(
+        {"id": "backend_servers"},
+        {"$set": {"main_url": url, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user["id"]}},
+        upsert=True,
+    )
+    return {"main_url": url}
 
 
 @api.put("/admin/backend-servers")
 async def save_backend_servers(payload: BackupServerListIn, user: dict = Depends(require_roles("super_admin"))):
-    from urllib.parse import urlsplit
     servers, seen = [], set()
     for s in payload.servers:
-        name, url = s.name.strip(), s.url.strip().rstrip("/")
+        name = s.name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="Every server needs a name.")
-        parts = urlsplit(url)
-        # Every app sends its login to these servers, so only full https:// addresses
-        if parts.scheme != "https" or not parts.hostname or parts.query or parts.fragment or " " in url:
-            raise HTTPException(status_code=400, detail=f'"{name}": use a full https:// address, like https://my-backup.onrender.com')
+        url = clean_server_url(s.url, name)
         if url.lower() not in seen:
             seen.add(url.lower())
             servers.append({"name": name[:40], "url": url})
@@ -1500,7 +1521,8 @@ async def save_backend_servers(payload: BackupServerListIn, user: dict = Depends
         {"$set": {"servers": servers, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user["id"]}},
         upsert=True,
     )
-    return {"servers": servers}
+    doc = await db.system_settings.find_one({"id": "backend_servers"}, {"_id": 0}) or {}
+    return {"servers": servers, "main_url": doc.get("main_url")}
 
 
 @api.post("/users/consent")

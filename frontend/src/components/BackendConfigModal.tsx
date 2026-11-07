@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import {
-  getBackendUrl, getDefaultBackendUrl, setCustomBackendUrl, resetCustomBackendUrl, testBackendHealth,
+  getBackendUrl, getDefaultBackendUrl, getMainServerForEveryone, saveMainServerForEveryone, testBackendHealth,
   getLiveBackendUrl, getBackupServers, refreshBackupServers, saveBackupServers, checkServer, subscribeToCache,
   type BackupServer, type ServerCheck,
 } from "@/src/lib/api";
@@ -38,6 +38,7 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
   const [testingHealth, setTestingHealth] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; latencyMs?: number; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [mainMsg, setMainMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Backup servers, shared with every restaurant's app
   const [liveUrl, setLiveUrl] = useState(() => getLiveBackendUrl());
@@ -56,6 +57,7 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
       setCurrentUrl(active);
       setInputUrl(active);
       setTestResult(null);
+      setMainMsg(null);
       // Auto-ping current server
       pingCurrentServer(active);
 
@@ -193,63 +195,57 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
     }
   };
 
-  const handleSave = async () => {
-    if (!inputUrl.trim()) {
-      Alert.alert("Empty URL", "Please enter a valid backend server URL.");
-      return;
-    }
+  // Changes the main server for every restaurant's app, so it is checked first: a wrong address would
+  // cut everyone off. Apps move when they open, or within 10 minutes.
+  const moveEveryone = async (url: string | null) => {
+    const target = url || getDefaultBackendUrl();
     setSaving(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setMainMsg(null);
     try {
-      const saved = await setCustomBackendUrl(inputUrl);
+      const check = await checkServer(target);
+      if (check !== "ok") {
+        setMainMsg({
+          ok: false,
+          text: check === "login"
+            ? `Not saved. ${target} is online, but your login does not work there. It needs the same database and secret key.`
+            : `Not saved. ${target} is not answering, so nobody was moved.`,
+        });
+        return;
+      }
+      const saved = await saveMainServerForEveryone(url);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setCurrentUrl(saved);
-      Alert.alert(
-        "Backend URL Updated",
-        `App is now connected to:\n${saved}\n\nNo app rebuild was required!`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              onSuccess?.(saved);
-              onClose();
-            },
-          },
-        ]
-      );
+      setInputUrl(saved);
+      pingCurrentServer(saved);
+      onSuccess?.(saved);
+      setMainMsg({ ok: true, text: `Saved. Every app now uses ${saved}. Apps move when they open, or within 10 minutes.` });
     } catch (err: any) {
-      Alert.alert("Error Saving URL", err.message || "Could not save custom URL.");
+      setMainMsg({ ok: false, text: err.message || "Could not save the main server." });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleReset = async () => {
+  const handleSave = () => {
+    let url = inputUrl.trim().replace(/\/+$/, "");
+    if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+    if (!/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(url)) {
+      setMainMsg({ ok: false, text: "Use a full https:// address, like https://api2.jobsio.in" });
+      return;
+    }
+    moveEveryone(url);
+  };
+
+  const handleReset = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    Alert.alert(
-      "Reset Backend URL",
-      `Reset to default cloud server?\n${getDefaultBackendUrl()}`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset to Default",
-          style: "destructive",
-          onPress: async () => {
-            const def = await resetCustomBackendUrl();
-            setCurrentUrl(def);
-            setInputUrl(def);
-            pingCurrentServer(def);
-            onSuccess?.(def);
-            Alert.alert("Reset Successful", "Reverted back to default cloud server.");
-          },
-        },
-      ]
-    );
+    moveEveryone(null);
   };
 
   if (!visible) return null;
 
   const defaultUrl = getDefaultBackendUrl();
   const isCustom = currentUrl.toLowerCase() !== defaultUrl.toLowerCase();
+  const forEveryone = !!getMainServerForEveryone();
 
   return (
     <Modal visible={visible} transparent animationType={isDesktop ? "fade" : "slide"} onRequestClose={onClose}>
@@ -282,9 +278,9 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
             <View style={[styles.activeCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                 <Text style={[styles.sectionLabel, { color: theme.onSurfaceSecondary }]}>CURRENT ACTIVE BACKEND</Text>
-                {isCustom && (
+                {(isCustom || forEveryone) && (
                   <View style={styles.customBadge}>
-                    <Text style={styles.customBadgeText}>CUSTOM HOST</Text>
+                    <Text style={styles.customBadgeText}>{forEveryone ? "FOR EVERYONE" : "CUSTOM HOST"}</Text>
                   </View>
                 )}
               </View>
@@ -358,7 +354,8 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
                 )}
               </View>
               <Text style={[styles.helperText, { color: theme.onSurfaceTertiary }]}>
-                Enter full URL including protocol (HTTPS or HTTP) and port if self-hosting.
+                {"Save & Apply moves every restaurant's app, Android too, to this server. It is checked first, " +
+                  "and must use the same database and secret keys."}
               </Text>
             </View>
 
@@ -456,17 +453,23 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
                 ) : (
                   <>
                     <Ionicons name="save-outline" size={16} color="#FFFFFF" />
-                    <Text style={styles.saveBtnText}>Save & Apply</Text>
+                    <Text style={styles.saveBtnText}>Save for Everyone</Text>
                   </>
                 )}
               </Pressable>
             </View>
 
-            {/* Reset to Default */}
-            {isCustom && (
-              <Pressable style={styles.resetRow} onPress={handleReset}>
+            {mainMsg && (
+              <Text testID="main-server-msg" style={[styles.helperText, { color: mainMsg.ok ? "#10B981" : "#EF4444", marginTop: spacing.sm }]}>
+                {mainMsg.text}
+              </Text>
+            )}
+
+            {/* Back to the server built into the app, for everyone */}
+            {(isCustom || forEveryone) && (
+              <Pressable style={styles.resetRow} onPress={handleReset} disabled={saving}>
                 <Ionicons name="refresh" size={14} color="#EF4444" />
-                <Text style={styles.resetText}>Reset to Default Cloud Server</Text>
+                <Text style={styles.resetText}>Reset Everyone to Default Server</Text>
               </Pressable>
             )}
 
