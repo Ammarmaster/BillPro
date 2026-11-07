@@ -95,3 +95,5 @@ frontend/web-build/
 backend/backups/
 scratch/*
 !scratch/generate_ezbill_prodevopz_images.py
+# secrets
+backend/.env

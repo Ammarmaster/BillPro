@@ -14,7 +14,7 @@ import {
   SyncActionType,
 } from "./offlineSync";
 
-const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://api2.jobsio.in").replace(/\/$/, "");
 
 let activeBackendUrl = DEFAULT_BACKEND_URL;
 
