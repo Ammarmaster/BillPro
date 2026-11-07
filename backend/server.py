@@ -2575,11 +2575,22 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
         r_data["updated_at"] = now
         await db.restaurants.update_one({"tenant_id": tid}, {"$set": r_data}, upsert=True)
     
+    # Same rule as POST /orders, /bills and /cash-sessions/open: no new orders, bills or
+    # cash sessions without an active plan, so offline sync is not a way around it
+    plan_active = None
+
     for action in payload.actions:
         a_type = action.type
         p = action.payload or {}
         local_id = action.localId
-        
+
+        if a_type in ("CREATE_ORDER", "CREATE_BILL", "OPEN_CASH_SESSION") and user.get("role") not in ("super_admin", "admin_employee"):
+            if plan_active is None:
+                plan_active = (await get_tenant_plan_limits(tid)).get("status") == "active"
+            if not plan_active:
+                logger.info(f"Batch sync skipped {a_type}: tenant {tid} has no active plan")
+                continue
+
         try:
             if a_type == "CREATE_CATEGORY":
                 cid = str(uuid.uuid4())

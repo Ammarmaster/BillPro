@@ -9,7 +9,7 @@ import * as Haptics from "expo-haptics";
 import { useAudioPlayer } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
-import { api, getLiveBackendUrl } from "@/src/lib/api";
+import { api, getLiveBackendUrl, isPlanLocked, askToSubscribe } from "@/src/lib/api";
 import { spacing, radius } from "@/src/theme";
 
 const { width } = Dimensions.get("window");
@@ -201,6 +201,12 @@ export default function OrderQRScannerModal({ visible, onClose, onScanSuccess, d
 
   const handleConfirmOrder = async () => {
     if (!scannedOrderPreview) return;
+    // Without a plan the order must not be accepted or printed
+    if (isPlanLocked()) {
+      onClose();
+      askToSubscribe();
+      return;
+    }
     setBusy(true);
 
     const assignedTable = targetTable.trim() || scannedOrderPreview.table_number || "1";

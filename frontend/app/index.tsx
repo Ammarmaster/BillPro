@@ -546,7 +546,9 @@ export default function Index() {
       ? PRODUCTS
       : PRODUCTS.filter((p) => p.category === activeCategory);
 
-  if (loading) {
+  // The app (APK / iOS) never shows the website landing page, and a signed-in
+  // person is on their way to the dashboard, so show only the loader meanwhile.
+  if (loading || user || Platform.OS !== "web") {
     return (
       <View style={styles.center} testID="landing-loading">
         <ActivityIndicator size="large" color="#FF5E2B" />

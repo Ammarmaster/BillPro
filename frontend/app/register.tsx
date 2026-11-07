@@ -219,7 +219,7 @@ export default function Register() {
                   value={password}
                   onChangeText={setPassword}
                   style={[styles.input, { paddingRight: 44 }]}
-                  placeholder="Min. 8 characters"
+                  placeholder="Min. 6 characters"
                   placeholderTextColor="#475569"
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"

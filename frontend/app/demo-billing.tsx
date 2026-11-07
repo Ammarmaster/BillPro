@@ -1,1923 +1,1340 @@
-import { useCallback, useState, useEffect } from "react";
-import {
-  View, Text, StyleSheet, Pressable, ScrollView, SafeAreaView, StatusBar, Modal, ActivityIndicator, TextInput, useWindowDimensions, Platform
-} from "react-native";
-import * as Haptics from "expo-haptics";
-import { useRouter, useLocalSearchParams } from "expo-router";
+// Demo of the real EzBill app with sample data. It looks and works like the app
+// (same sidebar, tabs, Takeaway, Tables and Kitchen screens), nothing is saved,
+// and anything that needs a real restaurant asks the person to subscribe.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, StatusBar, Modal, TextInput, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/useResponsive";
 import { api } from "@/src/lib/api";
+import { foodImageUrl } from "@/src/lib/foodImage";
+import { vegMarkColor } from "@/src/lib/vegDish";
 import { radius, spacing } from "@/src/theme";
-import { LinearGradient } from "expo-linear-gradient";
 
-interface DemoItem {
-  id: string;
-  name: string;
-  price: number;
-  category: string;
-  description: string;
-  isVeg: boolean;
-}
+type Tab = "dashboard" | "tables" | "pos" | "kitchen" | "more";
+type IconName = keyof typeof Ionicons.glyphMap;
+type Dish = { id: string; name: string; price: number; cat: string };
+type Line = { id: string; name: string; price: number; qty: number };
+type TicketStatus = "placed" | "in_kitchen" | "ready";
+type Ticket = { id: string; num: number; table: string; items: { name: string; qty: number }[]; status: TicketStatus; at: number; note?: string };
+type DemoTable = { id: string; label: string; seats: number; status: "Available" | "Occupied" | "Billed"; lines: Line[] };
+type Bill = { no: number; table: string; lines: Line[]; subtotal: number; gst: number; cgst: number; sgst: number; total: number; mode: string; secs: number | null };
+type Wall = { title: string; sub: string; icon?: IconName };
 
-const DEFAULT_MENU_ITEMS: DemoItem[] = [
-  { id: "demo-1", name: "Chicken Dum Biryani", price: 180, category: "Biryani", description: "Slow cooked fragrant basmati rice with marinated chicken & spices", isVeg: false },
-  { id: "demo-2", name: "Paneer Butter Masala", price: 220, category: "Main Course", description: "Fresh cottage cheese in creamy rich tomato gravy", isVeg: true },
-  { id: "demo-3", name: "Dal Makhani", price: 160, category: "Main Course", description: "Slow simmered black lentils finished with cream & butter", isVeg: true },
-  { id: "demo-4", name: "Tandoori Chicken Full", price: 280, category: "Starters", description: "Clay oven roasted chicken with traditional tandoori spices", isVeg: false },
-  { id: "demo-5", name: "Crispy Spring Rolls", price: 120, category: "Starters", description: "Golden rolls stuffed with fresh spiced vegetables", isVeg: true },
-  { id: "demo-6", name: "Veg Hyderabadi Biryani", price: 150, category: "Biryani", description: "Aromatic basmati rice cooked with garden fresh vegetables", isVeg: true },
-  { id: "demo-7", name: "Butter Naan", price: 40, category: "Breads", description: "Soft clay oven bread brushed with fresh butter", isVeg: true },
-  { id: "demo-8", name: "Chilled Thums Up 250ml", price: 40, category: "Beverages", description: "Chilled sparkling beverage", isVeg: true },
-  { id: "demo-9", name: "Fresh Mint Lime Soda", price: 60, category: "Beverages", description: "Refreshing soda with squeezed lime and garden mint", isVeg: true },
-  { id: "demo-10", name: "Gulab Jamun (2 Pcs)", price: 80, category: "Desserts", description: "Warm milk dumplings soaked in cardamom sugar syrup", isVeg: true }
+const BRAND = "#635BFF";
+const PRICE = 299;
+
+const MENU: Dish[] = [
+  { id: "d1", name: "Chicken Dum Biryani", price: 220, cat: "Biryani" },
+  { id: "d2", name: "Veg Biryani", price: 160, cat: "Biryani" },
+  { id: "d3", name: "Paneer Tikka", price: 240, cat: "Starters" },
+  { id: "d4", name: "Chicken 65", price: 210, cat: "Starters" },
+  { id: "d5", name: "Butter Chicken", price: 280, cat: "Main Course" },
+  { id: "d6", name: "Paneer Butter Masala", price: 230, cat: "Main Course" },
+  { id: "d7", name: "Dal Makhani", price: 170, cat: "Main Course" },
+  { id: "d8", name: "Butter Naan", price: 45, cat: "Breads" },
+  { id: "d9", name: "Garlic Naan", price: 55, cat: "Breads" },
+  { id: "d10", name: "Masala Dosa", price: 120, cat: "South Indian" },
+  { id: "d11", name: "Mango Lassi", price: 90, cat: "Drinks" },
+  { id: "d12", name: "Masala Chai", price: 30, cat: "Drinks" },
+  { id: "d13", name: "Gulab Jamun", price: 80, cat: "Desserts" },
 ];
+const CATS = ["Biryani", "Starters", "Main Course", "Breads", "South Indian", "Drinks", "Desserts"];
+
+const line = (id: string, qty: number): Line => {
+  const d = MENU.find(m => m.id === id)!;
+  return { id: d.id, name: d.name, price: d.price, qty };
+};
+
+const START_TABLES: DemoTable[] = [
+  { id: "t1", label: "T1", seats: 4, status: "Available", lines: [] },
+  { id: "t2", label: "T2", seats: 4, status: "Occupied", lines: [line("d1", 2), line("d11", 2)] },
+  { id: "t3", label: "T3", seats: 2, status: "Available", lines: [] },
+  { id: "t4", label: "T4", seats: 6, status: "Available", lines: [] },
+  { id: "t5", label: "T5", seats: 4, status: "Occupied", lines: [line("d6", 1), line("d8", 4), line("d7", 1)] },
+  { id: "t6", label: "T6", seats: 2, status: "Available", lines: [] },
+  { id: "t7", label: "T7", seats: 4, status: "Billed", lines: [line("d5", 1), line("d9", 3), line("d13", 2)] },
+  { id: "t8", label: "T8", seats: 8, status: "Available", lines: [] },
+];
+
+const START_TICKETS = (): Ticket[] => [
+  { id: "k101", num: 101, table: "T2", items: [{ name: "Chicken Dum Biryani", qty: 2 }, { name: "Mango Lassi", qty: 2 }], status: "in_kitchen", at: Date.now() - 6 * 60000 },
+  { id: "k102", num: 102, table: "T5", items: [{ name: "Paneer Butter Masala", qty: 1 }, { name: "Butter Naan", qty: 4 }, { name: "Dal Makhani", qty: 1 }], status: "placed", at: Date.now() - 2 * 60000, note: "Less spicy" },
+];
+
+// What each locked screen would do for the restaurant once subscribed
+const LOCKED: { key: string; name: string; icon: IconName; group: "ops" | "catalog" | "system"; why: string }[] = [
+  { key: "register", name: "Billing Register", icon: "receipt-outline", group: "ops", why: "See and reprint every bill you have made." },
+  { key: "history", name: "Bills History", icon: "file-tray-full-outline", group: "ops", why: "Find any old bill by date, table or amount." },
+  { key: "cash", name: "Cash Closing & EOD", icon: "wallet-outline", group: "ops", why: "Close the day and match cash, UPI and card in one tap." },
+  { key: "menu", name: "Menu Catalog", icon: "fast-food-outline", group: "catalog", why: "Add your own dishes, prices and photos." },
+  { key: "tablesetup", name: "Table Setup", icon: "grid-outline", group: "catalog", why: "Set up your own tables and seats." },
+  { key: "staff", name: "Waiters & Staff", icon: "people-outline", group: "catalog", why: "Give waiters and the kitchen their own logins." },
+  { key: "analytics", name: "Sales Analytics", icon: "bar-chart-outline", group: "catalog", why: "Know your best dishes and busiest hours." },
+  { key: "ai", name: "AI Menu Scanner", icon: "sparkles-outline", group: "catalog", why: "Take a photo of your paper menu and every dish is added for you." },
+  { key: "poster", name: "Status Poster AI", icon: "megaphone-outline", group: "catalog", why: "Make WhatsApp status posters for your offers in seconds." },
+  { key: "printer", name: "Printer Setup", icon: "print-outline", group: "system", why: "Connect your thermal printer for bills and kitchen slips (KOT)." },
+  { key: "settings", name: "Settings", icon: "settings-outline", group: "system", why: "Your GST number, logo, UPI ID and bill design." },
+];
+
+// The everyday problems EzBill takes away
+const PROBLEMS: { icon: IconName; color: string; problem: string; fix: string }[] = [
+  { icon: "receipt-outline", color: "#635BFF", problem: "Slow handwritten bills and long queues", fix: "Make a GST bill in under 10 seconds, with your UPI QR printed on it." },
+  { icon: "restaurant-outline", color: "#F59E0B", problem: "Wrong or forgotten orders in the kitchen", fix: "Orders go straight to the kitchen screen or KOT printer. Nothing gets lost." },
+  { icon: "wallet-outline", color: "#10B981", problem: "Cash leakage and no idea of today's sales", fix: "Every bill is recorded. See today's sales live on your phone, from anywhere." },
+  { icon: "cloud-offline-outline", color: "#EF4444", problem: "Internet goes down at rush hour", fix: "Keep billing without internet. Everything syncs when it comes back." },
+];
+
+const BENEFITS = [
+  "Unlimited bills and kitchen orders (KOT)",
+  "Print on your own thermal printer",
+  "Your own menu, tables and staff logins",
+  "Works even without internet",
+  "Live sales on your phone + day-end report",
+];
+
+const WEEK = [12400, 15800, 13900, 17200, 21600, 24800];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Today"];
+const BASE_REVENUE = 18450;
+const BASE_ORDERS = 64;
+
+const STATUS_TEXT: Record<TicketStatus, string> = { placed: "NEW", in_kitchen: "COOKING", ready: "READY" };
+const STATUS_BG: Record<TicketStatus, string> = { placed: "#FEF3C7", in_kitchen: "#E0E7FF", ready: "#DCFCE7" };
+const STATUS_FG: Record<TicketStatus, string> = { placed: "#D97706", in_kitchen: "#4F46E5", ready: "#16A34A" };
+const NEXT_LABEL: Record<TicketStatus, string> = { placed: "Start Cooking →", in_kitchen: "Mark Ready →", ready: "Mark Served →" };
+const NEXT_BG: Record<TicketStatus, string> = { placed: "#F59E0B", in_kitchen: "#635BFF", ready: "#10B981" };
+
+const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+// Shows paise only when there are some, e.g. ₹672 or ₹672.25
+const money = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`;
+const pct = (n: number) => `${Number(n.toFixed(2))}%`;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const tap = () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); };
 
 export default function DemoBilling() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { registered } = useLocalSearchParams<{ registered?: string }>();
-  const { theme, isDark } = useTheme();
+  const { theme, isDark, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
-  const { width } = useWindowDimensions();
+  const { isDesktop, isLargeDesktop, width } = useResponsive();
 
-  // Active restaurant name for personalization
-  const [restaurantName, setRestaurantName] = useState<string>(() => api.getCachedRestaurant()?.name || "");
+  const [restaurant, setRestaurant] = useState<any>(() => api.getCachedRestaurant() || null);
+  const restaurantName: string = restaurant?.name || "";
+  // Same GST as the real bills: the restaurant's own setting, or 5% for visitors without a restaurant
+  const gstOn = restaurant ? !!restaurant.gst_enabled : true;
+  const gstRate = Number(restaurant?.gst_rate ?? 5);
+  const gstin: string = restaurant?.gst || restaurant?.gst_number || restaurant?.gstin || "";
+  const [subscribed, setSubscribed] = useState(false);
+
+  const [tab, setTab] = useState<Tab>("pos");
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [wall, setWall] = useState<Wall | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Point of sale
+  const [cart, setCart] = useState<Line[]>([]);
+  const [target, setTarget] = useState<string | null>(null); // table label, or null for takeaway
+  const [search, setSearch] = useState("");
+  const [cat, setCat] = useState("All");
+  const [mode, setMode] = useState<"Cash" | "UPI" | "Card">("UPI");
+  const [kotSent, setKotSent] = useState(false);
+  const [showCart, setShowCart] = useState(false);
+  const startedAt = useRef<number | null>(null);
+
+  const [tables, setTables] = useState<DemoTable[]>(START_TABLES);
+  const [openTable, setOpenTable] = useState<DemoTable | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>(START_TICKETS);
+  const [nextKot, setNextKot] = useState(103);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [receipt, setReceipt] = useState<Bill | null>(null);
+  const [steps, setSteps] = useState({ add: false, kot: false, bill: false });
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    if (!restaurantName) {
-      api.getRestaurant().then(r => {
-        if (r?.name) setRestaurantName(r.name);
-      }).catch(() => {});
-    }
-  }, [restaurantName]);
+    if (!user) return;
+    api.getRestaurant().then(r => { if (r) setRestaurant(r); }).catch(() => {});
+    if (user.role === "super_admin" || user.role === "admin_employee") { setSubscribed(true); return; }
+    api.mySubscription().then(s => setSubscribed(s?.status === "active")).catch(() => {});
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tab State
-  const [currentTab, setCurrentTab] = useState<"billing" | "tables" | "kitchen" | "printers" | "offline" | "analytics">("billing");
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
-  // Menu items list
-  const [menuItems, setMenuItems] = useState<DemoItem[]>(DEFAULT_MENU_ITEMS);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  // Dynamic cart quantities
-  const [quantities, setQuantities] = useState<Record<string, number>>({
-    "demo-1": 2,
-    "demo-2": 1,
-    "demo-7": 3,
-    "demo-8": 2
-  });
+  const shopName = restaurantName || "Your Restaurant";
+  const ownerName = user?.full_name || user?.email?.split("@")[0] || "Restaurant Owner";
 
-  // Billing calculation toggles
-  const [gstEnabled, setGstEnabled] = useState(true);
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card">("upi");
-
-  // Simulated Offline Mode Switch
-  const [simulatedOffline, setSimulatedOffline] = useState(false);
-
-  // KOT Tickets state for Kitchen Display simulation
-  const [kotTickets, setKotTickets] = useState([
-    { id: "KOT-101", table: "Table 2", timeAgo: "4 mins ago", status: "Cooking", items: ["2× Chicken Dum Biryani", "2× Chilled Thums Up"] },
-    { id: "KOT-102", table: "Table 4", timeAgo: "1 min ago", status: "Placed", items: ["1× Paneer Butter Masala", "3× Butter Naan"] },
-  ]);
-
-  // Modal triggers
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showLockModal, setShowLockModal] = useState(false);
-  const [lockedFeatureName, setLockedFeatureName] = useState("");
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [simulatedPrintSuccess, setSimulatedPrintSuccess] = useState(false);
-
-  // Add Item form fields
-  const [newItem, setNewItem] = useState({ name: "", price: "", category: "Main Course", description: "", isVeg: true });
-  const [addItemSuccess, setAddItemSuccess] = useState(false);
-
-  // Tables Grid status
-  const [tables, setTables] = useState([
-    { id: 1, name: "Table 1", status: "Available", seats: 4, bill: 0, items: [] as any[] },
-    { id: 2, name: "Table 2", status: "Occupied", seats: 4, bill: 440, items: [{ name: "Chicken Dum Biryani", qty: 2, price: 180 }, { name: "Thums Up", qty: 2, price: 40 }] },
-    { id: 3, name: "Table 3", status: "Available", seats: 2, bill: 0, items: [] as any[] },
-    { id: 4, name: "Table 4", status: "Occupied", seats: 6, bill: 340, items: [{ name: "Paneer Butter Masala", qty: 1, price: 220 }, { name: "Butter Naan", qty: 3, price: 40 }] },
-    { id: 5, name: "Table 5", status: "Billed", seats: 4, bill: 890, items: [{ name: "Tandoori Chicken Full", qty: 2, price: 280 }, { name: "Dal Makhani", qty: 1, price: 160 }, { name: "Lime Soda", qty: 2, price: 60 }] },
-    { id: 6, name: "Table 6", status: "Available", seats: 4, bill: 0, items: [] as any[] }
-  ]);
-  const [selectedTable, setSelectedTable] = useState<any>(null);
-
-  // ROI Calculator state
-  const [dailyOrders, setDailyOrders] = useState(60);
-
-  // Handle navigation to subscription / register
-  const handleUpgradeNavigation = () => {
+  // ---------- actions ----------
+  const lock = (title: string, sub: string, icon?: IconName) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setShowCart(false);
+    setWall({ title, sub, icon });
+  };
+
+  const goSubscribe = () => {
+    setWall(null);
+    setShowWelcome(false);
+    if (subscribed) router.replace("/(app)/dashboard");
+    else if (user) router.push("/(app)/subscribe");
+    else router.push("/register");
+  };
+
+  const leave = async () => {
     if (user) {
-      router.push("/(app)/subscribe");
+      await logout();
+      router.replace(Platform.OS === "web" ? "/" : "/login");
     } else {
-      router.push("/register");
+      router.replace(Platform.OS === "web" ? "/" : "/login");
     }
   };
 
-  // Add Item Quantity in cart
-  const updateQty = (id: string, delta: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setQuantities(prev => {
-      const current = prev[id] || 0;
-      const next = Math.max(0, current + delta);
-      return { ...prev, [id]: next };
+  const openLocked = (key: string) => {
+    const f = LOCKED.find(l => l.key === key);
+    if (f) lock(`${f.name} is ready for you`, `${f.why} Subscribe to use it with your own restaurant.`, f.icon);
+  };
+
+  const qtyOf = (id: string) => cart.find(l => l.id === id)?.qty || 0;
+
+  const changeQty = (d: Dish, delta: number) => {
+    tap();
+    if (cart.length === 0 && delta > 0) startedAt.current = Date.now();
+    setKotSent(false);
+    setSteps(s => (s.add ? s : { ...s, add: true }));
+    setCart(prev => {
+      const cur = prev.find(l => l.id === d.id);
+      if (!cur) return delta > 0 ? [...prev, { id: d.id, name: d.name, price: d.price, qty: 1 }] : prev;
+      const qty = cur.qty + delta;
+      return qty <= 0 ? prev.filter(l => l.id !== d.id) : prev.map(l => (l.id === d.id ? { ...l, qty } : l));
     });
   };
 
-  // Add Custom Item Submit
-  const handleAddItem = () => {
-    if (!newItem.name.trim() || !newItem.price.trim()) {
-      alert("Please enter the item name and price.");
+  const tableLines = target ? tables.find(t => t.label === target)?.lines || [] : [];
+  // Same maths as the real billing screen: GST on the subtotal, split half CGST and half SGST
+  const totals = (lines: Line[]) => {
+    const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
+    const gst = gstOn ? round2(subtotal * (gstRate / 100)) : 0;
+    const cgst = round2(gst / 2);
+    return { subtotal, gst, cgst, sgst: round2(gst - cgst), total: round2(subtotal + gst) };
+  };
+  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
+
+  const mergeLines = (a: Line[], b: Line[]) => {
+    const out = a.map(l => ({ ...l }));
+    b.forEach(l => {
+      const hit = out.find(o => o.id === l.id);
+      if (hit) hit.qty += l.qty;
+      else out.push({ ...l });
+    });
+    return out;
+  };
+
+  const sendKot = () => {
+    if (cart.length === 0) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const label = target || "Takeaway";
+    setTickets(prev => [...prev, { id: `k${nextKot}`, num: nextKot, table: label, items: cart.map(l => ({ name: l.name, qty: l.qty })), status: "placed", at: Date.now() }]);
+    setNextKot(n => n + 1);
+    setSteps(s => ({ ...s, kot: true }));
+    if (target) {
+      setTables(prev => prev.map(t => (t.label === target ? { ...t, status: "Occupied", lines: mergeLines(t.lines, cart) } : t)));
+      setCart([]);
+      setShowCart(false);
+      setToast(`Order for ${target} sent to the kitchen`);
+    } else {
+      setKotSent(true);
+      setToast("Sent to the kitchen. Open the Kitchen tab to see it.");
+    }
+  };
+
+  const makeBill = (lines: Line[], label: string) => {
+    const t = totals(lines);
+    const secs = startedAt.current ? Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)) : null;
+    const bill: Bill = { no: 1043 + bills.length, table: label, lines, ...t, mode, secs };
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setBills(prev => [...prev, bill]);
+    setSteps(s => ({ ...s, bill: true }));
+    setReceipt(bill);
+    startedAt.current = null;
+  };
+
+  const billFromPos = () => {
+    const lines = target ? mergeLines(tableLines, cart) : cart;
+    if (lines.length === 0) return;
+    makeBill(lines, target || "Takeaway");
+    if (target) setTables(prev => prev.map(t => (t.label === target ? { ...t, status: "Available", lines: [] } : t)));
+    setCart([]);
+    setKotSent(false);
+    setShowCart(false);
+    setTarget(null);
+  };
+
+  const closeReceipt = () => {
+    const firstBill = bills.length === 1;
+    const secs = receipt?.secs;
+    setReceipt(null);
+    if (firstBill && !subscribed) {
+      setTimeout(() => setWall({
+        title: secs ? `You made a bill in ${secs} seconds!` : "That's how fast billing is!",
+        sub: "Now do the same for your real customers. Subscribe and your menu, tables, printer and staff can be ready today.",
+        icon: "trophy-outline",
+      }), 250);
+    }
+  };
+
+  const pickTable = (t: DemoTable) => {
+    tap();
+    if (t.status === "Available") {
+      setTarget(t.label);
+      setCart([]);
+      setKotSent(false);
+      setTab("pos");
+    } else {
+      setOpenTable(t);
+    }
+  };
+
+  const advanceTicket = (k: Ticket) => {
+    tap();
+    if (k.status === "ready") {
+      setTickets(prev => prev.filter(x => x.id !== k.id));
+      setToast(`Order #${k.num} served`);
       return;
     }
-    const itemPrice = parseFloat(newItem.price);
-    if (isNaN(itemPrice) || itemPrice <= 0) {
-      alert("Please enter a valid price.");
-      return;
-    }
-
-    const createdItem: DemoItem = {
-      id: `custom-${Date.now()}`,
-      name: newItem.name.trim(),
-      price: itemPrice,
-      category: newItem.category,
-      description: newItem.description.trim() || "Delicious freshly prepared dish",
-      isVeg: newItem.isVeg
-    };
-
-    setMenuItems(prev => [createdItem, ...prev]);
-    setNewItem({ name: "", price: "", category: "Main Course", description: "", isVeg: true });
-    
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setAddItemSuccess(true);
-    setTimeout(() => {
-      setAddItemSuccess(false);
-      setShowAddModal(false);
-    }, 1200);
+    const next: TicketStatus = k.status === "placed" ? "in_kitchen" : "ready";
+    setTickets(prev => prev.map(x => (x.id === k.id ? { ...x, status: next } : x)));
   };
 
-  // Settle Table
-  const handleSettleTable = (tableId: number) => {
-    setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: "Available", bill: 0, items: [] } : t));
-    setSelectedTable(null);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    alert("Table settled! Receipt printed & status marked Available.");
+  // ---------- numbers for the dashboard ----------
+  const revenue = BASE_REVENUE + bills.reduce((s, b) => s + b.total, 0);
+  const orders = BASE_ORDERS + bills.length;
+  const busyTables = tables.filter(t => t.status !== "Available").length;
+  const week = [...WEEK, revenue];
+  const maxWeek = Math.max(...week);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return MENU.filter(d => (cat === "All" || d.cat === cat) && (!q || d.name.toLowerCase().includes(q)));
+  }, [search, cat]);
+
+  const card = { backgroundColor: theme.surfaceSecondary, borderColor: theme.border };
+  const tint = isDark ? "rgba(99,91,255,0.16)" : "#EEF2FF";
+  const pad = isDesktop ? spacing.xl : spacing.lg;
+
+  // ---------- small pieces ----------
+  const Header = ({ title, sub, right }: { title: string; sub: string; right?: ReactNode }) => (
+    <View style={[styles.headerRow, { paddingHorizontal: pad }]}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[styles.title, { color: theme.onSurface }]} numberOfLines={1}>{title}</Text>
+        <Text style={[styles.sub, { color: theme.onSurfaceSecondary }]} numberOfLines={2}>{sub}</Text>
+      </View>
+      {right}
+    </View>
+  );
+
+  const Counter = ({ d, small }: { d: Dish | Line; small?: boolean }) => {
+    const dish = MENU.find(m => m.id === d.id)!;
+    return (
+      <View style={[styles.counterPill, { backgroundColor: isDark ? "#26294D" : "#F1F0FF" }]}>
+        <Pressable onPress={() => changeQty(dish, -1)} hitSlop={8} style={styles.counterBtn} accessibilityLabel={`Remove one ${dish.name}`}>
+          <Ionicons name="remove" size={small ? 14 : 16} color={BRAND} />
+        </Pressable>
+        <Text style={[styles.counterText, small && { fontSize: 13 }]}>{qtyOf(dish.id)}</Text>
+        <Pressable onPress={() => changeQty(dish, 1)} hitSlop={8} style={styles.counterBtn} accessibilityLabel={`Add one ${dish.name}`}>
+          <Ionicons name="add" size={small ? 14 : 16} color={BRAND} />
+        </Pressable>
+      </View>
+    );
   };
 
-  // Fire KOT to Kitchen Simulation
-  const handleFireKOT = (tableName: string) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    const newKot = {
-      id: `KOT-${Math.floor(100 + Math.random() * 900)}`,
-      table: tableName,
-      timeAgo: "Just now",
-      status: "Placed",
-      items: selectedItems.map(i => `${i.qty}× ${i.name}`)
-    };
-    setKotTickets(prev => [newKot, ...prev]);
-    alert(`🍳 KOT sent to Kitchen for ${tableName}! Thermal kitchen printer triggered.`);
-  };
+  // ---------- demo banner (always on top) ----------
+  const stepChip = (done: boolean, label: string) => (
+    <View key={label} style={[styles.stepChip, { borderColor: done ? "#10B981" : theme.border, backgroundColor: done ? (isDark ? "rgba(16,185,129,0.14)" : "#ECFDF5") : "transparent" }]}>
+      <Ionicons name={done ? "checkmark-circle" : "ellipse-outline"} size={14} color={done ? "#10B981" : theme.onSurfaceTertiary} />
+      <Text style={{ fontSize: 12, fontWeight: "700", color: done ? "#10B981" : theme.onSurfaceSecondary }}>{label}</Text>
+    </View>
+  );
 
-  // Trigger simulated print action
-  const triggerSimulatedPrint = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setSimulatedPrintSuccess(true);
-    setTimeout(() => {
-      setSimulatedPrintSuccess(false);
-      setShowReceiptModal(false);
-    }, 2000);
-  };
+  const doneCount = [steps.add, steps.kot, steps.bill].filter(Boolean).length;
 
-  // Calculations
-  const selectedItems = menuItems.map(item => ({
-    ...item,
-    qty: quantities[item.id] || 0,
-  })).filter(i => i.qty > 0);
+  const banner = (
+    <View style={[styles.banner, { borderBottomColor: theme.border, backgroundColor: isDark ? "#14132B" : "#F5F3FF", paddingHorizontal: pad, paddingTop: isDesktop ? 10 : insets.top + 8 }]}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View style={styles.demoTag}>
+          <Ionicons name="flask" size={11} color="#FFFFFF" />
+          <Text style={styles.demoTagText}>DEMO</Text>
+        </View>
+        <Text style={{ flex: 1, color: theme.onSurface, fontSize: isDesktop ? 13 : 12, fontWeight: "600" }} numberOfLines={2}>
+          {subscribed
+            ? "You're subscribed. This is the practice version with sample data."
+            : isDesktop
+              ? "This is the real EzBill app with sample data. Subscribe to bill your real customers."
+              : "Sample data. Subscribe to use it for real."}
+        </Text>
+        <Pressable onPress={goSubscribe} style={({ pressed }) => [styles.bannerBtn, pressed && { opacity: 0.85 }]} testID="demo-subscribe-top">
+          <Text style={styles.bannerBtnText}>{subscribed ? "Open my EzBill" : isDesktop ? `Subscribe · ₹${PRICE}/mo` : "Subscribe"}</Text>
+        </Pressable>
+      </View>
+      {!subscribed && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          <Text style={{ fontSize: 11, fontWeight: "800", letterSpacing: 0.6, color: theme.onSurfaceTertiary, marginRight: 2 }}>
+            TRY IT · {doneCount}/3
+          </Text>
+          {stepChip(steps.add, "Add items")}
+          {stepChip(steps.kot, "Send to kitchen")}
+          {stepChip(steps.bill, "Make the bill")}
+        </View>
+      )}
+    </View>
+  );
 
-  const rawSubtotal = selectedItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
-  const discountAmt = Math.round((rawSubtotal * (discountPercent / 100)) * 100) / 100;
-  const subtotalAfterDiscount = rawSubtotal - discountAmt;
-  const gstTax = gstEnabled ? Math.round(subtotalAfterDiscount * 0.05 * 100) / 100 : 0;
-  const totalBillAmount = Math.max(0, subtotalAfterDiscount + gstTax);
-  const totalItemCount = selectedItems.reduce((sum, i) => sum + i.qty, 0);
-
-  // Filter menu items
-  const filteredMenuItems = menuItems.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
-
-  const categories = ["All", "Biryani", "Starters", "Main Course", "Breads", "Beverages", "Desserts"];
-
-  // Monthly savings calculation based on daily orders
-  const estimatedMonthlyLoss = Math.round(dailyOrders * 12 * 30); // ~₹12 loss per manual order from mistakes/leakage
-  const netMonthlyProfitIncrease = Math.max(0, estimatedMonthlyLoss - 299);
-
-  return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: "#0A0B10" }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0B10" />
-      <View style={[styles.wrap, { paddingTop: insets.top, backgroundColor: "#0A0B10" }]}>
-        
-        {/* Top Navbar */}
-        <View style={styles.topNav}>
-          <View style={styles.brandRow}>
-            <Pressable 
-              onPress={() => {
-                if (router.canGoBack()) {
-                  router.back();
-                } else if (user) {
-                  router.replace("/(app)/subscribe");
-                } else {
-                  router.replace("/");
-                }
-              }}
-              hitSlop={12}
-              style={{ padding: 6, marginRight: 6, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.08)", justifyContent: "center", alignItems: "center" }}
-              accessibilityLabel="Back"
-            >
-              <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-            </Pressable>
-            <View style={styles.brandLogoBox}>
-              <Ionicons name="restaurant" size={18} color="#FFFFFF" />
+  // ---------- screens ----------
+  const dashboard = (
+    <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <Header title="Dashboard" sub={`Welcome back, ${ownerName} · ${shopName}`} />
+      <View style={{ paddingHorizontal: pad, gap: spacing.lg }}>
+        <View style={{ flexDirection: isDesktop ? "row" : "column", gap: spacing.lg }}>
+          <LinearGradient colors={["#5B4DFF", "#7B61FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.heroCard, isDesktop && { flex: 1.3 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#34D399" }} />
+              <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700" }}>LIVE • Today's Revenue</Text>
             </View>
-            <View>
-              <Text style={styles.brandName}>EzBill <Text style={{ color: "#FF5E2B" }}>POS</Text></Text>
-              <Text style={styles.brandTag}>Interactive Product Tour</Text>
-            </View>
-          </View>
-
-          <View style={styles.topNavActions}>
-            {user ? (
-              <Pressable
-                style={styles.headerPrimaryBtn}
-                onPress={handleUpgradeNavigation}
-              >
-                <Ionicons name="sparkles" size={14} color="#FFFFFF" />
-                <Text style={styles.headerPrimaryText}>Activate Plan</Text>
-              </Pressable>
-            ) : (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Pressable onPress={() => router.push("/login")}>
-                  <Text style={{ color: "#94A3B8", fontSize: 13, fontWeight: "700" }}>Login</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.headerPrimaryBtn}
-                  onPress={() => router.push("/register")}
-                >
-                  <Text style={styles.headerPrimaryText}>Get Started</Text>
-                </Pressable>
+            <Text style={{ color: "#FFFFFF", fontSize: 42, fontWeight: "900", marginVertical: 8, letterSpacing: -0.5 }}>{rupees(revenue)}</Text>
+            <View style={{ flexDirection: "row", gap: 32, marginTop: 4 }}>
+              <View>
+                <Text style={styles.heroNum}>{orders}</Text>
+                <Text style={styles.heroLbl}>Orders Today</Text>
               </View>
+              <View>
+                <Text style={styles.heroNum}>{rupees(revenue / orders)}</Text>
+                <Text style={styles.heroLbl}>Average Bill</Text>
+              </View>
+            </View>
+            {bills.length > 0 && (
+              <Text style={{ color: "#E0E7FF", fontSize: 12, fontWeight: "700", marginTop: 12 }}>
+                +{rupees(bills.reduce((s, b) => s + b.total, 0))} from the {bills.length === 1 ? "bill" : `${bills.length} bills`} you just made
+              </Text>
             )}
+          </LinearGradient>
+
+          <View style={{ flex: 1, gap: spacing.md }}>
+            {[
+              { icon: "people" as IconName, color: "#D97706", label: "Tables busy", value: `${busyTables} / ${tables.length}`, go: "tables" as Tab },
+              { icon: "flame" as IconName, color: BRAND, label: "Orders in kitchen", value: String(tickets.length), go: "kitchen" as Tab },
+              { icon: "qr-code" as IconName, color: "#10B981", label: "Paid by UPI today", value: "62%", go: null },
+            ].map(s => (
+              <Pressable key={s.label} onPress={() => s.go && setTab(s.go)} style={({ pressed }) => [styles.statRow, card, pressed && s.go && { opacity: 0.85 }]}>
+                <View style={[styles.statIcon, { backgroundColor: s.color + "22" }]}>
+                  <Ionicons name={s.icon} size={18} color={s.color} />
+                </View>
+                <Text style={{ flex: 1, color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>{s.label}</Text>
+                <Text style={{ color: theme.onSurface, fontSize: 18, fontWeight: "900" }}>{s.value}</Text>
+                {s.go && <Ionicons name="chevron-forward" size={16} color={theme.onSurfaceTertiary} />}
+              </Pressable>
+            ))}
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} bounces={false}>
-          
-          {/* Personalized Welcome Banner if newly registered or logged in */}
-          {(registered === "1" || user) && (
-            <LinearGradient
-              colors={["#1E1B4B", "#312E81"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.welcomeBanner}
-            >
-              <View style={styles.welcomeBadge}>
-                <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-                <Text style={styles.welcomeBadgeText}>RESTAURANT ACCOUNT READY</Text>
-              </View>
-              <Text style={styles.welcomeTitle}>
-                Welcome, {restaurantName || user?.full_name || "Restaurant Partner"}! 🎉
-              </Text>
-              <Text style={styles.welcomeDesc}>
-                Your restaurant profile is set up. Test-drive live tables, kitchen KOT & thermal billing below. When you're ready to print bills for real customers, activate your subscription anytime!
-              </Text>
-              <Pressable style={styles.welcomeCtaBtn} onPress={handleUpgradeNavigation}>
-                <Text style={styles.welcomeCtaText}>⚡ Activate Live Subscription (Plans from ₹299/mo)</Text>
-                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-              </Pressable>
-            </LinearGradient>
-          )}
-
-          {/* Hero Section */}
-          <View style={styles.heroSection}>
-            <View style={styles.heroPill}>
-              <View style={styles.heroDot} />
-              <Text style={styles.heroPillText}>INDIA'S #1 FASTEST RESTAURANT ERP</Text>
+        <View style={{ flexDirection: isDesktop ? "row" : "column", gap: spacing.lg }}>
+          <View style={[styles.panel, card, isDesktop && { flex: 1.3 }]}>
+            <Text style={[styles.panelTitle, { color: theme.onSurface }]}>Revenue • Last 7 days</Text>
+            <View style={{ flexDirection: "row", alignItems: "flex-end", height: 150, gap: 10, marginTop: spacing.md }}>
+              {week.map((v, i) => (
+                <View key={i} style={{ flex: 1, alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+                  <Text style={{ fontSize: 10, color: theme.onSurfaceTertiary, marginBottom: 4 }}>{(v / 1000).toFixed(1)}k</Text>
+                  <View style={{ width: "100%", maxWidth: 34, height: `${Math.max(8, (v / maxWeek) * 100) * 0.8}%`, borderRadius: 8, backgroundColor: i === week.length - 1 ? BRAND : isDark ? "#2E2E48" : "#DDD9FF" }} />
+                  <Text style={{ fontSize: 11, color: i === week.length - 1 ? BRAND : theme.onSurfaceSecondary, marginTop: 6, fontWeight: "700" }}>{DAYS[i]}</Text>
+                </View>
+              ))}
             </View>
-            <Text style={styles.heroHeading}>
-              Touch & Test Every Feature{"\n"}Before You Pay A Single Rupee.
-            </Text>
-            <Text style={styles.heroSub}>
-              Experience our lightning-fast billing engine, thermal receipt generator, kitchen KOT screen, table management, and 100% offline guarantee.
-            </Text>
           </View>
 
-          {/* Interactive Feature Tabs Controller */}
-          <View style={styles.tabsNavContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScrollContent}>
-              {[
-                { id: "billing", label: "⚡ Fast Billing & Print", icon: "receipt-outline" },
-                { id: "tables", label: "🪑 Live Tables POS", icon: "grid-outline" },
-                { id: "kitchen", label: "🍳 Kitchen KOT", icon: "flame-outline" },
-                { id: "printers", label: "🖨️ Universal Printers", icon: "print-outline" },
-                { id: "offline", label: "📴 100% Offline Mode", icon: "cloud-offline-outline" },
-                { id: "analytics", label: "📊 Sales & Cash Closing", icon: "bar-chart-outline" }
-              ].map(tab => (
-                <Pressable
-                  key={tab.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                    setCurrentTab(tab.id as any);
-                  }}
-                  style={[
-                    styles.tabNavPill,
-                    currentTab === tab.id && styles.tabNavPillActive
-                  ]}
-                >
-                  <Ionicons name={tab.icon as any} size={15} color={currentTab === tab.id ? "#FFFFFF" : "#94A3B8"} />
-                  <Text style={[styles.tabNavLabel, currentTab === tab.id && styles.tabNavLabelActive]}>
-                    {tab.label}
-                  </Text>
+          <View style={[styles.panel, card, { flex: 1 }]}>
+            <Text style={[styles.panelTitle, { color: theme.onSurface }]}>Top sellers today</Text>
+            {[["Chicken Dum Biryani", 38], ["Butter Naan", 64], ["Paneer Butter Masala", 21], ["Mango Lassi", 19]].map(([name, qty], i) => (
+              <View key={String(name)} style={[styles.topRow, { borderTopColor: theme.border, borderTopWidth: i ? 1 : 0 }]}>
+                <Image source={{ uri: foodImageUrl(String(name)) }} style={{ width: 36, height: 36, borderRadius: 10 }} contentFit="cover" />
+                <Text style={{ flex: 1, color: theme.onSurface, fontSize: 14, fontWeight: "700" }} numberOfLines={1}>{name}</Text>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "700" }}>{qty} sold</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <View style={[styles.panel, card]}>
+          <Text style={[styles.panelTitle, { color: theme.onSurface }]}>What EzBill fixes in your restaurant</Text>
+          <View style={{ flexDirection: isDesktop ? "row" : "column", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.md }}>
+            {PROBLEMS.map(p => (
+              <View key={p.problem} style={[styles.problemCard, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }, isDesktop && { width: "48.5%" }]}>
+                <View style={[styles.statIcon, { backgroundColor: p.color + "22" }]}>
+                  <Ionicons name={p.icon} size={18} color={p.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "700", textDecorationLine: "line-through" }}>{p.problem}</Text>
+                  <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: "700", marginTop: 3, lineHeight: 20 }}>{p.fix}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {!subscribed && (
+          <Pressable onPress={goSubscribe} style={({ pressed }) => [styles.realCard, { borderColor: BRAND, backgroundColor: tint }, pressed && { opacity: 0.9 }]}>
+            <Ionicons name="stats-chart" size={22} color={BRAND} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.onSurface, fontWeight: "900", fontSize: 15 }}>These are sample numbers</Text>
+              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 2 }}>Subscribe and this screen shows your real sales, live.</Text>
+            </View>
+            <Text style={{ color: BRAND, fontWeight: "900", fontSize: 13 }}>Subscribe →</Text>
+          </Pressable>
+        )}
+      </View>
+    </ScrollView>
+  );
+
+  const tableCols = isLargeDesktop ? 5 : isDesktop ? 4 : width >= 560 ? 3 : 2;
+  const counts = {
+    available: tables.filter(t => t.status === "Available").length,
+    occupied: tables.filter(t => t.status === "Occupied").length,
+    billed: tables.filter(t => t.status === "Billed").length,
+  };
+  const tablesScreen = (
+    <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <Header
+        title="Tables"
+        sub="Tap a free table to take an order. Tap a busy table to print its bill."
+        right={
+          <Pressable onPress={() => { setTarget(null); setCart([]); setTab("pos"); }} style={[styles.outlineBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
+            <Ionicons name="bag-handle-outline" size={15} color={BRAND} />
+            {isDesktop && <Text style={{ color: BRAND, fontWeight: "800", fontSize: 13 }}>Takeaway</Text>}
+          </Pressable>
+        }
+      />
+      <View style={{ flexDirection: "row", gap: 16, paddingHorizontal: pad, marginBottom: spacing.md, flexWrap: "wrap" }}>
+        {[["#10B981", "Available", counts.available], ["#D97706", "Occupied", counts.occupied], ["#EF4444", "Billed", counts.billed]].map(([c, l, n]) => (
+          <View key={String(l)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: String(c) }} />
+            <Text style={{ fontSize: 13, color: theme.onSurfaceSecondary, fontWeight: "600" }}>
+              {l} · <Text style={{ color: theme.onSurface, fontWeight: "800" }}>{n}</Text>
+            </Text>
+          </View>
+        ))}
+      </View>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: pad - 6 }}>
+        {tables.map(t => {
+          const total = totals(t.lines).total;
+          let bg = isDark ? "#161C2E" : "#F0FDF4", border = isDark ? "#065F46" : "#BBF7D0", iconBg = isDark ? "#064E3B" : "#DCFCE7";
+          let iconColor = isDark ? "#34D399" : "#10B981", label = "Available", labelColor = iconColor, icon: IconName = "checkmark-circle-outline";
+          if (t.status === "Occupied") {
+            bg = isDark ? "#2D1E0C" : "#FFFBEB"; border = isDark ? "#78350F" : "#FDE68A"; iconBg = isDark ? "#451A03" : "#FEF3C7";
+            iconColor = "#D97706"; label = money(total); labelColor = "#4F46E5"; icon = "people";
+          } else if (t.status === "Billed") {
+            bg = isDark ? "#2A1417" : "#FFF1F2"; border = isDark ? "#7F1D1D" : "#FECDD3"; iconBg = isDark ? "#451216" : "#FEE2E2";
+            iconColor = "#EF4444"; label = "Billed"; labelColor = "#EF4444"; icon = "stop";
+          }
+          return (
+            <View key={t.id} style={{ width: `${100 / tableCols}%`, padding: 6 }}>
+              <Pressable onPress={() => pickTable(t)} style={({ pressed }) => [styles.tableCard, { backgroundColor: bg, borderColor: border }, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]} testID={`demo-table-${t.id}`}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: iconBg, alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name={icon} size={15} color={iconColor} />
+                  </View>
+                  {t.status === "Occupied" && (
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#4F46E5", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "900" }}>1</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={{ marginTop: 8 }}>
+                  <Text style={{ fontSize: 24, fontWeight: "900", color: theme.onSurface }}>{t.label}</Text>
+                  <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2, fontWeight: "500" }}>{t.seats} seats</Text>
+                </View>
+                <Text style={{ fontSize: t.status === "Occupied" ? 15 : 13, fontWeight: "900", color: labelColor, marginTop: 4 }}>{label}</Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+
+  const cartPanel = (inSheet: boolean) => {
+    const allLines = target ? mergeLines(tableLines, cart) : cart;
+    const t = totals(allLines);
+    return (
+      <View style={{ flex: 1 }}>
+        {!inSheet && (
+          <View style={{ padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.onSurface }}>{target ? `${target} Order` : "Takeaway Order"}</Text>
+            <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2 }}>{target ? "Already served items + new items" : "Current items in cart"}</Text>
+          </View>
+        )}
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.md, gap: spacing.sm, flexGrow: 1 }}>
+          {tableLines.length > 0 && (
+            <View style={[styles.cartLine, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, flexDirection: "column", alignItems: "stretch" }]}>
+              <Text style={{ color: theme.onSurfaceTertiary, fontSize: 11, fontWeight: "800", letterSpacing: 0.6, marginBottom: 4 }}>ALREADY ON {target}</Text>
+              {tableLines.map(l => (
+                <Text key={l.id} style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 2 }}>{l.qty}× {l.name} · {rupees(l.price * l.qty)}</Text>
+              ))}
+            </View>
+          )}
+          {cart.length === 0 && tableLines.length === 0 ? (
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 40 }}>
+              <Ionicons name="bag-handle-outline" size={36} color={theme.onSurfaceTertiary} />
+              <Text style={{ color: theme.onSurfaceTertiary, marginTop: 8, fontSize: 14 }}>Cart is empty</Text>
+              <Text style={{ color: theme.onSurfaceTertiary, marginTop: 4, fontSize: 12 }}>Tap a dish to add it</Text>
+            </View>
+          ) : (
+            cart.map(l => (
+              <View key={l.id} style={[styles.cartLine, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: "700" }} numberOfLines={1}>{l.name}</Text>
+                  <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, marginTop: 2 }}>₹{l.price} × {l.qty} = {rupees(l.price * l.qty)}</Text>
+                </View>
+                <Counter d={l} small />
+              </View>
+            ))
+          )}
+        </ScrollView>
+
+        <View style={{ padding: spacing.lg, borderTopWidth: 1, borderTopColor: theme.border, gap: 6 }}>
+          <View style={styles.sumRow}><Text style={[styles.sumLbl, { color: theme.onSurfaceSecondary }]}>Subtotal</Text><Text style={[styles.sumVal, { color: theme.onSurface }]}>{rupees(t.subtotal)}</Text></View>
+          <View style={styles.sumRow}><Text style={[styles.sumLbl, { color: theme.onSurfaceSecondary }]}>{gstOn ? `GST (${pct(gstRate)})` : "GST (off in Settings)"}</Text><Text style={[styles.sumVal, { color: theme.onSurface }]}>₹{t.gst.toFixed(2)}</Text></View>
+          <View style={[styles.sumRow, { marginTop: 4 }]}><Text style={{ color: theme.onSurface, fontSize: 17, fontWeight: "900" }}>Total</Text><Text style={{ color: BRAND, fontSize: 22, fontWeight: "900" }}>{money(t.total)}</Text></View>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+            {(["Cash", "UPI", "Card"] as const).map(m => (
+              <Pressable key={m} onPress={() => setMode(m)} style={[styles.modeChip, { borderColor: mode === m ? BRAND : theme.border, backgroundColor: mode === m ? tint : "transparent" }]}>
+                <Ionicons name={m === "Cash" ? "cash-outline" : m === "UPI" ? "qr-code-outline" : "card-outline"} size={14} color={mode === m ? BRAND : theme.onSurfaceSecondary} />
+                <Text style={{ fontSize: 12, fontWeight: "800", color: mode === m ? BRAND : theme.onSurfaceSecondary }}>{m}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            <Pressable
+              onPress={sendKot}
+              disabled={cart.length === 0 || kotSent}
+              style={({ pressed }) => [styles.kotBtn, { borderColor: BRAND, opacity: cart.length === 0 ? 0.45 : 1 }, pressed && { opacity: 0.8 }]}
+              testID="demo-send-kot"
+            >
+              <Ionicons name={kotSent ? "checkmark-circle" : "flame-outline"} size={16} color={BRAND} />
+              <Text style={{ color: BRAND, fontWeight: "800", fontSize: 13 }}>{kotSent ? "Sent" : "Send to Kitchen"}</Text>
+            </Pressable>
+            <Pressable
+              onPress={billFromPos}
+              disabled={allLines.length === 0}
+              style={({ pressed }) => [styles.payBtn, { opacity: allLines.length === 0 ? 0.45 : 1 }, pressed && { opacity: 0.85 }]}
+              testID="demo-make-bill"
+            >
+              <Ionicons name="receipt" size={16} color="#FFFFFF" />
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 14 }}>Make Bill</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const dishCols = isDesktop ? (isLargeDesktop ? 2 : 1) : width >= 560 ? 2 : 1;
+  const menuList = (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: pad - 6, paddingBottom: isDesktop ? 40 : 120 }}>
+      {filtered.map(d => {
+        const q = qtyOf(d.id);
+        return (
+          <View key={d.id} style={{ width: `${100 / dishCols}%`, padding: 6 }}>
+            <Pressable
+              onPress={() => changeQty(d, 1)}
+              style={({ pressed }) => [styles.itemCard, card, q > 0 && { borderColor: BRAND }, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
+              testID={`demo-dish-${d.id}`}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1, minWidth: 0 }}>
+                <Image source={{ uri: foodImageUrl(d.name) }} style={styles.thumb} contentFit="cover" transition={200} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View style={[styles.vegMark, { backgroundColor: vegMarkColor({ name: d.name }) }]} />
+                    <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "700", flex: 1 }} numberOfLines={2}>{d.name}</Text>
+                  </View>
+                  <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 2, fontWeight: "500" }}>₹{d.price} · GST {gstOn ? pct(gstRate) : "0%"}</Text>
+                </View>
+              </View>
+              {q > 0 ? <Counter d={d} /> : (
+                <View style={styles.addCircle}><Ionicons name="add" size={22} color="#FFFFFF" /></View>
+              )}
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  const pos = (
+    <View style={{ flex: 1, flexDirection: "row" }}>
+      <View style={{ flex: 1, borderRightWidth: isDesktop ? 1 : 0, borderRightColor: theme.border }}>
+        <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Header
+            title={target ? `Table ${target}` : "Takeaway"}
+            sub={target ? "Dine-in order. Send to kitchen, then make the bill." : "Walk-in / pickup orders. Tap dishes to add them."}
+            right={target ? (
+              <Pressable onPress={() => { setTarget(null); setCart([]); }} style={[styles.outlineBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
+                <Ionicons name="close" size={15} color={theme.onSurfaceSecondary} />
+                <Text style={{ color: theme.onSurfaceSecondary, fontWeight: "700", fontSize: 12 }}>Takeaway</Text>
+              </Pressable>
+            ) : (
+              <Pressable onPress={() => setTab("tables")} style={[styles.outlineBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
+                <Ionicons name="grid-outline" size={15} color={BRAND} />
+                <Text style={{ color: BRAND, fontWeight: "800", fontSize: 12 }}>Tables</Text>
+              </Pressable>
+            )}
+          />
+          <View style={{ backgroundColor: theme.surface, paddingBottom: 4 }}>
+            <View style={[styles.searchRow, card, { marginHorizontal: pad }]}>
+              <Ionicons name="search" size={18} color={theme.onSurfaceTertiary} />
+              <TextInput value={search} onChangeText={setSearch} placeholder="Search dishes..." placeholderTextColor={theme.onSurfaceTertiary} style={[styles.search, { color: theme.onSurface }]} />
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: pad, gap: 10, paddingVertical: spacing.md }}>
+              {["All", ...CATS].map(c => (
+                <Pressable key={c} onPress={() => setCat(c)} style={[styles.chip, card, cat === c && { backgroundColor: BRAND, borderColor: BRAND }]}>
+                  <Text style={{ fontSize: 14, fontWeight: cat === c ? "700" : "600", color: cat === c ? "#FFFFFF" : theme.onSurfaceSecondary }}>{c}</Text>
                 </Pressable>
               ))}
             </ScrollView>
           </View>
-
-          {/* TAB 1: FAST BILLING & RECEIPT PREVIEW */}
-          {currentTab === "billing" && (
-            <View style={styles.playgroundCard}>
-              <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardSuperTitle}>SUPERFAST BILLING ENGINE</Text>
-                  <Text style={styles.cardMainTitle}>Add Items & Print Thermal Bill</Text>
-                </View>
-                <Pressable style={styles.addItemBtn} onPress={() => setShowAddModal(true)}>
-                  <Ionicons name="add" size={16} color="#FFFFFF" />
-                  <Text style={styles.addItemBtnText}>Add Custom Dish</Text>
-                </Pressable>
-              </View>
-
-              {/* Search & Category Pills */}
-              <View style={styles.searchRow}>
-                <View style={styles.searchBox}>
-                  <Ionicons name="search" size={16} color="#64748B" />
-                  <TextInput
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder="Search biryani, paneer, naan..."
-                    placeholderTextColor="#64748B"
-                    style={styles.searchInput}
-                  />
-                  {searchQuery ? (
-                    <Pressable onPress={() => setSearchQuery("")}>
-                      <Ionicons name="close-circle" size={16} color="#64748B" />
-                    </Pressable>
-                  ) : null}
-                </View>
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
-                {categories.map(c => (
-                  <Pressable
-                    key={c}
-                    onPress={() => setSelectedCategory(c)}
-                    style={[styles.catPill, selectedCategory === c && styles.catPillActive]}
-                  >
-                    <Text style={[styles.catPillText, selectedCategory === c && styles.catPillTextActive]}>{c}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-
-              {/* Menu Grid / List */}
-              <View style={styles.menuItemsGrid}>
-                {filteredMenuItems.map(item => {
-                  const qty = quantities[item.id] || 0;
-                  return (
-                    <View key={item.id} style={styles.menuItemCard}>
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <View style={[styles.vegBadge, { borderColor: item.isVeg ? "#10B981" : "#EF4444" }]}>
-                            <View style={[styles.vegDot, { backgroundColor: item.isVeg ? "#10B981" : "#EF4444" }]} />
-                          </View>
-                          <Text style={styles.itemNameText}>{item.name}</Text>
-                        </View>
-                        <Text style={styles.itemPriceText}>₹{item.price}</Text>
-                        <Text style={styles.itemDescText} numberOfLines={1}>{item.description}</Text>
-                      </View>
-
-                      <View style={styles.itemQtyControl}>
-                        {qty > 0 ? (
-                          <View style={styles.qtyControlRow}>
-                            <Pressable onPress={() => updateQty(item.id, -1)} style={styles.qtyBtn}>
-                              <Ionicons name="remove" size={14} color="#FF5E2B" />
-                            </Pressable>
-                            <Text style={styles.qtyNumber}>{qty}</Text>
-                            <Pressable onPress={() => updateQty(item.id, 1)} style={styles.qtyBtn}>
-                              <Ionicons name="add" size={14} color="#FF5E2B" />
-                            </Pressable>
-                          </View>
-                        ) : (
-                          <Pressable onPress={() => updateQty(item.id, 1)} style={styles.addBtnPill}>
-                            <Text style={styles.addBtnPillText}>+ ADD</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {/* Live Order Billing Tray */}
-              <View style={styles.orderTrayCard}>
-                <View style={styles.trayHeader}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Ionicons name="cart" size={20} color="#FF5E2B" />
-                    <Text style={styles.trayTitle}>Current Bill ({totalItemCount} items)</Text>
-                  </View>
-                  <Pressable onPress={() => setQuantities({})} hitSlop={10}>
-                    <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "700" }}>Clear All</Text>
-                  </Pressable>
-                </View>
-
-                {/* Calculation breakdown */}
-                <View style={styles.calcBreakdown}>
-                  <View style={styles.calcRow}>
-                    <Text style={styles.calcLabel}>Item Subtotal</Text>
-                    <Text style={styles.calcVal}>₹{rawSubtotal}</Text>
-                  </View>
-
-                  <View style={styles.calcRow}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={styles.calcLabel}>GST (CGST 2.5% + SGST 2.5%)</Text>
-                      <Pressable 
-                        onPress={() => setGstEnabled(!gstEnabled)} 
-                        style={[styles.taxToggleBadge, gstEnabled && styles.taxToggleBadgeActive]}
-                      >
-                        <Text style={{ fontSize: 10, fontWeight: "800", color: gstEnabled ? "#10B981" : "#64748B" }}>
-                          {gstEnabled ? "5% ON" : "OFF"}
-                        </Text>
-                      </Pressable>
-                    </View>
-                    <Text style={styles.calcVal}>₹{gstTax}</Text>
-                  </View>
-
-                  {discountPercent > 0 && (
-                    <View style={styles.calcRow}>
-                      <Text style={[styles.calcLabel, { color: "#10B981" }]}>Special Discount ({discountPercent}%)</Text>
-                      <Text style={[styles.calcVal, { color: "#10B981" }]}>-₹{discountAmt}</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.trayDivider} />
-
-                  <View style={styles.calcRow}>
-                    <Text style={styles.netTotalLabel}>NET PAYABLE TOTAL</Text>
-                    <Text style={styles.netTotalVal}>₹{totalBillAmount}</Text>
-                  </View>
-                </View>
-
-                {/* Payment Mode Selector */}
-                <View style={styles.payModeRow}>
-                  {[
-                    { id: "upi", label: "Dynamic UPI QR", icon: "qr-code" },
-                    { id: "cash", label: "Cash", icon: "cash" },
-                    { id: "card", label: "Card / POS", icon: "card" }
-                  ].map(m => (
-                    <Pressable
-                      key={m.id}
-                      onPress={() => setPaymentMode(m.id as any)}
-                      style={[styles.payModeBtn, paymentMode === m.id && styles.payModeBtnActive]}
-                    >
-                      <Ionicons name={m.icon as any} size={15} color={paymentMode === m.id ? "#FF5E2B" : "#94A3B8"} />
-                      <Text style={[styles.payModeText, paymentMode === m.id && styles.payModeTextActive]}>
-                        {m.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.billingActionsRow}>
-                  <Pressable 
-                    style={styles.previewReceiptBtn} 
-                    onPress={() => setShowReceiptModal(true)}
-                  >
-                    <Ionicons name="print" size={18} color="#FFFFFF" />
-                    <Text style={styles.previewReceiptBtnText}>Preview Thermal Receipt (58/80mm)</Text>
-                  </Pressable>
-
-                  <Pressable 
-                    style={styles.sendKotBtn} 
-                    onPress={() => handleFireKOT("Table 1")}
-                  >
-                    <Ionicons name="restaurant-outline" size={16} color="#FF5E2B" />
-                    <Text style={styles.sendKotBtnText}>Fire Kitchen KOT</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* TAB 2: LIVE TABLES POS */}
-          {currentTab === "tables" && (
-            <View style={styles.playgroundCard}>
-              <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardSuperTitle}>TABLE MANAGEMENT</Text>
-                  <Text style={styles.cardMainTitle}>Live Dine-In Table Status</Text>
-                </View>
-                <View style={styles.legendRow}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }} />
-                    <Text style={styles.legendText}>Free</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#F59E0B" }} />
-                    <Text style={styles.legendText}>Busy</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444" }} />
-                    <Text style={styles.legendText}>Billed</Text>
-                  </View>
-                </View>
-              </View>
-
-              <Text style={{ color: "#94A3B8", fontSize: 13, marginBottom: 16 }}>
-                Tap any table below to inspect active food items, fire kitchen KOT, or clear and settle bills:
-              </Text>
-
-              {/* Table Cards Grid */}
-              <View style={styles.tablesGrid}>
-                {tables.map(tbl => {
-                  let statusBg = "#10B98120";
-                  let statusColor = "#10B981";
-                  let borderColor = "#10B98140";
-                  if (tbl.status === "Occupied") {
-                    statusBg = "#F59E0B20";
-                    statusColor = "#F59E0B";
-                    borderColor = "#F59E0B40";
-                  } else if (tbl.status === "Billed") {
-                    statusBg = "#EF444420";
-                    statusColor = "#EF4444";
-                    borderColor = "#EF444440";
-                  }
-
-                  return (
-                    <Pressable
-                      key={tbl.id}
-                      onPress={() => setSelectedTable(tbl)}
-                      style={[styles.tableGridCard, { borderColor }]}
-                    >
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                        <Text style={styles.tableGridTitle}>{tbl.name}</Text>
-                        <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
-                          <Text style={[styles.statusBadgeText, { color: statusColor }]}>{tbl.status}</Text>
-                        </View>
-                      </View>
-                      
-                      <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>{tbl.seats} seats</Text>
-                      
-                      <View style={{ marginTop: 12 }}>
-                        {tbl.bill > 0 ? (
-                          <Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "900" }}>₹{tbl.bill}</Text>
-                        ) : (
-                          <Text style={{ color: "#10B981", fontSize: 14, fontWeight: "700" }}>Available</Text>
-                        )}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {/* Selected Table Quick Sheet */}
-              {selectedTable && (
-                <View style={styles.selectedTableSheet}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={styles.sheetTitle}>{selectedTable.name} Active Session</Text>
-                    <Pressable onPress={() => setSelectedTable(null)} hitSlop={10}>
-                      <Ionicons name="close" size={20} color="#94A3B8" />
-                    </Pressable>
-                  </View>
-
-                  {selectedTable.items.length === 0 ? (
-                    <View style={{ paddingVertical: 16 }}>
-                      <Text style={{ color: "#94A3B8", fontSize: 13 }}>Table is currently vacant and clean.</Text>
-                      <Pressable 
-                        style={[styles.actionPillBtn, { marginTop: 12, backgroundColor: "#10B981" }]}
-                        onPress={() => {
-                          setTables(prev => prev.map(t => t.id === selectedTable.id ? { ...t, status: "Occupied", bill: 360, items: [{ name: "Chicken Dum Biryani", qty: 2, price: 180 }] } : t));
-                          setSelectedTable(null);
-                        }}
-                      >
-                        <Text style={styles.actionPillBtnText}>+ Seat Guests & Add Order</Text>
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <View style={{ marginTop: 12 }}>
-                      <View style={{ gap: 6, marginBottom: 16 }}>
-                        {selectedTable.items.map((it: any, idx: number) => (
-                          <View key={idx} style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                            <Text style={{ color: "#FFFFFF", fontSize: 13 }}>{it.qty}× {it.name}</Text>
-                            <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700" }}>₹{it.qty * it.price}</Text>
-                          </View>
-                        ))}
-                      </View>
-
-                      <View style={{ flexDirection: "row", gap: 10 }}>
-                        <Pressable 
-                          style={[styles.actionPillBtn, { flex: 1, backgroundColor: "#10B981" }]} 
-                          onPress={() => handleSettleTable(selectedTable.id)}
-                        >
-                          <Text style={styles.actionPillBtnText}>Settle & Free Table</Text>
-                        </Pressable>
-                        <Pressable 
-                          style={[styles.actionPillBtn, { flex: 1, backgroundColor: "#222431" }]} 
-                          onPress={() => handleFireKOT(selectedTable.name)}
-                        >
-                          <Text style={[styles.actionPillBtnText, { color: "#FF5E2B" }]}>Print KOT</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* TAB 3: KITCHEN DISPLAY SYSTEM (KOT) */}
-          {currentTab === "kitchen" && (
-            <View style={styles.playgroundCard}>
-              <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardSuperTitle}>KITCHEN ORDER TICKETS</Text>
-                  <Text style={styles.cardMainTitle}>Live Kitchen Display (KDS)</Text>
-                </View>
-                <View style={styles.livePulseBadge}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.livePulseText}>KITCHEN DISPATCH ACTIVE</Text>
-                </View>
-              </View>
-
-              <Text style={{ color: "#94A3B8", fontSize: 13, marginBottom: 16 }}>
-                When orders are placed, tickets instantly appear in the kitchen. Chefs update statuses with 1 tap:
-              </Text>
-
-              <View style={{ gap: 12 }}>
-                {kotTickets.map(kot => (
-                  <View key={kot.id} style={styles.kotTicketCard}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Text style={styles.kotNumberText}>{kot.id}</Text>
-                        <Text style={styles.kotTableBadge}>{kot.table}</Text>
-                      </View>
-                      <Text style={{ color: "#64748B", fontSize: 12 }}>⏱️ {kot.timeAgo}</Text>
-                    </View>
-
-                    <View style={styles.kotItemsList}>
-                      {kot.items.map((it, idx) => (
-                        <Text key={idx} style={styles.kotItemLine}>• {it}</Text>
-                      ))}
-                    </View>
-
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-                      <View style={[styles.kotStatusPill, { backgroundColor: kot.status === "Cooking" ? "#F59E0B20" : "#3B82F620" }]}>
-                        <Text style={{ color: kot.status === "Cooking" ? "#F59E0B" : "#3B82F6", fontWeight: "800", fontSize: 11 }}>
-                          {kot.status.toUpperCase()}
-                        </Text>
-                      </View>
-
-                      <Pressable
-                        style={styles.kotReadyBtn}
-                        onPress={() => {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                          setKotTickets(prev => prev.filter(k => k.id !== kot.id));
-                          alert(`🍲 ${kot.id} for ${kot.table} marked Ready to Serve! Waiter notified.`);
-                        }}
-                      >
-                        <Ionicons name="checkmark-done" size={14} color="#FFFFFF" />
-                        <Text style={styles.kotReadyBtnText}>Mark Ready & Serve</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* TAB 4: UNIVERSAL PRINTER HUB */}
-          {currentTab === "printers" && (
-            <View style={styles.playgroundCard}>
-              <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardSuperTitle}>HARDWARE ECOSYSTEM</Text>
-                  <Text style={styles.cardMainTitle}>Universal Thermal Printer Hub</Text>
-                </View>
-              </View>
-
-              <Text style={{ color: "#94A3B8", fontSize: 13, marginBottom: 16 }}>
-                BillPro connects to any printer brand in India (TVS, Epson, Xprinter, Sunmi, NGX, Bluetooth, USB & LAN) with zero manual driver setups:
-              </Text>
-
-              <View style={styles.printerTypesGrid}>
-                {[
-                  { title: "Bluetooth SPP / BLE", desc: "Handheld pocket printers & TVS BT", status: "Ready", icon: "bluetooth" },
-                  { title: "Wi-Fi / Ethernet LAN", desc: "Network printers via TCP Port 9100", status: "Ready", icon: "wifi" },
-                  { title: "USB Cable / OTG", desc: "Direct WebUSB hardware communication", status: "Ready", icon: "hardware-chip" },
-                  { title: "Sunmi POS Built-in", desc: "Internal print head on Android terminals", status: "Ready", icon: "phone-portrait" }
-                ].map((pr, idx) => (
-                  <View key={idx} style={styles.printerTypeBox}>
-                    <View style={styles.prIconBox}>
-                      <Ionicons name={pr.icon as any} size={20} color="#FF5E2B" />
-                    </View>
-                    <Text style={styles.prTitle}>{pr.title}</Text>
-                    <Text style={styles.prDesc}>{pr.desc}</Text>
-                    <View style={styles.prStatusPill}>
-                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
-                      <Text style={{ color: "#10B981", fontSize: 11, fontWeight: "700" }}>{pr.status}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              <View style={{ marginTop: 16, flexDirection: "row", gap: 10 }}>
-                <Pressable 
-                  style={[styles.printerActionBtn, { flex: 1 }]}
-                  onPress={() => {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                    alert("💵 Cash Drawer Kick Pulse (0x1B, 0x70) sent via RJ11!");
-                  }}
-                >
-                  <Ionicons name="cash-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.printerActionBtnText}>Kick Cash Drawer</Text>
-                </Pressable>
-
-                <Pressable 
-                  style={[styles.printerActionBtn, { flex: 1, backgroundColor: "#FF5E2B" }]}
-                  onPress={() => setShowReceiptModal(true)}
-                >
-                  <Ionicons name="receipt-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.printerActionBtnText}>Test 80mm Bill Print</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-
-          {/* TAB 5: 100% OFFLINE BILLING SIMULATOR */}
-          {currentTab === "offline" && (
-            <View style={styles.playgroundCard}>
-              <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardSuperTitle}>ZERO INTERNET DEPENDENCY</Text>
-                  <Text style={styles.cardMainTitle}>100% Offline-First Architecture</Text>
-                </View>
-              </View>
-
-              <View style={[styles.offlineSimulatorBox, simulatedOffline && styles.offlineSimulatorBoxActive]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    <Ionicons 
-                      name={simulatedOffline ? "cloud-offline" : "wifi"} 
-                      size={24} 
-                      color={simulatedOffline ? "#EF4444" : "#10B981"} 
-                    />
-                    <View>
-                      <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "800" }}>
-                        {simulatedOffline ? "Simulated State: Internet CUT OFF" : "Simulated State: Connected"}
-                      </Text>
-                      <Text style={{ color: "#94A3B8", fontSize: 12 }}>
-                        {simulatedOffline ? "Local database billing & thermal printing running 100% offline" : "Standard cloud synchronization"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Pressable
-                    style={[styles.offlineToggleBtn, simulatedOffline && styles.offlineToggleBtnActive]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                      setSimulatedOffline(!simulatedOffline);
-                    }}
-                  >
-                    <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>
-                      {simulatedOffline ? "Reconnect" : "Cut Internet"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.offlineFeatureCardsRow}>
-                <View style={styles.offlinePointBox}>
-                  <Ionicons name="flash" size={18} color="#FF5E2B" style={{ marginBottom: 6 }} />
-                  <Text style={styles.offlinePointTitle}>0ms Billing Speed</Text>
-                  <Text style={styles.offlinePointDesc}>Bills generate instantly from SQLite disk cache without waiting for servers.</Text>
-                </View>
-                <View style={styles.offlinePointBox}>
-                  <Ionicons name="sync" size={18} color="#10B981" style={{ marginBottom: 6 }} />
-                  <Text style={styles.offlinePointTitle}>Silent Auto-Sync</Text>
-                  <Text style={styles.offlinePointDesc}>When Wi-Fi returns, transactions sync seamlessly in the background.</Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* TAB 6: SALES & DAY-END CASH CLOSING */}
-          {currentTab === "analytics" && (
-            <View style={styles.playgroundCard}>
-              <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardSuperTitle}>BUSINESS INTELLIGENCE</Text>
-                  <Text style={styles.cardMainTitle}>Real-Time Revenue & Closing</Text>
-                </View>
-              </View>
-
-              {/* Main KPI Stats */}
-              <View style={styles.kpiRow}>
-                <View style={styles.kpiBox}>
-                  <Text style={styles.kpiLabel}>TODAY'S REVENUE</Text>
-                  <Text style={styles.kpiVal}>₹28,450</Text>
-                  <Text style={{ color: "#10B981", fontSize: 11, fontWeight: "700", marginTop: 2 }}>+14.2% vs yesterday</Text>
-                </View>
-                <View style={styles.kpiBox}>
-                  <Text style={styles.kpiLabel}>TOTAL ORDERS</Text>
-                  <Text style={styles.kpiVal}>48</Text>
-                  <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>Avg ticket: ₹592</Text>
-                </View>
-              </View>
-
-              {/* End of Day Cash Closing Drawer reconciliation */}
-              <View style={styles.cashClosingCard}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "800" }}>Cash Register Summary</Text>
-                  <Text style={{ color: "#10B981", fontSize: 12, fontWeight: "700" }}>✓ Drawer Balanced</Text>
-                </View>
-                <View style={{ gap: 8, marginTop: 12 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ color: "#94A3B8", fontSize: 12 }}>Opening Cash Float</Text>
-                    <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>₹2,000</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ color: "#94A3B8", fontSize: 12 }}>Cash Collected Today</Text>
-                    <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>₹14,200</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ color: "#94A3B8", fontSize: 12 }}>UPI & Digital Collections</Text>
-                    <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>₹14,250</Text>
-                  </View>
-                  <View style={styles.trayDivider} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "800" }}>Expected Physical Cash</Text>
-                    <Text style={{ color: "#FF5E2B", fontSize: 15, fontWeight: "900" }}>₹16,200</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* ======================================================== */}
-          {/* CONVERSION PSYCHOLOGY SECTION 1: INTERACTIVE ROI CALCULATOR */}
-          {/* ======================================================== */}
-          <View style={styles.roiCard}>
-            <View style={styles.roiHeader}>
-              <Ionicons name="calculator-outline" size={24} color="#FF5E2B" />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.roiSuperTitle}>RESTAURANT PROFIT ENGINE</Text>
-                <Text style={styles.roiMainTitle}>How Much Does Manual Billing Cost You?</Text>
-              </View>
-            </View>
-
-            <Text style={styles.roiBody}>
-              Restaurants lose an estimated ₹12 to ₹15 per order from math errors, unbilled extras, missing kitchen tickets, and slow turnaround times.
-            </Text>
-
-            {/* Daily order stepper */}
-            <View style={styles.stepperContainer}>
-              <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "700" }}>
-                Your Average Daily Orders: <Text style={{ color: "#FF5E2B", fontSize: 18, fontWeight: "900" }}>{dailyOrders}</Text> orders/day
-              </Text>
-              <View style={styles.stepperButtons}>
-                {[30, 50, 75, 100, 150].map(cnt => (
-                  <Pressable
-                    key={cnt}
-                    onPress={() => {
-                      Haptics.selectionAsync().catch(() => {});
-                      setDailyOrders(cnt);
-                    }}
-                    style={[styles.stepperPill, dailyOrders === cnt && styles.stepperPillActive]}
-                  >
-                    <Text style={[styles.stepperPillText, dailyOrders === cnt && styles.stepperPillTextActive]}>{cnt}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            {/* Savings Result Hero */}
-            <View style={styles.savingsHero}>
-              <View>
-                <Text style={styles.savingsHeroLabel}>YOU SAVE APPROXIMATELY</Text>
-                <Text style={styles.savingsHeroAmount}>₹{estimatedMonthlyLoss.toLocaleString("en-IN")}<Text style={{ fontSize: 16, color: "#94A3B8" }}> / month</Text></Text>
-                <Text style={styles.savingsHeroSub}>EzBill costs ₹299/mo · Your Net Gain: ₹{netMonthlyProfitIncrease.toLocaleString("en-IN")}/mo ({(estimatedMonthlyLoss / 299).toFixed(0)}x ROI)</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* ======================================================== */}
-          {/* CONVERSION PSYCHOLOGY SECTION 2: SOCIAL PROOF & TESTIMONIALS */}
-          {/* ======================================================== */}
-          <View style={styles.socialProofCard}>
-            <Text style={styles.socialProofHeading}>Trusted by 1,200+ Restaurants Across India</Text>
-            
-            <View style={styles.ratingBadgeRow}>
-              <Text style={{ color: "#F59E0B", fontSize: 18 }}>★★★★★</Text>
-              <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14, marginLeft: 6 }}>4.9/5 Rating</Text>
-              <Text style={{ color: "#64748B", fontSize: 12, marginLeft: 6 }}>(Verified Owners)</Text>
-            </View>
-
-            <View style={{ gap: 12, marginTop: 16 }}>
-              <View style={styles.testimonialItem}>
-                <Text style={styles.testimonialText}>
-                  "We switched from a bulky ₹35,000 POS hardware to EzBill on our mobile tablet. Bills print in 2 seconds via Bluetooth thermal, and our waiters never mix up tables anymore."
-                </Text>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-                  <Text style={styles.testimonialAuthor}>Rajesh Hegde</Text>
-                  <Text style={styles.testimonialResto}>Udupi Rasoi, Bengaluru</Text>
-                </View>
-              </View>
-
-              <View style={styles.testimonialItem}>
-                <Text style={styles.testimonialText}>
-                  "The offline guarantee is 100% genuine. Our internet failed on Saturday evening rush hour, but EzBill kept printing KOTs and receipts without stopping."
-                </Text>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-                  <Text style={styles.testimonialAuthor}>Mohammad Irfan</Text>
-                  <Text style={styles.testimonialResto}>Al-Madina Biryani, Hyderabad</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* ======================================================== */}
-          {/* CONVERSION PSYCHOLOGY SECTION 3: TRANSPARENT PLANS & CTA */}
-          {/* ======================================================== */}
-          <View style={styles.pricingCard}>
-            <Text style={styles.pricingTitle}>Simple, Transparent Plans</Text>
-            <Text style={styles.pricingSub}>Zero commission per order. You keep 100% of your earnings.</Text>
-
-            <View style={styles.plansContainer}>
-              {/* Starter Plan */}
-              <View style={styles.planBox}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={styles.planName}>STARTER</Text>
-                  <Text style={styles.planPrice}>₹299<Text style={{ fontSize: 12, color: "#94A3B8" }}>/mo</Text></Text>
-                </View>
-                <Text style={styles.planDesc}>Ideal for cafes, bakeries & quick service stalls.</Text>
-                
-                <View style={styles.planFeaturesList}>
-                  <Text style={styles.planFeat}>✓ Unlimited Bills & Orders</Text>
-                  <Text style={styles.planFeat}>✓ 100% Offline-First Billing</Text>
-                  <Text style={styles.planFeat}>✓ Bluetooth & USB Thermal Print</Text>
-                  <Text style={styles.planFeat}>✓ GST Tax Calculation & UPI QR</Text>
-                </View>
-
-                <Pressable style={styles.planCtaBtn} onPress={handleUpgradeNavigation}>
-                  <Text style={styles.planCtaBtnText}>Choose Starter Plan</Text>
-                </Pressable>
-              </View>
-
-              {/* Pro Plan - Highlighted */}
-              <View style={[styles.planBox, styles.planBoxHighlighted]}>
-                <View style={styles.popularBadge}>
-                  <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                  <Text style={[styles.planName, { color: "#FF5E2B" }]}>PRO RESTAURANT</Text>
-                  <Text style={styles.planPrice}>₹499<Text style={{ fontSize: 12, color: "#94A3B8" }}>/mo</Text></Text>
-                </View>
-                <Text style={styles.planDesc}>For dine-in restaurants with tables & kitchen KOT.</Text>
-                
-                <View style={styles.planFeaturesList}>
-                  <Text style={styles.planFeat}>✓ Everything in Starter</Text>
-                  <Text style={styles.planFeat}>✓ Unlimited Tables & Waiter Staff</Text>
-                  <Text style={styles.planFeat}>✓ Live Kitchen Display (KDS) & KOT</Text>
-                  <Text style={styles.planFeat}>✓ Multi-Printer Auto Dispatch</Text>
-                  <Text style={styles.planFeat}>✓ End-of-Day Cash Closing & Audit</Text>
-                </View>
-
-                <Pressable style={[styles.planCtaBtn, { backgroundColor: "#FF5E2B" }]} onPress={handleUpgradeNavigation}>
-                  <Text style={[styles.planCtaBtnText, { color: "#FFFFFF" }]}>⚡ Start Pro Plan (Recommended)</Text>
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Guarantee Pill */}
-            <View style={styles.guaranteeRow}>
-              <Ionicons name="shield-checkmark" size={18} color="#10B981" />
-              <Text style={{ color: "#94A3B8", fontSize: 12, fontWeight: "600" }}>
-                14-Day Money-Back Guarantee · Cancel Anytime · Free 1-on-1 Setup Support
-              </Text>
-            </View>
-          </View>
-
-          <View style={{ height: 90 }} />
+          {menuList}
         </ScrollView>
 
-        {/* ======================================================== */}
-        {/* STICKY BOTTOM CONVERSION BAR */}
-        {/* ======================================================== */}
-        <View style={[styles.stickyBottomBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.stickyBarTitle}>
-              {restaurantName ? `Ready to go live with ${restaurantName}?` : "Ready to start live billing?"}
-            </Text>
-            <Text style={styles.stickyBarSub}>Plans start at ₹299/mo (₹10/day) · Cancel anytime</Text>
-          </View>
+        {!isDesktop && (cart.length > 0 || tableLines.length > 0) && (
+          <Pressable onPress={() => setShowCart(true)} style={({ pressed }) => [styles.cartBar, pressed && { opacity: 0.92 }]} testID="demo-cart-bar">
+            <View style={styles.cartBadge}><Text style={{ color: BRAND, fontWeight: "900", fontSize: 13 }}>{cartCount}</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 16 }}>{money(totals(target ? mergeLines(tableLines, cart) : cart).total)}</Text>
+              <Text style={{ color: "#E0E7FF", fontSize: 11, fontWeight: "600" }}>{gstOn ? "incl. GST" : "no GST"} · {target || "Takeaway"}</Text>
+            </View>
+            <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 14 }}>View Order</Text>
+            <Ionicons name="chevron-up" size={18} color="#FFFFFF" />
+          </Pressable>
+        )}
+      </View>
+      {isDesktop && <View style={{ width: isLargeDesktop ? 380 : 340, backgroundColor: theme.surfaceSecondary }}>{cartPanel(false)}</View>}
+    </View>
+  );
 
-          <Pressable style={styles.stickyBarBtn} onPress={handleUpgradeNavigation}>
-            <Text style={styles.stickyBarBtnText}>Activate Now</Text>
-            <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
+  const kitchenCols = isLargeDesktop ? 3 : isDesktop ? 2 : 1;
+  const kitchen = (
+    <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <Header
+        title="Kitchen"
+        sub="Orders from tables and the counter land here instantly."
+        right={
+          <View style={[styles.outlineBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }} />
+            <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 12 }}>{tickets.length} active</Text>
+          </View>
+        }
+      />
+      {tickets.length === 0 ? (
+        <View style={{ alignItems: "center", paddingVertical: 60, paddingHorizontal: pad }}>
+          <Ionicons name="checkmark-done-circle" size={60} color="#10B981" />
+          <Text style={{ color: theme.onSurface, fontSize: 18, fontWeight: "900", marginTop: 12 }}>All orders served</Text>
+          <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 4, textAlign: "center" }}>Take a new order and press "Send to Kitchen" to see it here.</Text>
+          <Pressable onPress={() => setTab("pos")} style={[styles.payBtn, { flex: 0, paddingHorizontal: 20, marginTop: 16 }]}>
+            <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+            <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14 }}>New Order</Text>
           </Pressable>
         </View>
-
-        {/* ======================================================== */}
-        {/* MODAL 1: ADD CUSTOM MENU ITEM */}
-        {/* ======================================================== */}
-        <Modal visible={showAddModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Custom Dish to Menu</Text>
-                <Pressable onPress={() => setShowAddModal(false)} hitSlop={10}>
-                  <Ionicons name="close" size={22} color="#8A8A93" />
-                </Pressable>
-              </View>
-
-              {addItemSuccess ? (
-                <View style={styles.successFormContainer}>
-                  <Ionicons name="checkmark-circle" size={48} color="#10B981" />
-                  <Text style={styles.successFormText}>✓ Dish added to demo menu!</Text>
-                </View>
-              ) : (
-                <View style={styles.formContainer}>
-                  <View style={styles.field}>
-                    <Text style={styles.label}>Dish / Item Name *</Text>
-                    <TextInput
-                      value={newItem.name}
-                      onChangeText={t => setNewItem({ ...newItem, name: t })}
-                      placeholder="e.g. Masala Dosa"
-                      placeholderTextColor="#64748B"
-                      style={styles.formInput}
-                    />
-                  </View>
-
-                  <View style={styles.field}>
-                    <Text style={styles.label}>Price (₹) *</Text>
-                    <TextInput
-                      value={newItem.price}
-                      onChangeText={t => setNewItem({ ...newItem, price: t })}
-                      placeholder="e.g. 90"
-                      placeholderTextColor="#64748B"
-                      keyboardType="number-pad"
-                      style={styles.formInput}
-                    />
-                  </View>
-
-                  <View style={styles.field}>
-                    <Text style={styles.label}>Food Type</Text>
-                    <View style={{ flexDirection: "row", gap: 10 }}>
-                      <Pressable 
-                        style={[styles.vegToggleBtn, newItem.isVeg && styles.vegToggleBtnActive]}
-                        onPress={() => setNewItem({ ...newItem, isVeg: true })}
-                      >
-                        <Text style={{ color: newItem.isVeg ? "#10B981" : "#94A3B8", fontWeight: "700" }}>🟢 Pure Veg</Text>
+      ) : (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: pad - 6 }}>
+          {tickets.map(k => {
+            const mins = Math.max(0, Math.floor((now - k.at) / 60000));
+            return (
+              <View key={k.id} style={{ width: `${100 / kitchenCols}%`, padding: 6 }}>
+                <View style={[styles.ticket, card]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={{ color: theme.onSurface, fontSize: 20, fontWeight: "900" }}>#{k.num}</Text>
+                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: STATUS_BG[k.status] }}>
+                        <Text style={{ fontSize: 11, fontWeight: "900", color: STATUS_FG[k.status], letterSpacing: 0.5 }}>{STATUS_TEXT[k.status]}</Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Pressable onPress={() => lock("Print kitchen slips (KOT)", "Connect your kitchen printer and every order prints by itself. Subscribe to turn it on.", "print-outline")} style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: isDark ? "#2A2A38" : "#EEF2FF", flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Ionicons name="print-outline" size={14} color={BRAND} />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: BRAND }}>KOT</Text>
                       </Pressable>
-                      <Pressable 
-                        style={[styles.vegToggleBtn, !newItem.isVeg && styles.nonVegToggleBtnActive]}
-                        onPress={() => setNewItem({ ...newItem, isVeg: false })}
-                      >
-                        <Text style={{ color: !newItem.isVeg ? "#EF4444" : "#94A3B8", fontWeight: "700" }}>🔴 Non-Veg</Text>
-                      </Pressable>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                        <Ionicons name="time-outline" size={15} color={theme.onSurfaceSecondary} />
+                        <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "700" }}>{mins < 1 ? "now" : `${mins}m`}</Text>
+                      </View>
                     </View>
                   </View>
-
-                  <Pressable style={styles.formSubmitBtn} onPress={handleAddItem}>
-                    <Text style={styles.formSubmitBtnText}>Add Item to Demo Menu</Text>
+                  <Text style={{ color: theme.onSurface, fontSize: 16, fontWeight: "800", marginTop: 8 }}>{k.table === "Takeaway" ? "Takeaway" : `Table ${k.table}`}</Text>
+                  <View style={{ marginTop: 8, gap: 4 }}>
+                    {k.items.map((it, i) => (
+                      <View key={i} style={{ flexDirection: "row", gap: 8 }}>
+                        <Text style={{ color: BRAND, fontWeight: "900", fontSize: 15, minWidth: 26 }}>{it.qty}×</Text>
+                        <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "600", flex: 1 }}>{it.name}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {k.note ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, padding: 8, borderRadius: 10, borderWidth: 1, backgroundColor: isDark ? "#2B2212" : "#FFFBEB", borderColor: isDark ? "#78350F" : "#FDE68A" }}>
+                      <Ionicons name="document-text-outline" size={15} color={isDark ? "#FBBF24" : "#D97706"} />
+                      <Text style={{ color: isDark ? "#FBBF24" : "#D97706", fontSize: 13, fontWeight: "700" }}>Instructions: {k.note}</Text>
+                    </View>
+                  ) : null}
+                  <Pressable onPress={() => advanceTicket(k)} style={({ pressed }) => [styles.ticketBtn, { backgroundColor: NEXT_BG[k.status] }, pressed && { opacity: 0.85 }]}>
+                    <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 14 }}>{NEXT_LABEL[k.status]}</Text>
                   </Pressable>
                 </View>
-              )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
+  );
+
+  const priceCard = (
+    <View style={[styles.panel, { borderColor: BRAND, backgroundColor: tint }]}>
+      <Text style={{ color: BRAND, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 }}>STARTER PLAN</Text>
+      <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 4 }}>
+        <Text style={{ color: theme.onSurface, fontSize: 34, fontWeight: "900" }}>₹{PRICE}</Text>
+        <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, fontWeight: "700" }}> / month</Text>
+      </View>
+      <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>That's less than ₹10 a day.</Text>
+      <View style={{ marginTop: 12, gap: 8 }}>
+        {BENEFITS.map(b => (
+          <View key={b} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+            <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: "600", flex: 1 }}>{b}</Text>
+          </View>
+        ))}
+      </View>
+      <Pressable onPress={goSubscribe} style={({ pressed }) => [styles.bigCta, pressed && { opacity: 0.88 }]}>
+        <Text style={styles.bigCtaText}>{subscribed ? "Open my EzBill" : user ? "Subscribe Now" : "Get Started"}</Text>
+        <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+      </Pressable>
+      <Pressable onPress={() => router.push("/pricing")} style={{ alignSelf: "center", marginTop: 10, padding: 4 }}>
+        <Text style={{ color: BRAND, fontWeight: "800", fontSize: 13 }}>See all plans</Text>
+      </Pressable>
+    </View>
+  );
+
+  const more = (
+    <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <Header title="More" sub={`${shopName} · Demo`} />
+      <View style={{ paddingHorizontal: pad, gap: spacing.lg }}>
+        {!subscribed && priceCard}
+        <View style={[styles.panel, card, { paddingVertical: 4 }]}>
+          {LOCKED.map((f, i) => (
+            <Pressable key={f.key} onPress={() => openLocked(f.key)} style={({ pressed }) => [styles.moreRow, { borderTopColor: theme.border, borderTopWidth: i ? 1 : 0 }, pressed && { opacity: 0.7 }]}>
+              <View style={[styles.statIcon, { backgroundColor: tint }]}><Ionicons name={f.icon} size={18} color={BRAND} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "700" }}>{f.name}</Text>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, marginTop: 1 }} numberOfLines={1}>{f.why}</Text>
+              </View>
+              <Ionicons name="lock-closed" size={15} color={theme.onSurfaceTertiary} />
+            </Pressable>
+          ))}
+        </View>
+        <View style={[styles.panel, card, { paddingVertical: 4 }]}>
+          <Pressable onPress={toggleTheme} style={styles.moreRow}>
+            <View style={[styles.statIcon, { backgroundColor: theme.surfaceTertiary }]}><Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={18} color={theme.onSurfaceSecondary} /></View>
+            <Text style={{ flex: 1, color: theme.onSurface, fontSize: 15, fontWeight: "700" }}>{isDark ? "Light Mode" : "Dark Mode"}</Text>
+          </Pressable>
+          <Pressable onPress={leave} style={[styles.moreRow, { borderTopColor: theme.border, borderTopWidth: 1 }]}>
+            <View style={[styles.statIcon, { backgroundColor: "rgba(239,68,68,0.12)" }]}><Ionicons name={user ? "log-out-outline" : "arrow-back"} size={18} color="#EF4444" /></View>
+            <Text style={{ flex: 1, color: "#EF4444", fontSize: 15, fontWeight: "700" }}>{user ? "Log Out" : "Back to website"}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </ScrollView>
+  );
+
+  const screen = tab === "dashboard" ? dashboard : tab === "tables" ? tablesScreen : tab === "pos" ? pos : tab === "kitchen" ? kitchen : more;
+
+  // ---------- desktop sidebar (same look as the real app) ----------
+  const navItem = (key: string, name: string, icon: IconName, active: boolean, onPress: () => void, locked?: boolean, badge?: number) => (
+    <Pressable
+      key={key}
+      onPress={onPress}
+      style={({ hovered }: any) => [
+        styles.navItem,
+        {
+          backgroundColor: active ? (isDark ? "rgba(99, 91, 255, 0.16)" : "rgba(99, 91, 255, 0.10)") : hovered ? (isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)") : "transparent",
+          borderColor: active ? BRAND : "transparent",
+        },
+      ]}
+    >
+      <Ionicons name={icon} size={18} color={active ? BRAND : theme.onSurfaceSecondary} style={{ marginRight: 10 }} />
+      <Text style={{ flex: 1, fontSize: 13, color: active ? (isDark ? "#FFFFFF" : BRAND) : theme.onSurface, fontWeight: active ? "700" : "500" }} numberOfLines={1}>{name}</Text>
+      {badge ? <View style={styles.navBadge}><Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "800" }}>{badge}</Text></View> : null}
+      {locked && <Ionicons name="lock-closed" size={12} color={theme.onSurfaceTertiary} />}
+    </Pressable>
+  );
+
+  const groupTitle = (t: string) => <Text style={[styles.navGroupTitle, { color: theme.onSurfaceTertiary }]}>{t}</Text>;
+
+  const sidebar = (
+    <View style={[styles.sidebar, { backgroundColor: isDark ? "#121216" : "#FFFFFF", borderRightColor: theme.border }]}>
+      <View style={{ padding: spacing.md, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: spacing.sm }}>
+          <View style={styles.logoBadge}><Ionicons name="restaurant" size={18} color="#FFFFFF" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: "900", letterSpacing: -0.3, color: theme.onSurface }}>EzBill ERP</Text>
+            <Text style={{ fontSize: 11, fontWeight: "500", color: theme.onSurfaceSecondary }}>Demo Mode</Text>
+          </View>
+        </View>
+        <View style={[styles.userBadge, { backgroundColor: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderColor: theme.border }]}>
+          <View style={styles.avatar}><Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 12 }}>{shopName.charAt(0).toUpperCase()}</Text></View>
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: theme.onSurface }} numberOfLines={1}>{shopName}</Text>
+            <Text style={{ fontSize: 10, fontWeight: "600", color: BRAND }}>Restaurant Owner</Text>
+          </View>
+        </View>
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.sm }} showsVerticalScrollIndicator={false}>
+        <View style={{ marginBottom: spacing.md }}>
+          {groupTitle("OPERATIONS")}
+          {navItem("dashboard", "Dashboard", tab === "dashboard" ? "grid" : "grid-outline", tab === "dashboard", () => setTab("dashboard"))}
+          {navItem("tables", "Tables / POS", tab === "tables" ? "tablet-portrait" : "tablet-portrait-outline", tab === "tables", () => setTab("tables"))}
+          {navItem("pos", "Takeaway", tab === "pos" ? "bag-handle" : "bag-handle-outline", tab === "pos", () => setTab("pos"))}
+          {navItem("kitchen", "Kitchen KDS", tab === "kitchen" ? "restaurant" : "restaurant-outline", tab === "kitchen", () => setTab("kitchen"), false, tickets.length)}
+          {LOCKED.filter(l => l.group === "ops").map(l => navItem(l.key, l.name, l.icon, false, () => openLocked(l.key), true))}
+        </View>
+        <View style={{ marginBottom: spacing.md }}>
+          {groupTitle("CATALOG & REPORTS")}
+          {LOCKED.filter(l => l.group === "catalog").map(l => navItem(l.key, l.name, l.icon, false, () => openLocked(l.key), true))}
+        </View>
+        <View style={{ marginBottom: spacing.md }}>
+          {groupTitle("SYSTEM & TOOLS")}
+          {navItem("subscription", "Subscription", "card-outline", false, goSubscribe)}
+          {LOCKED.filter(l => l.group === "system").map(l => navItem(l.key, l.name, l.icon, false, () => openLocked(l.key), true))}
+        </View>
+      </ScrollView>
+      {!subscribed && (
+        <Pressable onPress={goSubscribe} style={({ pressed }) => [styles.sideCta, pressed && { opacity: 0.9 }]}>
+          <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 13 }}>Unlock everything</Text>
+          <Text style={{ color: "#E0E7FF", fontSize: 11, fontWeight: "600", marginTop: 2 }}>From ₹{PRICE}/month</Text>
+        </Pressable>
+      )}
+      <View style={{ padding: spacing.sm, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: isDark ? "#0E0E12" : "#F8FAFC", gap: 2 }}>
+        <Pressable onPress={toggleTheme} style={styles.footerBtn}>
+          <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={18} color={theme.onSurfaceSecondary} />
+          <Text style={{ fontSize: 12, marginLeft: 10, color: theme.onSurfaceSecondary }}>{isDark ? "Light Mode" : "Dark Mode"}</Text>
+        </Pressable>
+        <Pressable onPress={leave} style={styles.footerBtn}>
+          <Ionicons name={user ? "log-out-outline" : "arrow-back"} size={18} color="#EF4444" />
+          <Text style={{ fontSize: 12, marginLeft: 10, color: "#EF4444", fontWeight: "600" }}>{user ? "Log Out" : "Back to website"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  // ---------- phone bottom tabs (same look as the real app) ----------
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 14 : 10);
+  const tabs: { key: Tab; title: string; icon: IconName }[] = [
+    { key: "dashboard", title: "Dashboard", icon: "grid-outline" },
+    { key: "tables", title: "Tables", icon: "tablet-portrait-outline" },
+    { key: "pos", title: "Takeaway", icon: "bag-handle-outline" },
+    { key: "kitchen", title: "Kitchen", icon: "restaurant-outline" },
+    { key: "more", title: "More", icon: "ellipsis-horizontal-circle-outline" },
+  ];
+  const tabBar = (
+    <View style={[styles.tabBar, { backgroundColor: theme.tabBarBg, borderTopColor: theme.border, height: 60 + bottomInset, paddingBottom: bottomInset }]}>
+      {tabs.map(t => {
+        const active = tab === t.key;
+        const color = active ? BRAND : theme.onSurfaceTertiary;
+        return (
+          <Pressable key={t.key} onPress={() => { tap(); setTab(t.key); }} style={styles.tabItem} testID={`demo-tab-${t.key}`}>
+            <View>
+              <Ionicons name={t.icon} size={22} color={color} />
+              {t.key === "kitchen" && tickets.length > 0 && <View style={styles.tabDot} />}
+            </View>
+            <Text style={{ fontSize: 11, letterSpacing: 0.4, fontWeight: "600", color, marginTop: 2 }}>{t.title}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  // ---------- modals ----------
+  const welcome = (
+    <Modal visible={showWelcome} transparent animationType="fade" onRequestClose={() => setShowWelcome(false)}>
+      <View style={styles.overlay}>
+        <View style={[styles.modalCard, card, { maxWidth: 600, padding: 0, overflow: "hidden" }]}>
+          <ScrollView contentContainerStyle={{ padding: isDesktop ? 28 : 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.demoTagLarge}>
+              <Ionicons name="sparkles" size={13} color={BRAND} />
+              <Text style={{ color: BRAND, fontWeight: "900", fontSize: 11, letterSpacing: 0.8 }}>{registered ? "YOUR ACCOUNT IS READY" : "LIVE DEMO · NO SIGN-UP NEEDED"}</Text>
+            </View>
+            <Text style={{ color: theme.onSurface, fontSize: isDesktop ? 28 : 23, fontWeight: "900", marginTop: 12, lineHeight: isDesktop ? 34 : 29 }}>
+              {registered && restaurantName ? `Welcome, ${restaurantName}!` : "Run your whole restaurant from one app"}
+            </Text>
+            <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, marginTop: 6, lineHeight: 21 }}>
+              Billing, tables, kitchen orders and daily sales, all in one place. This is the real EzBill app with sample dishes, so try it freely. Nothing here is saved.
+            </Text>
+
+            <View style={{ marginTop: 18, gap: 10 }}>
+              {PROBLEMS.map(p => (
+                <View key={p.problem} style={[styles.problemCard, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}>
+                  <View style={[styles.statIcon, { backgroundColor: p.color + "22" }]}>
+                    <Ionicons name={p.icon} size={18} color={p.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "700" }}>Problem: {p.problem}</Text>
+                    <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: "700", marginTop: 3, lineHeight: 20 }}>{p.fix}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <View style={[styles.tryBox, { borderColor: theme.border }]}>
+              <Text style={{ color: theme.onSurface, fontWeight: "900", fontSize: 14 }}>Try it in 30 seconds</Text>
+              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, marginTop: 4, lineHeight: 20 }}>
+                1. Tap a few dishes   2. Press "Send to Kitchen"   3. Press "Make Bill"
+              </Text>
+            </View>
+
+            <Pressable onPress={() => { setShowWelcome(false); setTab("pos"); }} style={({ pressed }) => [styles.bigCta, pressed && { opacity: 0.88 }]} testID="demo-start">
+              <Text style={styles.bigCtaText}>Try the app now</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            </Pressable>
+            {!subscribed && (
+              <Pressable onPress={goSubscribe} style={{ alignSelf: "center", marginTop: 12, padding: 4 }}>
+                <Text style={{ color: theme.onSurfaceSecondary, fontWeight: "700", fontSize: 13 }}>
+                  Already sure? <Text style={{ color: BRAND, fontWeight: "900" }}>Subscribe from ₹{PRICE}/month</Text>
+                </Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const paywall = (
+    <Modal visible={!!wall} transparent animationType="fade" onRequestClose={() => setWall(null)}>
+      <View style={styles.overlay}>
+        <View style={[styles.modalCard, card, { maxWidth: 440, padding: 0, overflow: "hidden" }]}>
+          <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false}>
+            <Pressable onPress={() => setWall(null)} hitSlop={10} style={[styles.closeBtn, { backgroundColor: theme.surfaceTertiary }]} accessibilityLabel="Close">
+              <Ionicons name="close" size={18} color={theme.onSurface} />
+            </Pressable>
+            <View style={[styles.wallIcon, { backgroundColor: tint }]}>
+              <Ionicons name={wall?.icon || "lock-closed"} size={30} color={BRAND} />
+            </View>
+            <Text style={{ color: theme.onSurface, fontSize: 21, fontWeight: "900", textAlign: "center", marginTop: 14 }}>{wall?.title}</Text>
+            <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, textAlign: "center", marginTop: 6, lineHeight: 21 }}>{wall?.sub}</Text>
+            <View style={{ marginTop: 18, gap: 8 }}>
+              {BENEFITS.map(b => (
+                <View key={b} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: "600", flex: 1 }}>{b}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={[styles.priceStrip, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}>
+              <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "700" }}>Starter plan</Text>
+              <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "900" }}>₹{PRICE}/month <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "600" }}>· under ₹10 a day</Text></Text>
+            </View>
+            <Pressable onPress={goSubscribe} style={({ pressed }) => [styles.bigCta, pressed && { opacity: 0.88 }]} testID="demo-paywall-subscribe">
+              <Text style={styles.bigCtaText}>{subscribed ? "Open my EzBill" : user ? "Subscribe Now" : "Get Started"}</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            </Pressable>
+            <View style={{ flexDirection: "row", justifyContent: "center", gap: 20, marginTop: 12 }}>
+              <Pressable onPress={() => { setWall(null); router.push("/pricing"); }} hitSlop={6}>
+                <Text style={{ color: BRAND, fontWeight: "800", fontSize: 13 }}>See all plans</Text>
+              </Pressable>
+              <Pressable onPress={() => setWall(null)} hitSlop={6}>
+                <Text style={{ color: theme.onSurfaceSecondary, fontWeight: "700", fontSize: 13 }}>Keep exploring</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const receiptModal = (
+    <Modal visible={!!receipt} transparent animationType="fade" onRequestClose={closeReceipt}>
+      <View style={styles.overlay}>
+        <View style={{ width: "100%", maxWidth: 360 }}>
+          {receipt?.secs ? (
+            <View style={styles.speedPill}>
+              <Ionicons name="flash" size={14} color="#FFFFFF" />
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 13 }}>Bill ready in {receipt.secs} seconds</Text>
+            </View>
+          ) : null}
+          <View style={styles.paper}>
+            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ padding: 20 }}>
+              <Text style={styles.paperWatermark}>SAMPLE BILL</Text>
+              <Text style={styles.paperShop}>{shopName}</Text>
+              {gstin ? <Text style={[styles.paperSmall, { textAlign: "center" }]}>GSTIN: {gstin}</Text> : null}
+              <View style={styles.dash} />
+              <View style={styles.paperRow}><Text style={styles.paperSmall}>Bill #{receipt?.no}</Text><Text style={styles.paperSmall}>{receipt?.table === "Takeaway" ? "Takeaway" : `Table ${receipt?.table}`}</Text></View>
+              <Text style={styles.paperSmall}>{new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</Text>
+              <View style={styles.dash} />
+              {receipt?.lines.map(l => (
+                <View key={l.id} style={styles.paperRow}>
+                  <Text style={[styles.paperText, { flex: 1 }]} numberOfLines={1}>{l.qty} × {l.name}</Text>
+                  <Text style={styles.paperText}>{(l.price * l.qty).toFixed(2)}</Text>
+                </View>
+              ))}
+              <View style={styles.dash} />
+              <View style={styles.paperRow}><Text style={styles.paperText}>Subtotal</Text><Text style={styles.paperText}>{receipt?.subtotal.toFixed(2)}</Text></View>
+              {gstOn ? (
+                <>
+                  <View style={styles.paperRow}><Text style={styles.paperText}>CGST @ {pct(gstRate / 2)}</Text><Text style={styles.paperText}>{(receipt?.cgst || 0).toFixed(2)}</Text></View>
+                  <View style={styles.paperRow}><Text style={styles.paperText}>SGST @ {pct(gstRate / 2)}</Text><Text style={styles.paperText}>{(receipt?.sgst || 0).toFixed(2)}</Text></View>
+                </>
+              ) : null}
+              <View style={styles.dash} />
+              <View style={styles.paperRow}><Text style={styles.paperTotal}>TOTAL</Text><Text style={styles.paperTotal}>₹{(receipt?.total || 0).toFixed(2)}</Text></View>
+              <Text style={[styles.paperSmall, { marginTop: 4 }]}>Paid by {receipt?.mode}</Text>
+              <View style={{ alignItems: "center", marginTop: 14 }}>
+                <Ionicons name="qr-code" size={64} color="#111827" />
+                <Text style={styles.paperSmall}>Scan to pay with any UPI app</Text>
+              </View>
+              <Text style={[styles.paperSmall, { textAlign: "center", marginTop: 10 }]}>Thank you! Visit again.</Text>
+            </ScrollView>
+          </View>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+            <Pressable onPress={() => { setReceipt(null); lock("Print real bills", "Connect any thermal printer and your bills print in one tap, with your UPI QR on them. Subscribe to turn it on.", "print-outline"); }} style={({ pressed }) => [styles.receiptBtn, { backgroundColor: "#FFFFFF" }, pressed && { opacity: 0.85 }]}>
+              <Ionicons name="print-outline" size={16} color={BRAND} />
+              <Text style={{ color: BRAND, fontWeight: "900", fontSize: 14 }}>Print</Text>
+            </Pressable>
+            <Pressable onPress={closeReceipt} style={({ pressed }) => [styles.receiptBtn, { backgroundColor: BRAND }, pressed && { opacity: 0.85 }]} testID="demo-receipt-done">
+              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 14 }}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const tableSheet = (
+    <Modal visible={!!openTable} transparent animationType="fade" onRequestClose={() => setOpenTable(null)}>
+      <View style={styles.overlay}>
+        <View style={[styles.modalCard, card, { maxWidth: 420 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View>
+              <Text style={{ color: theme.onSurface, fontSize: 22, fontWeight: "900" }}>Table {openTable?.label}</Text>
+              <Text style={{ color: openTable?.status === "Billed" ? "#EF4444" : "#D97706", fontSize: 13, fontWeight: "800", marginTop: 2 }}>
+                {openTable?.status === "Billed" ? "Bill printed · waiting for payment" : "Eating now"}
+              </Text>
+            </View>
+            <Pressable onPress={() => setOpenTable(null)} hitSlop={10} style={[styles.closeBtn, { position: "relative", top: 0, right: 0, backgroundColor: theme.surfaceTertiary }]}>
+              <Ionicons name="close" size={18} color={theme.onSurface} />
+            </Pressable>
+          </View>
+          <View style={[styles.cartLine, { backgroundColor: theme.surfaceTertiary, borderColor: theme.border, flexDirection: "column", alignItems: "stretch", marginTop: 14 }]}>
+            {openTable?.lines.map(l => (
+              <View key={l.id} style={styles.sumRow}>
+                <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: "600" }}>{l.qty}× {l.name}</Text>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, fontWeight: "700" }}>{rupees(l.price * l.qty)}</Text>
+              </View>
+            ))}
+            <View style={[styles.sumRow, { marginTop: 8 }]}>
+              <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "900" }}>{gstOn ? "Total (incl. GST)" : "Total"}</Text>
+              <Text style={{ color: BRAND, fontSize: 18, fontWeight: "900" }}>{money(totals(openTable?.lines || []).total)}</Text>
             </View>
           </View>
-        </Modal>
-
-        {/* ======================================================== */}
-        {/* MODAL 2: AUTHENTIC THERMAL RECEIPT PREVIEW (58/80MM) */}
-        {/* ======================================================== */}
-        <Modal visible={showReceiptModal} transparent animationType="slide">
-          <Pressable style={styles.modalOverlay} onPress={() => setShowReceiptModal(false)}>
-            <View style={styles.receiptCard}>
-              <View style={styles.receiptHeaderRow}>
-                <View>
-                  <Text style={styles.receiptModalTitle}>Thermal Receipt Preview</Text>
-                  <Text style={{ color: "#64748B", fontSize: 11 }}>Simulated ESC/POS Print (58mm/80mm)</Text>
-                </View>
-                <Pressable onPress={() => setShowReceiptModal(false)}>
-                  <Ionicons name="close" size={24} color="#0E0F14" />
-                </Pressable>
-              </View>
-
-              {/* Receipt Paper roll container */}
-              <ScrollView style={styles.receiptPaper} showsVerticalScrollIndicator={false}>
-                <Text style={styles.receiptShopName}>
-                  {restaurantName ? restaurantName.toUpperCase() : "EZBILL DEMO RESTAURANT"}
-                </Text>
-                <Text style={styles.receiptShopSub}>GSTIN: 29ABCDE1234F1Z5 · Ph: 9876543210</Text>
-                <Text style={styles.receiptShopSub}>Bengaluru, Karnataka</Text>
-                
-                <View style={styles.receiptLineDash} />
-
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                  <Text style={{ fontSize: 11, color: "#000000" }}>Bill No: #1048</Text>
-                  <Text style={{ fontSize: 11, color: "#000000" }}>Table: Table 1</Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-                  <Text style={{ fontSize: 11, color: "#000000" }}>Date: {new Date().toLocaleDateString()}</Text>
-                  <Text style={{ fontSize: 11, color: "#000000" }}>Time: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                </View>
-
-                <View style={styles.receiptLineDash} />
-
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                  <Text style={[styles.receiptItemColBold, { flex: 2 }]}>ITEM</Text>
-                  <Text style={[styles.receiptQtyCol, { fontWeight: "700" }]}>QTY</Text>
-                  <Text style={[styles.receiptPriceCol, { fontWeight: "700" }]}>AMT</Text>
-                </View>
-
-                <View style={styles.receiptLineDash} />
-
-                {selectedItems.map((item, idx) => (
-                  <View key={idx} style={styles.receiptRow}>
-                    <Text style={[styles.receiptItemCol, { flex: 2 }]} numberOfLines={1}>{item.name}</Text>
-                    <Text style={styles.receiptQtyCol}>{item.qty}</Text>
-                    <Text style={styles.receiptPriceCol}>₹{item.qty * item.price}</Text>
-                  </View>
-                ))}
-
-                <View style={styles.receiptLineDash} />
-
-                <View style={styles.receiptRow}>
-                  <Text style={styles.receiptItemColBold}>Subtotal</Text>
-                  <Text style={styles.receiptPriceCol}>₹{rawSubtotal}</Text>
-                </View>
-                {gstEnabled && (
-                  <>
-                    <View style={styles.receiptRow}>
-                      <Text style={{ fontSize: 11, color: "#333333", flex: 1 }}>CGST (2.5%)</Text>
-                      <Text style={styles.receiptPriceCol}>₹{(gstTax / 2).toFixed(2)}</Text>
-                    </View>
-                    <View style={styles.receiptRow}>
-                      <Text style={{ fontSize: 11, color: "#333333", flex: 1 }}>SGST (2.5%)</Text>
-                      <Text style={styles.receiptPriceCol}>₹{(gstTax / 2).toFixed(2)}</Text>
-                    </View>
-                  </>
-                )}
-
-                <View style={styles.receiptLineDash} />
-
-                <View style={styles.receiptRow}>
-                  <Text style={styles.receiptItemColBig}>TOTAL PAYABLE</Text>
-                  <Text style={styles.receiptPriceColBig}>₹{totalBillAmount}</Text>
-                </View>
-
-                <View style={styles.receiptLineDash} />
-
-                {/* Simulated UPI QR Code */}
-                <View style={{ alignItems: "center", marginVertical: 8 }}>
-                  <View style={styles.receiptQrBox}>
-                    <Ionicons name="qr-code" size={54} color="#000000" />
-                  </View>
-                  <Text style={{ fontSize: 10, fontWeight: "700", marginTop: 4, color: "#000000" }}>
-                    Scan & Pay with PhonePe / GPay / Paytm
-                  </Text>
-                </View>
-
-                <Text style={styles.receiptFooterMsg}>*** THANK YOU! VISIT AGAIN ***</Text>
-                <Text style={styles.receiptFooterSub}>POWERED BY EZBILL POS SOFTWARE</Text>
-              </ScrollView>
-
-              {/* Print Action / Confirmation */}
-              {simulatedPrintSuccess ? (
-                <View style={styles.printSuccessBanner}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={{ color: "#10B981", fontWeight: "800", fontSize: 13, marginLeft: 6 }}>
-                    ✓ Bill Printed Successfully via Thermal Head!
-                  </Text>
-                </View>
-              ) : (
-                <Pressable
-                  style={styles.receiptCtaBtn}
-                  onPress={triggerSimulatedPrint}
-                >
-                  <Ionicons name="print" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.receiptCtaText}>Trigger Thermal Print Now</Text>
-                </Pressable>
-              )}
+          {openTable?.status === "Billed" ? (
+            <Pressable
+              onPress={() => {
+                const t = openTable!;
+                setOpenTable(null);
+                startedAt.current = null;
+                makeBill(t.lines, t.label);
+                setTables(prev => prev.map(x => (x.id === t.id ? { ...x, status: "Available", lines: [] } : x)));
+              }}
+              style={({ pressed }) => [styles.bigCta, { backgroundColor: "#10B981" }, pressed && { opacity: 0.88 }]}
+            >
+              <Ionicons name="checkmark-done" size={18} color="#FFFFFF" />
+              <Text style={styles.bigCtaText}>Mark as Paid</Text>
+            </Pressable>
+          ) : (
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Pressable
+                onPress={() => { const t = openTable!; setOpenTable(null); setTarget(t.label); setCart([]); setKotSent(false); setTab("pos"); }}
+                style={({ pressed }) => [styles.kotBtn, { borderColor: BRAND, paddingVertical: 14 }, pressed && { opacity: 0.8 }]}
+              >
+                <Ionicons name="add" size={16} color={BRAND} />
+                <Text style={{ color: BRAND, fontWeight: "800", fontSize: 14 }}>Add Items</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const t = openTable!;
+                  setOpenTable(null);
+                  startedAt.current = null;
+                  makeBill(t.lines, t.label);
+                  setTables(prev => prev.map(x => (x.id === t.id ? { ...x, status: "Available", lines: [] } : x)));
+                }}
+                style={({ pressed }) => [styles.payBtn, { paddingVertical: 14 }, pressed && { opacity: 0.85 }]}
+              >
+                <Ionicons name="receipt" size={16} color="#FFFFFF" />
+                <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 14 }}>Make Bill</Text>
+              </Pressable>
             </View>
-          </Pressable>
-        </Modal>
-
+          )}
+        </View>
       </View>
-    </SafeAreaView>
+    </Modal>
+  );
+
+  const cartSheet = (
+    <Modal visible={showCart && !isDesktop} transparent animationType="slide" onRequestClose={() => setShowCart(false)}>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
+        <Pressable style={{ flex: 1 }} onPress={() => setShowCart(false)} />
+        <View style={{ height: "78%", backgroundColor: theme.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: insets.bottom }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+            <View>
+              <Text style={{ fontSize: 18, fontWeight: "900", color: theme.onSurface }}>{target ? `${target} Order` : "Takeaway Order"}</Text>
+              <Text style={{ fontSize: 12, color: theme.onSurfaceSecondary, marginTop: 2 }}>{cartCount} new item{cartCount === 1 ? "" : "s"}</Text>
+            </View>
+            <Pressable onPress={() => setShowCart(false)} hitSlop={10} style={[styles.closeBtn, { position: "relative", top: 0, right: 0, backgroundColor: theme.surfaceTertiary }]}>
+              <Ionicons name="close" size={18} color={theme.onSurface} />
+            </Pressable>
+          </View>
+          {cartPanel(true)}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.surface }} testID="demo-screen">
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#14132B" : "#F5F3FF"} />
+      {isDesktop ? (
+        <View style={{ flex: 1, flexDirection: "row" }}>
+          {sidebar}
+          <View style={{ flex: 1, overflow: "hidden" }}>
+            {banner}
+            <View style={{ flex: 1 }}>{screen}</View>
+          </View>
+        </View>
+      ) : (
+        <View style={{ flex: 1 }}>
+          {banner}
+          <View style={{ flex: 1 }}>{screen}</View>
+          {tabBar}
+        </View>
+      )}
+
+      {toast && (
+        <View pointerEvents="none" style={[styles.toast, { bottom: isDesktop ? 28 : 60 + bottomInset + (tab === "pos" && (cart.length > 0 || tableLines.length > 0) ? 84 : 16) }]}>
+          <Ionicons name="checkmark-circle" size={18} color="#34D399" />
+          <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13, flexShrink: 1 }}>{toast}</Text>
+        </View>
+      )}
+
+      {welcome}
+      {paywall}
+      {receiptModal}
+      {tableSheet}
+      {cartSheet}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0A0B10" },
-  wrap: { flex: 1, backgroundColor: "#0A0B10" },
-  scrollContainer: { paddingHorizontal: 16, paddingBottom: 40 },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: spacing.lg, paddingBottom: spacing.md },
+  title: { fontSize: 26, fontWeight: "900" },
+  sub: { fontSize: 13, marginTop: 2, fontWeight: "500" },
 
-  // Navbar
-  topNav: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    height: 60,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1E202B",
-  },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  brandLogoBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#FF5E2B",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  brandName: { color: "#FFFFFF", fontSize: 18, fontWeight: "900", letterSpacing: -0.5 },
-  brandTag: { color: "#64748B", fontSize: 11, fontWeight: "600" },
-  topNavActions: { flexDirection: "row", alignItems: "center" },
-  headerPrimaryBtn: {
-    backgroundColor: "#FF5E2B",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  headerPrimaryText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  banner: { borderBottomWidth: 1, paddingBottom: 10 },
+  demoTag: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: BRAND, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
+  demoTagText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  bannerBtn: { backgroundColor: BRAND, paddingHorizontal: 14, paddingVertical: 9, borderRadius: radius.pill, shadowColor: BRAND, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  bannerBtnText: { color: "#FFFFFF", fontWeight: "900", fontSize: 13 },
+  stepChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1 },
 
-  // Welcome banner for registered users
-  welcomeBanner: {
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#4338CA",
-  },
-  welcomeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginBottom: 6,
-  },
-  welcomeBadgeText: { color: "#10B981", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
-  welcomeTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "900", marginBottom: 6 },
-  welcomeDesc: { color: "#C7D2FE", fontSize: 13, lineHeight: 19, marginBottom: 14 },
-  welcomeCtaBtn: {
-    backgroundColor: "#FF5E2B",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  welcomeCtaText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  heroCard: { padding: 22, borderRadius: 24, shadowColor: BRAND, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 4 },
+  heroNum: { color: "#FFFFFF", fontSize: 22, fontWeight: "900" },
+  heroLbl: { color: "#E0E7FF", fontSize: 12, fontWeight: "600", marginTop: 2 },
+  statRow: { flex: 1, minHeight: 60, flexDirection: "row", alignItems: "center", gap: 12, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1 },
+  statIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  panel: { borderRadius: radius.xl, borderWidth: 1, padding: spacing.lg },
+  panelTitle: { fontSize: 15, fontWeight: "900" },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10 },
+  problemCard: { flexDirection: "row", gap: 12, padding: 12, borderRadius: radius.md, borderWidth: 1, alignItems: "flex-start" },
+  realCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1.5, borderStyle: "dashed" },
 
-  // Hero Section
-  heroSection: { alignItems: "center", marginVertical: 18, paddingHorizontal: 8 },
-  heroPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255, 94, 43, 0.12)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  heroDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#FF5E2B" },
-  heroPillText: { color: "#FF5E2B", fontSize: 11, fontWeight: "800", letterSpacing: 0.8 },
-  heroHeading: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "900",
-    textAlign: "center",
-    lineHeight: 28,
-    letterSpacing: -0.4,
-    marginBottom: 8,
-  },
-  heroSub: {
-    color: "#94A3B8",
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: "center",
-    maxWidth: 480,
-  },
+  tableCard: { borderWidth: 1, borderRadius: 20, padding: 12, minHeight: 132, justifyContent: "space-between", width: "100%" },
+  outlineBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
 
-  // Tabs Navigator
-  tabsNavContainer: { marginBottom: 14 },
-  tabsScrollContent: { gap: 8, paddingVertical: 4 },
-  tabNavPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#161822",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  tabNavPillActive: { backgroundColor: "#FF5E2B", borderColor: "#FF5E2B" },
-  tabNavLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "700" },
-  tabNavLabelActive: { color: "#FFFFFF" },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: spacing.lg, borderRadius: radius.xl, borderWidth: 1 },
+  search: { flex: 1, paddingVertical: 12, fontSize: 15 },
+  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.pill, borderWidth: 1 },
+  itemCard: { minHeight: 88, gap: spacing.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1 },
+  thumb: { width: 52, height: 52, borderRadius: radius.md },
+  vegMark: { width: 10, height: 10, borderRadius: 2 },
+  addCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: BRAND, alignItems: "center", justifyContent: "center" },
+  counterPill: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
+  counterBtn: { padding: 2 },
+  counterText: { color: BRAND, fontWeight: "900", fontSize: 15 },
+  cartLine: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: radius.lg, borderWidth: 1 },
+  sumRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  sumLbl: { fontSize: 13, fontWeight: "600" },
+  sumVal: { fontSize: 14, fontWeight: "700" },
+  modeChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
+  kotBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: radius.lg, borderWidth: 1.5 },
+  payBtn: { flex: 1.3, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: radius.lg, backgroundColor: BRAND },
+  cartBar: { position: "absolute", left: 12, right: 12, bottom: 12, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: BRAND, borderRadius: radius.lg, paddingHorizontal: 16, paddingVertical: 12, shadowColor: BRAND, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  cartBadge: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
 
-  // Playground Card
-  playgroundCard: {
-    backgroundColor: "#12131A",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1E202B",
-    marginBottom: 20,
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 14,
-  },
-  cardSuperTitle: { color: "#FF5E2B", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  cardMainTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "800", marginTop: 2 },
-  addItemBtn: {
-    backgroundColor: "#1E202B",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#2A2D3D",
-  },
-  addItemBtnText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
+  ticket: { borderRadius: radius.xl, borderWidth: 1, padding: spacing.lg },
+  ticketBtn: { marginTop: 14, paddingVertical: 13, borderRadius: radius.md, alignItems: "center" },
 
-  // Search & Categories
-  searchRow: { marginBottom: 10 },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#0A0B10",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 40,
-    borderWidth: 1,
-    borderColor: "#222533",
-    gap: 8,
-  },
-  searchInput: { flex: 1, color: "#FFFFFF", fontSize: 13 },
-  catScroll: { gap: 6, marginBottom: 14 },
-  catPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: "#161822",
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  catPillActive: { backgroundColor: "#FF5E2B20", borderColor: "#FF5E2B" },
-  catPillText: { color: "#94A3B8", fontSize: 12, fontWeight: "600" },
-  catPillTextActive: { color: "#FF5E2B", fontWeight: "800" },
+  moreRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
 
-  // Menu items list
-  menuItemsGrid: { gap: 8, marginBottom: 16 },
-  menuItemCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#161822",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  vegBadge: { width: 12, height: 12, borderWidth: 1.5, borderRadius: 2, alignItems: "center", justifyContent: "center" },
-  vegDot: { width: 5, height: 5, borderRadius: 2.5 },
-  itemNameText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-  itemPriceText: { color: "#FF5E2B", fontSize: 14, fontWeight: "800", marginTop: 2 },
-  itemDescText: { color: "#64748B", fontSize: 11, marginTop: 2 },
-  itemQtyControl: { marginLeft: 12 },
-  qtyControlRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#0A0B10",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#FF5E2B",
-  },
-  qtyBtn: { padding: 6 },
-  qtyNumber: { color: "#FFFFFF", fontWeight: "800", fontSize: 13, paddingHorizontal: 6 },
-  addBtnPill: {
-    backgroundColor: "#0A0B10",
-    borderColor: "#FF5E2B",
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  addBtnPillText: { color: "#FF5E2B", fontSize: 11, fontWeight: "800" },
+  sidebar: { width: 250, height: "100%", borderRightWidth: 1 },
+  logoBadge: { width: 32, height: 32, borderRadius: 8, backgroundColor: BRAND, justifyContent: "center", alignItems: "center", marginRight: 10 },
+  userBadge: { flexDirection: "row", alignItems: "center", padding: 8, borderRadius: radius.md, borderWidth: 1, marginTop: 4 },
+  avatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: BRAND, justifyContent: "center", alignItems: "center" },
+  navGroupTitle: { fontSize: 10, fontWeight: "800", letterSpacing: 0.8, paddingHorizontal: 12, marginBottom: 6 },
+  navItem: { flexDirection: "row", alignItems: "center", paddingVertical: 9, paddingHorizontal: 12, borderRadius: radius.md, marginBottom: 2, borderLeftWidth: 3 },
+  navBadge: { backgroundColor: "#EF4444", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, minWidth: 18, alignItems: "center" },
+  sideCta: { margin: spacing.sm, padding: 12, borderRadius: radius.md, backgroundColor: BRAND },
+  footerBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.md },
 
-  // Order tray card
-  orderTrayCard: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  trayHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  trayTitle: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
-  calcBreakdown: { gap: 6 },
-  calcRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  calcLabel: { color: "#94A3B8", fontSize: 12 },
-  calcVal: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-  taxToggleBadge: {
-    backgroundColor: "#161822",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  taxToggleBadgeActive: { borderColor: "#10B981" },
-  trayDivider: { height: 1, backgroundColor: "#1E202B", marginVertical: 6 },
-  netTotalLabel: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
-  netTotalVal: { color: "#FF5E2B", fontSize: 18, fontWeight: "900" },
+  tabBar: { flexDirection: "row", borderTopWidth: 1, paddingTop: 8 },
+  tabItem: { flex: 1, alignItems: "center", justifyContent: "flex-start" },
+  tabDot: { position: "absolute", top: -1, right: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444" },
 
-  // Pay mode selector
-  payModeRow: { flexDirection: "row", gap: 6, marginVertical: 12 },
-  payModeBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    backgroundColor: "#161822",
-    borderRadius: 8,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  payModeBtnActive: { borderColor: "#FF5E2B", backgroundColor: "rgba(255, 94, 43, 0.1)" },
-  payModeText: { color: "#94A3B8", fontSize: 11, fontWeight: "700" },
-  payModeTextActive: { color: "#FF5E2B" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 },
+  modalCard: { width: "100%", maxHeight: "92%", borderRadius: 24, borderWidth: 1, padding: 20 },
+  demoTagLarge: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: "rgba(99,91,255,0.14)" },
+  tryBox: { marginTop: 16, padding: 14, borderRadius: radius.md, borderWidth: 1, borderStyle: "dashed" },
+  bigCta: { marginTop: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: BRAND, paddingVertical: 15, borderRadius: radius.lg, shadowColor: BRAND, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  bigCtaText: { color: "#FFFFFF", fontWeight: "900", fontSize: 16 },
+  closeBtn: { position: "absolute", top: 0, right: 0, width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", zIndex: 2 },
+  wallIcon: { alignSelf: "center", width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center", marginTop: 8 },
+  priceStrip: { marginTop: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6, padding: 12, borderRadius: radius.md, borderWidth: 1 },
 
-  billingActionsRow: { gap: 8 },
-  previewReceiptBtn: {
-    backgroundColor: "#FF5E2B",
-    borderRadius: 10,
-    height: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  previewReceiptBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  sendKotBtn: {
-    backgroundColor: "transparent",
-    borderRadius: 10,
-    height: 40,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "rgba(255, 94, 43, 0.4)",
-  },
-  sendKotBtnText: { color: "#FF5E2B", fontSize: 12, fontWeight: "800" },
+  speedPill: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#10B981", paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, marginBottom: 12 },
+  paper: { backgroundColor: "#FFFFFF", borderRadius: 6, overflow: "hidden" },
+  paperWatermark: { position: "absolute", top: 120, left: 0, right: 0, textAlign: "center", fontSize: 38, fontWeight: "900", color: "rgba(99,91,255,0.08)", transform: [{ rotate: "-18deg" }] },
+  paperShop: { textAlign: "center", fontSize: 18, fontWeight: "900", color: "#111827" },
+  paperSmall: { fontSize: 12, color: "#4B5563", textAlign: "left" },
+  paperText: { fontSize: 13, color: "#111827", fontFamily: Platform.OS === "web" ? "monospace" : undefined },
+  paperTotal: { fontSize: 17, fontWeight: "900", color: "#111827" },
+  paperRow: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginVertical: 2 },
+  dash: { borderBottomWidth: 1, borderStyle: "dashed", borderColor: "#9CA3AF", marginVertical: 8 },
+  receiptBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 14, borderRadius: radius.lg },
 
-  // Tables Grid Tab
-  legendRow: { flexDirection: "row", gap: 10 },
-  legendText: { color: "#94A3B8", fontSize: 11, fontWeight: "600" },
-  tablesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  tableGridCard: {
-    width: "48%",
-    backgroundColor: "#161822",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1.5,
-  },
-  tableGridTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
-  statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  statusBadgeText: { fontSize: 10, fontWeight: "800" },
-  selectedTableSheet: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  sheetTitle: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
-  actionPillBtn: {
-    height: 38,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionPillBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-
-  // Kitchen Tab
-  livePulseBadge: { flexDirection: "row", alignItems: "center", gap: 5 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" },
-  livePulseText: { color: "#10B981", fontSize: 10, fontWeight: "800" },
-  kotTicketCard: {
-    backgroundColor: "#161822",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  kotNumberText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
-  kotTableBadge: { backgroundColor: "#222533", color: "#FF5E2B", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 11, fontWeight: "800" },
-  kotItemsList: { gap: 4, marginVertical: 8 },
-  kotItemLine: { color: "#E2E8F0", fontSize: 13, fontWeight: "600" },
-  kotStatusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  kotReadyBtn: {
-    backgroundColor: "#10B981",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  kotReadyBtnText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
-
-  // Printers Tab
-  printerTypesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  printerTypeBox: {
-    width: "48%",
-    backgroundColor: "#161822",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  prIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 94, 43, 0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  prTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  prDesc: { color: "#64748B", fontSize: 11, marginTop: 2, lineHeight: 15 },
-  prStatusPill: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 },
-  printerActionBtn: {
-    backgroundColor: "#222533",
-    borderRadius: 10,
-    height: 42,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  printerActionBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-
-  // Offline Tab
-  offlineSimulatorBox: {
-    backgroundColor: "#161822",
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#10B98140",
-    marginBottom: 12,
-  },
-  offlineSimulatorBoxActive: { borderColor: "#EF444460" },
-  offlineToggleBtn: {
-    backgroundColor: "#EF4444",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  offlineToggleBtnActive: { backgroundColor: "#10B981" },
-  offlineFeatureCardsRow: { flexDirection: "row", gap: 10 },
-  offlinePointBox: {
-    flex: 1,
-    backgroundColor: "#0A0B10",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  offlinePointTitle: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-  offlinePointDesc: { color: "#94A3B8", fontSize: 11, marginTop: 2, lineHeight: 15 },
-
-  // Analytics Tab
-  kpiRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  kpiBox: {
-    flex: 1,
-    backgroundColor: "#161822",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  kpiLabel: { color: "#64748B", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
-  kpiVal: { color: "#FFFFFF", fontSize: 20, fontWeight: "900", marginTop: 4 },
-  cashClosingCard: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-
-  // ROI Section
-  roiCard: {
-    backgroundColor: "#12131A",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1E202B",
-    marginBottom: 20,
-  },
-  roiHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  roiSuperTitle: { color: "#FF5E2B", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  roiMainTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "800", marginTop: 2 },
-  roiBody: { color: "#94A3B8", fontSize: 12, lineHeight: 18, marginBottom: 14 },
-  stepperContainer: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-    marginBottom: 12,
-  },
-  stepperButtons: { flexDirection: "row", gap: 8, marginTop: 10 },
-  stepperPill: {
-    flex: 1,
-    backgroundColor: "#161822",
-    paddingVertical: 7,
-    borderRadius: 8,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  stepperPillActive: { borderColor: "#FF5E2B", backgroundColor: "rgba(255, 94, 43, 0.15)" },
-  stepperPillText: { color: "#94A3B8", fontSize: 12, fontWeight: "700" },
-  stepperPillTextActive: { color: "#FF5E2B", fontWeight: "900" },
-  savingsHero: {
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    borderColor: "rgba(16, 185, 129, 0.3)",
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-  },
-  savingsHeroLabel: { color: "#10B981", fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
-  savingsHeroAmount: { color: "#10B981", fontSize: 26, fontWeight: "900", marginVertical: 2 },
-  savingsHeroSub: { color: "#94A3B8", fontSize: 11, fontWeight: "600" },
-
-  // Social Proof Card
-  socialProofCard: {
-    backgroundColor: "#12131A",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1E202B",
-    marginBottom: 20,
-  },
-  socialProofHeading: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
-  ratingBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
-  testimonialItem: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  testimonialText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, fontStyle: "italic" },
-  testimonialAuthor: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-  testimonialResto: { color: "#FF5E2B", fontSize: 11, fontWeight: "700" },
-
-  // Pricing Plans
-  pricingCard: {
-    backgroundColor: "#12131A",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1E202B",
-    marginBottom: 20,
-  },
-  pricingTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "900", textAlign: "center" },
-  pricingSub: { color: "#94A3B8", fontSize: 12, textAlign: "center", marginTop: 4, marginBottom: 16 },
-  plansContainer: { gap: 12 },
-  planBox: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  planBoxHighlighted: {
-    borderColor: "#FF5E2B",
-    backgroundColor: "#141113",
-  },
-  popularBadge: {
-    backgroundColor: "#FF5E2B",
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginBottom: 6,
-  },
-  popularBadgeText: { color: "#FFFFFF", fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
-  planName: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
-  planPrice: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },
-  planDesc: { color: "#64748B", fontSize: 11, marginTop: 2, marginBottom: 12 },
-  planFeaturesList: { gap: 6, marginBottom: 14 },
-  planFeat: { color: "#CBD5E1", fontSize: 12, fontWeight: "600" },
-  planCtaBtn: {
-    height: 42,
-    backgroundColor: "#222533",
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  planCtaBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-  guaranteeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: 14,
-  },
-
-  // Sticky Bottom Bar
-  stickyBottomBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#12131A",
-    borderTopWidth: 1,
-    borderTopColor: "#222533",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  stickyBarTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  stickyBarSub: { color: "#94A3B8", fontSize: 11 },
-  stickyBarBtn: {
-    backgroundColor: "#FF5E2B",
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  stickyBarBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-
-  // Modal Common
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.8)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-  },
-  modalContent: {
-    width: "100%",
-    maxWidth: 400,
-    backgroundColor: "#161822",
-    borderRadius: 18,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  modalTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
-  formContainer: { gap: 12 },
-  field: { gap: 6 },
-  label: { color: "#94A3B8", fontSize: 12, fontWeight: "700" },
-  formInput: {
-    backgroundColor: "#0A0B10",
-    borderRadius: 10,
-    height: 44,
-    paddingHorizontal: 12,
-    color: "#FFFFFF",
-    fontSize: 13,
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  vegToggleBtn: {
-    flex: 1,
-    backgroundColor: "#0A0B10",
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#222533",
-  },
-  vegToggleBtnActive: { borderColor: "#10B981" },
-  nonVegToggleBtnActive: { borderColor: "#EF4444" },
-  formSubmitBtn: {
-    backgroundColor: "#FF5E2B",
-    height: 44,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  formSubmitBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  successFormContainer: { alignItems: "center", paddingVertical: 24, gap: 12 },
-  successFormText: { color: "#10B981", fontSize: 15, fontWeight: "800" },
-
-  // Thermal Receipt Modal
-  receiptCard: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-  },
-  receiptHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  receiptModalTitle: { color: "#000000", fontSize: 15, fontWeight: "900" },
-  receiptPaper: { maxHeight: 380, paddingHorizontal: 4 },
-  receiptShopName: { color: "#000000", fontSize: 15, fontWeight: "900", textAlign: "center" },
-  receiptShopSub: { color: "#475569", fontSize: 10, textAlign: "center", marginTop: 1, fontWeight: "600" },
-  receiptLineDash: { height: 1, borderWidth: 0.5, borderColor: "#000000", borderStyle: "dashed", marginVertical: 8 },
-  receiptRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 3 },
-  receiptItemCol: { color: "#000000", fontSize: 12, fontWeight: "500" },
-  receiptQtyCol: { color: "#000000", fontSize: 12, width: 30, textAlign: "center" },
-  receiptPriceCol: { color: "#000000", fontSize: 12, width: 60, textAlign: "right", fontWeight: "600" },
-  receiptItemColBold: { color: "#000000", fontSize: 12, fontWeight: "800" },
-  receiptItemColBig: { color: "#000000", fontSize: 14, fontWeight: "900" },
-  receiptPriceColBig: { color: "#000000", fontSize: 15, fontWeight: "900", textAlign: "right" },
-  receiptQrBox: {
-    width: 68,
-    height: 68,
-    borderWidth: 1,
-    borderColor: "#000000",
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  receiptFooterMsg: { color: "#000000", fontSize: 12, fontWeight: "900", textAlign: "center", marginTop: 8 },
-  receiptFooterSub: { color: "#64748B", fontSize: 9, textAlign: "center", marginTop: 2, fontWeight: "700" },
-  receiptCtaBtn: {
-    height: 44,
-    backgroundColor: "#FF5E2B",
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 14,
-  },
-  receiptCtaText: { color: "#FFFFFF", fontWeight: "800", fontSize: 13 },
-  printSuccessBanner: {
-    height: 44,
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 14,
-  },
+  toast: { position: "absolute", alignSelf: "center", maxWidth: "92%", flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#111827", paddingHorizontal: 16, paddingVertical: 11, borderRadius: radius.pill, shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 },
 });

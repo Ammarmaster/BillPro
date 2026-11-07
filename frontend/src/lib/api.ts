@@ -674,6 +674,26 @@ export function setUnauthorizedCallback(cb: () => void) {
   onUnauthorizedCallback = cb;
 }
 
+// The server answers 402 when the restaurant has no active plan. That is not "no internet",
+// so the order or bill must not be saved on the device; the app asks the owner to subscribe instead.
+const subscriptionNeededListeners = new Set<(message: string) => void>();
+export function onSubscriptionNeeded(cb: (message: string) => void) {
+  subscriptionNeededListeners.add(cb);
+  return () => { subscriptionNeededListeners.delete(cb); };
+}
+export function askToSubscribe(message = "Subscription needed") {
+  subscriptionNeededListeners.forEach(cb => cb(message));
+}
+// Set by the app layout: true while an owner or manager has no active plan
+let planLocked = false;
+export function setPlanLocked(locked: boolean) { planLocked = locked; }
+export function isPlanLocked() { return planLocked; }
+function stopIfSubscriptionNeeded(err: any) {
+  if (err?.status !== 402) return;
+  subscriptionNeededListeners.forEach(cb => cb(err.message || "Subscription needed"));
+  throw err;
+}
+
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -1177,6 +1197,7 @@ export const api = {
         notifyCacheUpdate("/orders", memoryCache["/orders"]);
         return finalOrder;
       } catch (netErr: any) {
+        stopIfSubscriptionNeeded(netErr);
         console.warn("[api.createOrder] Server request failed, activating offline local persistence:", netErr.message);
         const localId = "ord_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
         if (tempTrackingId) {
@@ -1226,9 +1247,10 @@ export const api = {
 
     if (tempTrackingId) {
       pendingOrderCreations[tempTrackingId] = orderPromise;
+      // The caller handles a failed order; this copy only cleans up, so its failure must not surface as "Uncaught Error"
       orderPromise.finally(() => {
         delete pendingOrderCreations[tempTrackingId];
-      });
+      }).catch(() => {});
     }
 
     return orderPromise;
@@ -1501,6 +1523,7 @@ export const api = {
       notifyCacheUpdate("/bills", memoryCache["/bills"]);
       return res;
     } catch (netErr: any) {
+      stopIfSubscriptionNeeded(netErr);
       console.warn("[api.createBill] Server bill creation failed, creating local bill:", netErr.message);
       return handleLocalBill();
     }
