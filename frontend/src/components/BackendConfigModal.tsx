@@ -376,7 +376,7 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
                   }}
                 >
                   <Ionicons name="cloud-outline" size={14} color="#635BFF" />
-                  <Text style={[styles.presetBtnText, { color: theme.onSurface }]}>Cloud (Render Default)</Text>
+                  <Text style={[styles.presetBtnText, { color: theme.onSurface }]}>Cloud (Default)</Text>
                 </Pressable>
 
                 <Pressable
