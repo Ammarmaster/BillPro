@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { BillingEngine } from "./billingEngine";
 import { isTodayBusinessDay, safeParseDate, setDayClosedAtGetter, getBusinessDayKey } from "./dateUtils";
 import {
@@ -17,6 +17,10 @@ import {
 const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
 
 let activeBackendUrl = DEFAULT_BACKEND_URL;
+
+// Servers built into the app. Used to learn the admin's choice and as last-resort backups even when no
+// backup list has reached this device yet (for example a new phone while the usual server is down).
+const BUILT_IN_SERVERS = ["https://billpro-wulv.onrender.com"];
 
 // Which server is the main one: the one the super admin picked for every app wins, then one saved on
 // this device only, then the one built into the app.
@@ -216,14 +220,50 @@ export async function checkServer(url: string): Promise<ServerCheck> {
   return res.ok ? "ok" : res.status === 401 ? "login" : "down";
 }
 
-export async function refreshBackupServers(): Promise<BackupServer[]> {
-  const res = await timedFetch(`${getLiveBackendUrl()}/api/backend-servers`, {}, 10000);
-  if (!res?.ok) throw new Error(res ? `HTTP ${res.status}` : "Server not reachable");
-  const data = await res.json();
+// Every server this app knows about, the one in use first.
+function knownServers(): string[] {
+  const all = [getLiveBackendUrl(), activeBackendUrl, mainForEveryone, deviceUrl, DEFAULT_BACKEND_URL,
+    ...BUILT_IN_SERVERS, ...backupServers.map((s) => s.url)];
+  return all
+    .map((u) => cleanUrl(u))
+    .filter((u, i, list): u is string => !!u && list.indexOf(u) === i);
+}
+
+// Asks all known servers at once and uses the first answer, so a dead server never blocks
+// learning the admin's new main server. All servers share one database, so any live one knows it.
+async function fetchServerSettings(): Promise<any> {
+  const servers = knownServers();
+  return new Promise((resolve, reject) => {
+    let pending = servers.length;
+    if (!pending) return reject(new Error("No servers"));
+    servers.forEach(async (url) => {
+      const res = await timedFetch(`${url}/api/backend-servers`, {}, 8000);
+      const data = res?.ok ? await res.json().catch(() => null) : null;
+      if (data && typeof data === "object") resolve(data);
+      else if (--pending === 0) reject(new Error("Server not reachable"));
+    });
+  });
+}
+
+let refreshing: Promise<BackupServer[]> | null = null;
+export function refreshBackupServers(): Promise<BackupServer[]> {
+  if (!refreshing) {
+    refreshing = doRefreshBackupServers().finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+async function doRefreshBackupServers(): Promise<BackupServer[]> {
+  const data = await fetchServerSettings();
   gotServerList = true;
   keepBackupServers(data?.servers);
   await setDiskCache(BACKUP_SERVERS_KEY, JSON.stringify(backupServers));
   if (data && "main_url" in data) await applyMainServerForEveryone(data.main_url); // older servers do not send it
+  // The main server is down: move to a working one now instead of waiting for a request to fail
+  if (!failoverUrl && !(await isServerUp(activeBackendUrl))) {
+    lastSearchAt = 0;
+    await moveOffFailedServer(activeBackendUrl);
+  }
   return backupServers;
 }
 
@@ -262,8 +302,7 @@ function switchServer(url: string) {
 async function moveOffFailedServer(failedUrl: string): Promise<boolean> {
   if (getLiveBackendUrl() !== failedUrl) return true; // another request already moved
   if (failoverSearch) return failoverSearch;
-  const candidates = [activeBackendUrl, ...backupServers.map((s) => s.url)]
-    .filter((url, i, all) => url !== failedUrl && all.indexOf(url) === i);
+  const candidates = knownServers().filter((url) => url !== failedUrl);
   if (!candidates.length || Date.now() - lastSearchAt < 30000) return false;
   lastSearchAt = Date.now();
   failoverSearch = Promise.all([isServerUp(failedUrl), Promise.all(candidates.map((url) => checkServer(url)))])
@@ -286,6 +325,19 @@ function looksLikeServerDown(res: Response): boolean {
   return !(res.headers.get("content-type") || "").includes("application/json");
 }
 
+// A dead server can leave a request hanging for minutes ("just loading"). Give up after a while so
+// the app can move to a backup.
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  if (init.signal) return fetch(url, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Sends one request. If the server is down it moves to a backup; requests that are safe to repeat
 // (reads and sign-in) are sent once more there. Others fail as before and go to the offline queue,
 // which later sends them to the new server.
@@ -294,7 +346,7 @@ async function fetchFromLiveServer(path: string, init: RequestInit, safeToResend
   let res: Response | null = null;
   let error: any = null;
   try {
-    res = await fetch(`${base}/api${path}`, init);
+    res = await fetchWithTimeout(`${base}/api${path}`, init, safeToResend ? 15000 : 45000);
     if (!looksLikeServerDown(res)) return res;
   } catch (e) {
     error = e;
@@ -314,8 +366,17 @@ if (Platform.OS !== "web" || typeof window !== "undefined") {
     }
   });
   const refresh = () => { refreshBackupServers().catch(() => {}); };
-  setTimeout(refresh, 4000);
-  setInterval(refresh, 10 * 60 * 1000);
+  setTimeout(refresh, 1500);
+  // Learn the admin's server choice within a minute on every device
+  setInterval(refresh, 60 * 1000);
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try {
+      window.addEventListener("focus", refresh);
+      window.addEventListener("online", refresh);
+    } catch {}
+  } else {
+    try { AppState.addEventListener("change", (s) => { if (s === "active") refresh(); }); } catch {}
+  }
 }
 
 const KEYS = { access: "lumina_access", refresh: "lumina_refresh" };

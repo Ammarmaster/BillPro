@@ -1485,6 +1485,23 @@ def clean_server_url(url: str, label: str) -> str:
     return url
 
 
+async def _tell_all_apps_servers_changed(main_url):
+    """Every open app connected to this server re-reads the server list at once."""
+    msg = {
+        "id": str(uuid.uuid4()),
+        "category": "system",
+        "title": "Server changed",
+        "message": "",
+        "data": {"event": "SERVER_CHANGED", "main_url": main_url},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    for tid in list(manager.active_connections.keys()):
+        try:
+            await manager.broadcast_to_tenant(tid, msg)
+        except Exception:
+            pass
+
+
 @api.get("/backend-servers")
 async def get_backend_servers():
     """Named backup servers, and the main server the super admin picked for every app (None: built-in one)."""
@@ -1500,6 +1517,7 @@ async def save_main_server(payload: MainServerIn, user: dict = Depends(require_r
         {"$set": {"main_url": url, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user["id"]}},
         upsert=True,
     )
+    await _tell_all_apps_servers_changed(url)
     return {"main_url": url}
 
 
@@ -1522,6 +1540,7 @@ async def save_backend_servers(payload: BackupServerListIn, user: dict = Depends
         upsert=True,
     )
     doc = await db.system_settings.find_one({"id": "backend_servers"}, {"_id": 0}) or {}
+    await _tell_all_apps_servers_changed(doc.get("main_url"))
     return {"servers": servers, "main_url": doc.get("main_url")}
 
 
@@ -3364,11 +3383,19 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     valid = {"placed", "in_kitchen", "ready", "served", "cancelled"}
     if payload.status not in valid:
         raise HTTPException(status_code=400, detail="Invalid status")
-    res = await db.orders.update_one({"id": oid}, {"$set": {"status": payload.status}})
+    tid = await _ensure_tenant(user)
+    # Only this restaurant's orders, and never an order that is already paid or cancelled:
+    # a late "served" from the kitchen must not make a paid order unpaid again (it would be billed twice)
+    res = await db.orders.update_one(
+        {"id": oid, "tenant_id": tid, "status": {"$nin": ["paid", "completed", "settled", "cancelled"]}},
+        {"$set": {"status": payload.status}},
+    )
     if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Order not found")
-    order = await db.orders.find_one({"id": oid}, {"_id": 0})
-    tid = order["tenant_id"]
+        existing = await db.orders.find_one({"id": oid, "tenant_id": tid}, {"_id": 0})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Order not found")
+        return {**existing, "unchanged": True}
+    order = await db.orders.find_one({"id": oid, "tenant_id": tid}, {"_id": 0})
     tbl_num = order.get("table_number", "-")
 
     dashboard_summary_cache.pop(tid, None)
@@ -3382,7 +3409,7 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
     tbl_status = "OCCUPIED" if remaining > 0 else "AVAILABLE"
 
     updated_order = await db.orders.find_one({"id": oid}, {"_id": 0})
-    bill = await db.bills.find_one({"order_id": oid}, {"_id": 0})
+    bill = await db.bills.find_one({"order_id": oid, "tenant_id": tid}, {"_id": 0})
     event_name = f"order.{payload.status}"
     status_payload = {
         "event": event_name,
@@ -4569,14 +4596,25 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
             "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
 
-    # If order_ids was temp or returned no orders, search all active orders for this table directly
-    if not active_orders:
+    # Search the whole table only when no real order IDs were sent. If they were sent but are all paid
+    # already (a double tap, or an offline retry), the next customer's new order must NOT be settled.
+    if not active_orders and not clean_order_ids:
         active_orders = await db.orders.find({
             "tenant_id": tid,
             "table_number": {"$in": tbl_patterns},
             "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
-    
+    elif not active_orders:
+        # These orders were settled already: nothing to do
+        remaining = await db.orders.count_documents({
+            "tenant_id": tid,
+            "table_number": {"$in": tbl_patterns},
+            "status": {"$nin": ["paid", "completed", "cancelled"]}
+        })
+        tbl_status = "AVAILABLE" if remaining == 0 else "OCCUPIED"
+        return {"ok": True, "table_number": payload.table_number, "table_status": tbl_status,
+                "active_orders_remaining": remaining, "settled_count": 0, "total": float(payload.total or 0)}
+
     if payload.total is not None and payload.total > 0:
         total_settled = payload.total
     else:

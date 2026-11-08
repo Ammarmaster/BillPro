@@ -3,7 +3,7 @@ import { Platform, Vibration, Alert } from "react-native";
 import * as Haptics from "expo-haptics";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/context/AuthContext";
-import { api, clearCachePrefix, getLiveBackendUrl, subscribeToCache } from "@/src/lib/api";
+import { api, clearCachePrefix, getLiveBackendUrl, subscribeToCache, refreshBackupServers } from "@/src/lib/api";
 
 let Notifications: any = null;
 if (Platform.OS !== "web") {
@@ -312,6 +312,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       try {
         if (event.data === "pong") return;
         const notif: Notification = JSON.parse(event.data);
+        // The super admin changed the main or backup servers: switch straight away, no popup
+        if ((notif as any)?.data?.event === "SERVER_CHANGED") {
+          refreshBackupServers().catch(() => {});
+          return;
+        }
         handleIncomingNotification(notif);
       } catch (e) {
         console.warn("[WS] Error parsing websocket message:", e);
