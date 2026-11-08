@@ -100,7 +100,7 @@ export default function Billing() {
       if (existing) {
         initialBill = existing;
       } else if (o) {
-        const isOrderPaid = o.status === "paid" || o.status === "completed" || o.status === "served";
+        const isOrderPaid = o.status === "paid" || o.status === "completed"; // "served" = food delivered, not paid
         const itemsToBill = o.items || [];
         const subtotalToBill = Number(o.subtotal || 0) || itemsToBill.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
         const tax = gst ? Math.round(subtotalToBill * (gstRate / 100) * 100) / 100 : 0;
@@ -299,7 +299,7 @@ export default function Billing() {
         }
         
         if (!b && o) {
-          const isOrderPaid = o.status === "paid" || o.status === "completed" || o.status === "served";
+          const isOrderPaid = o.status === "paid" || o.status === "completed"; // "served" = food delivered, not paid
           // Instant calculation without blocking UI
           const calc = BillingEngine.calculate({
             items: o.items || [],

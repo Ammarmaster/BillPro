@@ -226,7 +226,7 @@ export default function AppLayout() {
             Subscribe to start billing
           </Text>
           <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, textAlign: "center", marginTop: 6, lineHeight: 21 }}>
-            You can look around and set up your menu, tables and settings for free. Taking orders and making bills for real customers needs a plan, from ₹299/month.
+            You can look around and set up your menu, tables and settings for free. Taking orders and making bills for real customers needs a plan, from ₹499/month.
           </Text>
           <Pressable
             onPress={() => { setNeedPlan(false); router.push("/(app)/subscribe"); }}
@@ -270,7 +270,7 @@ export default function AppLayout() {
             style={({ pressed }) => [{ marginTop: spacing.xl, width: "100%", backgroundColor: "#635BFF", paddingVertical: 15, borderRadius: radius.lg, alignItems: "center" }, pressed && { opacity: 0.88 }]}
             testID="plan-lock-subscribe"
           >
-            <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 16 }}>Subscribe · from ₹299/month</Text>
+            <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 16 }}>Subscribe · from ₹499/month</Text>
           </Pressable>
           <Pressable
             onPress={() => router.push("/demo-billing")}

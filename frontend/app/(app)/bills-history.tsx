@@ -116,7 +116,7 @@ export default function BillsHistory() {
 
   const isPaidStatus = (status?: string) => {
     const s = String(status || "").toLowerCase().trim();
-    return s === "paid" || s === "completed" || s === "settled" || s === "served";
+    return s === "paid" || s === "completed" || s === "settled"; // "served" = food delivered, not paid
   };
 
   const gstEnabled = !!restaurant?.gst_enabled;

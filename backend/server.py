@@ -3180,113 +3180,89 @@ def parse_db_datetime(ts):
     return None
 
 
-def is_timestamp_in_current_business_day(ts):
+IST = timezone(timedelta(hours=5, minutes=30))
+DAY_AUTO_RESET_HOUR, DAY_AUTO_RESET_MINUTE = 3, 30
+
+
+def last_auto_reset_time(now: Optional[datetime] = None) -> datetime:
+    """The most recent 3:30 AM (India time) that has already passed."""
+    now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+    reset = now_ist.replace(hour=DAY_AUTO_RESET_HOUR, minute=DAY_AUTO_RESET_MINUTE, second=0, microsecond=0)
+    if reset > now_ist:
+        reset -= timedelta(days=1)
+    return reset
+
+
+def business_day_start(day_closed_at=None, now: Optional[datetime] = None) -> datetime:
+    """When today's counter opened.
+    - Close Counter pressed in the 12 hours before the last 3:30 AM, or after it: the day starts at that press.
+    - Otherwise the day started automatically at 3:30 AM.
+    So sales after 12 AM stay in the old day until the counter is closed (or 3:30 AM comes)."""
+    auto_start = last_auto_reset_time(now)
+    closed = parse_db_datetime(day_closed_at) if day_closed_at else None
+    if closed and closed >= auto_start - timedelta(hours=12):
+        return closed
+    return auto_start
+
+
+CLOSE_COUNTER_FROM_HOUR = 22  # Close Counter allowed from 10 PM until the 3:30 AM auto reset
+
+
+def close_counter_window(now: Optional[datetime] = None):
+    """(is_open, window_start). Close Counter works only between 10 PM and 3:30 AM (India time),
+    so nobody ends the day by mistake in the middle of service."""
+    now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+    tonight = now_ist.replace(hour=CLOSE_COUNTER_FROM_HOUR, minute=0, second=0, microsecond=0)
+    if now_ist >= tonight:
+        return True, tonight
+    if (now_ist.hour, now_ist.minute) < (DAY_AUTO_RESET_HOUR, DAY_AUTO_RESET_MINUTE):
+        return True, tonight - timedelta(days=1)
+    return False, tonight
+
+
+async def get_business_day_start(tid: str) -> datetime:
+    rest = await db.restaurants.find_one({"id": tid}, {"_id": 0, "day_closed_at": 1}) or {}
+    return business_day_start(rest.get("day_closed_at"))
+
+
+def is_timestamp_in_current_business_day(ts, day_start: Optional[datetime] = None):
     if not ts:
         return False
     dt = parse_db_datetime(ts)
     if not dt:
         return False
-    ist_offset = timedelta(hours=5, minutes=30)
-    dt_ist = dt.astimezone(timezone(ist_offset))
-    now_ist = datetime.now(timezone(ist_offset))
-    return dt_ist.date() == now_ist.date()
+    start = day_start or business_day_start()
+    return dt >= start
+
+
+def business_date_label(ts) -> Optional[str]:
+    """Calendar day a sale belongs to: sales before 3:30 AM count for the day before."""
+    dt = parse_db_datetime(ts) if not isinstance(ts, datetime) else ts
+    if not dt:
+        return None
+    return (dt.astimezone(IST) - timedelta(hours=DAY_AUTO_RESET_HOUR, minutes=DAY_AUTO_RESET_MINUTE)).date().isoformat()
         
 _auto_clear_last_run: dict[str, float] = {}
 
 async def _auto_clear_kitchen_orders(tid: str, force: bool = False):
+    """Frees tables that have no unpaid orders left.
+    Unpaid bills and orders are never marked as paid automatically: they stay open until someone settles them."""
     now_ts = time.time()
     if not force and (now_ts - _auto_clear_last_run.get(tid, 0) < 600.0):
         return
     _auto_clear_last_run[tid] = now_ts
     try:
-        ist_offset = timedelta(hours=5, minutes=30)
-        now_ist = datetime.now(timezone(ist_offset))
-        cutoff_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-        cutoff_utc = cutoff_ist - ist_offset
-        cutoff_iso = cutoff_utc.isoformat()
-        now_iso = datetime.now(timezone.utc).isoformat()
-        
-        # 1. Settle all lingering pending bills from previous days and mark them paid so they are added to sales
-        await db.bills.update_many({
-            "tenant_id": tid,
-            "status": "pending",
-            "$or": [
-                {"created_at": {"$lt": cutoff_iso}},
-                {"created_at": {"$lt": cutoff_ist.isoformat()}}
-            ]
-        }, {"$set": {"status": "paid", "payment_method": "CASH", "auto_settled_at": now_iso, "clear_reason": "Daily 12 AM business auto-settle"}})
-
-        # 2. Settle lingering active orders and ensure paid bills exist for them
-        lingering_orders = await db.orders.find({
-            "tenant_id": tid,
-            "status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]},
-            "$or": [
-                {"created_at": {"$lt": cutoff_iso}},
-                {"created_at": {"$lt": cutoff_ist.isoformat()}}
-            ]
-        }).to_list(500)
-
-        for lo in lingering_orders:
-            eb = await db.bills.find_one({
-                "tenant_id": tid,
-                "$or": [{"order_id": lo["id"]}, {"order_ids": lo["id"]}]
-            })
-            if not eb:
-                await db.bills.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": tid,
-                    "order_id": lo["id"],
-                    "order_ids": [lo["id"]],
-                    "session_id": lo.get("session_id", ""),
-                    "customer_name": lo.get("customer_name", "Guest"),
-                    "table_number": lo.get("table_number", "Dine-In"),
-                    "items": lo.get("items", []),
-                    "subtotal": float(lo.get("subtotal", 0.0)),
-                    "tax_percent": 0.0,
-                    "tax": 0.0,
-                    "cgst": 0.0,
-                    "sgst": 0.0,
-                    "gst_enabled": False,
-                    "discount": 0.0,
-                    "total": float(lo.get("subtotal", 0.0)),
-                    "upi_url": "",
-                    "status": "paid",
-                    "payment_method": "CASH",
-                    "created_by": "daily_auto_settle",
-                    "created_at": lo.get("created_at"),
-                    "paid_at": lo.get("created_at"),
-                })
-
-        res = await db.orders.update_many({
-            "tenant_id": tid,
-            "status": {"$in": ["placed", "in_kitchen", "ready", "served", "pending_scan"]},
-            "$or": [
-                {"created_at": {"$lt": cutoff_iso}},
-                {"created_at": {"$lt": cutoff_ist.isoformat()}}
-            ]
-        }, {"$set": {"status": "paid", "auto_settled_at": now_iso, "clear_reason": "Daily 12 AM business auto-settle"}})
-        
-        # 2. Reset tables to available if no active orders from today's business cycle exist
         active_orders = await db.orders.find({
             "tenant_id": tid,
-            "status": {"$nin": ["paid", "completed", "cancelled"]}
-        }).to_list(500)
-        
-        active_today_tables = {
-            o.get("table_number") for o in active_orders 
-            if is_timestamp_in_current_business_day(o.get("created_at")) and o.get("table_number")
-        }
-        
+            "status": {"$nin": ["paid", "completed", "cancelled", "settled"]}
+        }, {"_id": 0, "table_number": 1}).to_list(2000)
+        busy_tables = {o.get("table_number") for o in active_orders if o.get("table_number")}
         await db.tables.update_many({
             "tenant_id": tid,
-            "label": {"$nin": list(active_today_tables)}
+            "label": {"$nin": list(busy_tables)}
         }, {"$set": {"status": "available"}})
-        
-        if res.modified_count > 0:
-            logger.info("Daily 1 AM reset: Cleared %d orders and restored clean tables for tenant %s", res.modified_count, tid)
-            dashboard_summary_cache.pop(tid, None)
     except Exception as e:
-        logger.error("Error running daily 1 AM business reset: %s", str(e))
+        logger.error("Error freeing tables: %s", str(e))
 
 
 @api.get("/orders")
@@ -3419,7 +3395,7 @@ async def update_order_status(oid: str, payload: OrderStatusIn, user: dict = Dep
         "order": updated_order,
         "bill": bill
     }
-    notif_cat = "payment" if payload.status == "served" else ("kitchen" if payload.status in ["in_kitchen", "ready"] else "waiter")
+    notif_cat = "kitchen" if payload.status in ["in_kitchen", "ready", "served"] else "waiter"
     await notify_tenant(
         tid,
         notif_cat,
@@ -4439,7 +4415,8 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
         target_orders = await db.orders.find({
             "table_number": {"$in": tbl_patterns},
             "tenant_id": tid,
-            "status": {"$nin": ["served", "paid", "completed", "cancelled"]}
+            # Served = food delivered, still unpaid: it must be on the bill
+            "status": {"$nin": ["paid", "completed", "cancelled"]}
         }, {"_id": 0}).to_list(100)
         
     if not target_orders:
@@ -4901,12 +4878,9 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
     tid = await _ensure_tenant(user)
     
     q: dict = {"tenant_id": tid}
+    day_start = await get_business_day_start(tid)
     if filter == "today":
-        ist_offset = timedelta(hours=5, minutes=30)
-        now_ist = datetime.now(timezone(ist_offset))
-        start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_today_utc = start_today_ist - ist_offset
-        start_today_iso = start_today_utc.isoformat()
+        start_today_iso = day_start.astimezone(timezone.utc).isoformat()
         q["$or"] = [
             {"paid_at": {"$gte": start_today_iso}},
             {"created_at": {"$gte": start_today_iso}}
@@ -4952,7 +4926,7 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
     seen_oids = set()
     deduped_bills = []
     for b in bills:
-        b["is_today"] = is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"))
+        b["is_today"] = is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"), day_start)
         oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
         if oids and oids.issubset(seen_oids):
             continue
@@ -4975,7 +4949,7 @@ async def list_bills(filter: Optional[str] = None, limit: Optional[int] = 5000, 
         if oid and oid not in seen_oids:
             seen_oids.add(oid)
             sub = float(o.get("subtotal", 0.0)) or sum(float(it.get("price", 0.0)) * int(it.get("quantity", 1)) for it in (o.get("items") or []))
-            is_tod = is_timestamp_in_current_business_day(o.get("paid_at") or o.get("updated_at") or o.get("created_at"))
+            is_tod = is_timestamp_in_current_business_day(o.get("paid_at") or o.get("updated_at") or o.get("created_at"), day_start)
             synthesized_bill = {
                 "id": f"bill_{oid}",
                 "bill_number": f"EZ-{datetime.now().year}-{str(oid)[-4:] if len(str(oid))>=4 else '1001'}",
@@ -5483,8 +5457,8 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
 
     ist_offset = timedelta(hours=5, minutes=30)
     now_ist = datetime.now(timezone(ist_offset))
-    start_today_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_7d_utc = (start_today_ist - ist_offset) - timedelta(days=7)
+    day_start = await get_business_day_start(tid)
+    start_7d_utc = day_start.astimezone(timezone.utc) - timedelta(days=8)
     start_7d_iso = start_7d_utc.isoformat()
 
     # 1. Fetch orders for this tenant with lean projection
@@ -5497,18 +5471,20 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     }, {
         "_id": 0, "status": 1, "created_at": 1, "table_number": 1, "subtotal": 1
     }).sort("created_at", -1).to_list(1000)
-    today_orders = [o for o in all_orders if is_timestamp_in_current_business_day(o.get("created_at"))]
-    
+    today_orders = [o for o in all_orders if is_timestamp_in_current_business_day(o.get("created_at"), day_start)]
+    # Unpaid orders stay open across days until someone settles them
+    open_list = [o for o in all_orders if o.get("status") in ["placed", "in_kitchen", "ready", "served"]]
+
     orders_today = len(today_orders)
-    open_orders = sum(1 for o in today_orders if o.get("status") in ["placed", "in_kitchen", "ready", "served"])
-    pending_count = sum(1 for o in today_orders if o.get("status") == "placed")
-    cooking_count = sum(1 for o in today_orders if o.get("status") == "in_kitchen")
-    ready_count = sum(1 for o in today_orders if o.get("status") == "ready")
+    open_orders = len(open_list)
+    pending_count = sum(1 for o in open_list if o.get("status") == "placed")
+    cooking_count = sum(1 for o in open_list if o.get("status") == "in_kitchen")
+    ready_count = sum(1 for o in open_list if o.get("status") == "ready")
 
     total_tables = await db.tables.count_documents({"tenant_id": tid, "is_deleted": {"$ne": True}})
     
     active_tables = {
-        o.get("table_number") for o in today_orders 
+        o.get("table_number") for o in open_list
         if o.get("status") in ["placed", "in_kitchen", "ready", "served"] and o.get("table_number") and o.get("table_number") not in ["Takeaway", "Take-Away", "Contactless"]
     }
     occupied_tables = len(active_tables)
@@ -5556,7 +5532,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
             return round(b_sub + calc_tax, 2)
         return round(b_tot if b_tot > 0 else b_sub, 2)
 
-    today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("created_at") or b.get("paid_at"))]
+    today_bills = [b for b in paid_bills if is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"), day_start)]
     revenue_today = round(sum(get_effective_total(b) for b in today_bills), 2)
     revenue_total = round(sum(get_effective_total(b) for b in paid_bills), 2)
 
@@ -5567,17 +5543,17 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     ist_offset = timedelta(hours=5, minutes=30)
     now_ist = datetime.now(timezone(ist_offset))
     last_7_days = []
+    today_label_dt = datetime.fromisoformat(business_date_label(now_ist))
+    earlier_bills = [b for b in paid_bills if b not in today_bills]
     for i in range(6, -1, -1):
-        target_day = (now_ist - timedelta(days=i)).date()
-        day_label = target_day.strftime("%m-%d")
-        
-        def is_on_target_day(b):
-            dt = parse_db_datetime(b.get("paid_at") or b.get("created_at"))
-            if not dt:
-                return False
-            return dt.astimezone(timezone(ist_offset)).date() == target_day
-
-        day_rev = round(sum(get_effective_total(b) for b in paid_bills if is_on_target_day(b)), 2)
+        target = (today_label_dt - timedelta(days=i)).date()
+        day_label = target.strftime("%m-%d")
+        if i == 0:
+            day_rev = revenue_today
+        else:
+            # Sales after 12 AM (before 3:30 AM / Close Counter) count for the day before
+            day_rev = round(sum(get_effective_total(b) for b in earlier_bills
+                                if business_date_label(b.get("paid_at") or b.get("created_at")) == target.isoformat()), 2)
         last_7_days.append({"date": day_label, "revenue": day_rev})
 
     # Top selling items
@@ -5611,10 +5587,87 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         "menu_count": menu_count,
         "last_7_days": last_7_days,
         "top_selling": top_selling,
-        "business_date": now_ist.strftime("%Y-%m-%d"),
+        "business_date": business_date_label(now_ist),
+        "business_day_start": day_start.astimezone(timezone.utc).isoformat(),
     }
     dashboard_summary_cache[tid] = (time.time(), res)
     return res
+
+
+async def _day_numbers(tid: str, day_start: datetime) -> dict:
+    """Sales of the current counter day, plus orders that are still unpaid."""
+    start_iso = day_start.astimezone(timezone.utc).isoformat()
+    paid = await db.bills.find({
+        "tenant_id": tid, "status": "paid",
+        "$or": [{"paid_at": {"$gte": start_iso}}, {"created_at": {"$gte": start_iso}}],
+    }, {"_id": 0, "total": 1, "paid_at": 1, "created_at": 1, "order_id": 1, "order_ids": 1}).to_list(5000)
+    seen, sales, count = set(), 0.0, 0
+    for b in paid:
+        if not is_timestamp_in_current_business_day(b.get("paid_at") or b.get("created_at"), day_start):
+            continue
+        oids = set(b.get("order_ids") or ([b.get("order_id")] if b.get("order_id") else []))
+        if oids and oids.issubset(seen):
+            continue
+        seen.update(oids)
+        sales += float(b.get("total") or 0)
+        count += 1
+    unpaid = await db.orders.count_documents({
+        "tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]},
+    })
+    return {"sales": round(sales, 2), "bills_count": count, "unpaid_orders": unpaid}
+
+
+@api.get("/day/status")
+async def day_status(user: dict = Depends(require_roles("owner", "manager"))):
+    tid = await _ensure_tenant(user)
+    rest = await db.restaurants.find_one({"id": tid}, {"_id": 0, "day_closed_at": 1}) or {}
+    day_start = business_day_start(rest.get("day_closed_at"))
+    nums = await _day_numbers(tid, day_start)
+    is_open, window_start = close_counter_window()
+    closed = parse_db_datetime(rest.get("day_closed_at")) if rest.get("day_closed_at") else None
+    return {
+        "day_started_at": day_start.astimezone(timezone.utc).isoformat(),
+        "can_close": is_open and not (closed and closed >= window_start),
+        "already_closed_tonight": bool(is_open and closed and closed >= window_start),
+        **nums,
+    }
+
+
+@api.post("/day/close")
+async def close_counter(user: dict = Depends(require_roles("owner", "manager"))):
+    """Close Counter: everything paid so far stays in the old day; the dashboard starts again from ₹0.
+    Unpaid orders are NOT marked as paid; they stay open."""
+    tid = await _ensure_tenant(user)
+    is_open, window_start = close_counter_window()
+    if not is_open:
+        raise HTTPException(status_code=400, detail="Close Counter is available only after 10 PM. If you forget, the dashboard resets by itself at 3:30 AM.")
+    rest = await db.restaurants.find_one({"id": tid}, {"_id": 0, "day_closed_at": 1}) or {}
+    closed = parse_db_datetime(rest.get("day_closed_at")) if rest.get("day_closed_at") else None
+    if closed and closed >= window_start:
+        raise HTTPException(status_code=409, detail="The counter is already closed for tonight.")
+    day_start = business_day_start(rest.get("day_closed_at"))
+    nums = await _day_numbers(tid, day_start)
+    now = datetime.now(timezone.utc)
+    closing = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "day_started_at": day_start.astimezone(timezone.utc).isoformat(),
+        "closed_at": now.isoformat(),
+        "business_date": business_date_label(day_start),
+        "closed_by": user.get("id"),
+        "closed_by_name": user.get("full_name") or user.get("name") or "",
+        "auto": False,
+        **nums,
+    }
+    await db.day_closings.insert_one(dict(closing))
+    await db.restaurants.update_one({"id": tid}, {"$set": {"day_closed_at": now.isoformat()}})
+    dashboard_summary_cache.pop(tid, None)
+    await notify_tenant(
+        tid, "system", "Counter Closed",
+        f"Counter closed. Day sales ₹{nums['sales']:,.2f}. Dashboard reset to ₹0.",
+        {"event": "DAY_CLOSED", "closed_at": now.isoformat()},
+    )
+    return closing
 
 
 
@@ -7546,31 +7599,32 @@ async def start_memory_trim_worker():
     asyncio.create_task(_migrate_restaurant_logos())
 
     async def _midnight_reset_worker():
-        last_reset_day = None
+        # Daily 3:30 AM (India time) auto reset for restaurants that forgot to press Close Counter.
+        # The dashboard day itself is worked out from business_day_start(); this only tells open apps to refresh.
+        last_reset_seen = last_auto_reset_time()
         while True:
             try:
-                ist_offset = timedelta(hours=5, minutes=30)
-                now_ist = datetime.now(timezone(ist_offset))
-                current_day = now_ist.date()
-                
-                # If day changed at 12:00 AM midnight
-                if last_reset_day is not None and current_day != last_reset_day:
-                    logger.info("Midnight 12:00 AM IST detected: Running business reset across all restaurants for %s...", current_day)
-                    tenants = await db.restaurants.find({}, {"_id": 0, "id": 1}).to_list(1000)
+                current_reset = last_auto_reset_time()
+                if current_reset != last_reset_seen:
+                    last_reset_seen = current_reset
+                    logger.info("3:30 AM IST auto reset for %s", current_reset.date())
+                    tenants = await db.restaurants.find({}, {"_id": 0, "id": 1, "day_closed_at": 1}).to_list(5000)
                     for t in tenants:
                         tid = t.get("id")
-                        if tid:
-                            await _auto_clear_kitchen_orders(tid, force=True)
-                            await notify_tenant(
-                                tid,
-                                "system",
-                                "Daily Reset",
-                                "Daily 12:00 AM business day reset completed.",
-                                {"event": "MIDNIGHT_RESET", "date": current_day.isoformat()}
-                            )
+                        if not tid:
+                            continue
+                        # Counter was closed in the last 12 hours: the new day already started then
+                        if business_day_start(t.get("day_closed_at")) != current_reset:
+                            continue
+                        await _auto_clear_kitchen_orders(tid, force=True)
+                        await notify_tenant(
+                            tid,
+                            "system",
+                            "Daily Reset",
+                            "Counter was not closed, so the dashboard was reset to ₹0 at 3:30 AM. Unpaid orders are still open.",
+                            {"event": "MIDNIGHT_RESET", "date": current_reset.date().isoformat()}
+                        )
                     dashboard_summary_cache.clear()
-                    
-                last_reset_day = current_day
             except Exception as e:
                 logger.error("Error in midnight_reset_worker: %s", e)
             await asyncio.sleep(10)

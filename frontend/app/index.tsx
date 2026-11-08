@@ -749,7 +749,7 @@ export default function Index() {
               }}
             >
               <Ionicons name="pricetag-outline" size={18} color="#10B981" />
-              <Text style={styles.mobileDropdownText}>Pricing Plans (₹299/mo)</Text>
+              <Text style={styles.mobileDropdownText}>Pricing Plans (₹499/mo)</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1430,7 +1430,7 @@ export default function Index() {
                   activeOpacity={0.85}
                 >
                   <Ionicons name="person-add" size={18} color="#10B981" style={{ marginRight: 8 }} />
-                  <Text style={styles.portalRegisterBtnText}>Create Business Account (₹299/mo)</Text>
+                  <Text style={styles.portalRegisterBtnText}>Create Business Account (₹499/mo)</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1441,7 +1441,7 @@ export default function Index() {
                 >
                   <Ionicons name="pricetag-outline" size={15} color="#10B981" />
                   <Text style={[styles.portalExtraLinkText, { color: "#10B981" }]}>
-                    View Detailed Pricing (₹299/mo)
+                    View Detailed Pricing (₹499/mo)
                   </Text>
                 </TouchableOpacity>
 

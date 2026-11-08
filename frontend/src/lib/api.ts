@@ -2,7 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { BillingEngine } from "./billingEngine";
-import { isTodayBusinessDay, safeParseDate } from "./dateUtils";
+import { isTodayBusinessDay, safeParseDate, setDayClosedAtGetter, getBusinessDayKey } from "./dateUtils";
 import {
   enqueueSyncAction,
   getPendingSyncCount,
@@ -359,6 +359,14 @@ async function delDiskCache(k: string) {
   try { await AsyncStorage.removeItem(k); } catch {}
 }
 
+let fallbackDayClosedAt: string | null = null;
+setDayClosedAtGetter(() => {
+  const r = memoryCache["/restaurant"];
+  const fromRestaurant = r && typeof r === "object" ? r.day_closed_at : null;
+  if (fromRestaurant && fallbackDayClosedAt) return fromRestaurant > fallbackDayClosedAt ? fromRestaurant : fallbackDayClosedAt;
+  return fromRestaurant || fallbackDayClosedAt;
+});
+
 function getTodayDateString(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -369,8 +377,9 @@ function getTodayDateString(): string {
 
 export function sanitizeSummaryForNewDay(summary: any): any {
   if (!summary || typeof summary !== "object") return summary;
-  const todayStr = getTodayDateString();
-  const cacheDate = summary.__cache_date || summary.business_date;
+  // Key of the current counter day (changes on Close Counter or at 3:30 AM, not at 12 AM)
+  const todayStr = getBusinessDayKey();
+  const cacheDate = summary.__cache_date;
   if (cacheDate && cacheDate !== todayStr) {
     return {
       ...summary,
@@ -382,7 +391,6 @@ export function sanitizeSummaryForNewDay(summary: any): any {
       ready_count: 0,
       revenue_web_today: 0,
       avg_bill: 0,
-      business_date: todayStr,
       __cache_date: todayStr
     };
   }
@@ -413,11 +421,11 @@ function isTodayDate(ts?: any): boolean {
 export function computeLocalSummary(): any {
   const bList = (memoryCache["/bills"] || []).filter((b: any) => b && !String(b.id).startsWith("temp-"));
   const oList = (memoryCache["/orders"] || []).filter((o: any) => o && !String(o.id).startsWith("temp-"));
-  const todayStr = getTodayDateString();
+  const todayStr = getBusinessDayKey();
 
   const isPaid = (status?: any) => {
     const s = String(status || "").toLowerCase().trim();
-    return s === "paid" || s === "completed" || s === "settled" || s === "served";
+    return s === "paid" || s === "completed" || s === "settled"; // "served" = food delivered, not paid
   };
 
   // 1. Paid bills today
@@ -505,7 +513,8 @@ export function computeLocalSummary(): any {
 
   // Build Last 7 days with today's revenue placed on today
   const last_7_days = [6, 5, 4, 3, 2, 1, 0].map(daysAgo => {
-    const d = new Date();
+    // Sales before 3:30 AM belong to the day before
+    const d = new Date(Date.now() - 3.5 * 3600 * 1000);
     d.setDate(d.getDate() - daysAgo);
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
@@ -531,7 +540,6 @@ export function computeLocalSummary(): any {
     revenue_web_total: Math.max(revenue_web_today, Number(currentSummary.revenue_web_total || 0)),
     avg_bill,
     last_7_days,
-    business_date: todayStr,
     __cache_date: todayStr,
   };
 
@@ -836,7 +844,7 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
 
     if (isGet) {
       if (path === "/dashboard/summary" && data && typeof data === "object") {
-        data.__cache_date = getTodayDateString();
+        data.__cache_date = getBusinessDayKey();
       }
       memoryCache[path] = data;
       cacheTimestamps[path] = Date.now();
@@ -2125,9 +2133,27 @@ export const api = {
     memoryCache['/dashboard/summary'] = sanitized;
     return sanitized;
   },
+  // Close Counter: ends the counter day; the dashboard starts again from ₹0. Unpaid orders stay open.
+  dayStatus: () => req("/day/status"),
+  closeCounter: async () => {
+    const res: any = await req("/day/close", { method: "POST" });
+    api.markDayClosed(res?.closed_at);
+    return res;
+  },
+  markDayClosed: (closedAt?: string) => {
+    if (!closedAt) return;
+    const r = memoryCache["/restaurant"];
+    if (r && typeof r === "object") {
+      memoryCache["/restaurant"] = { ...r, day_closed_at: closedAt };
+      setDiskCache("disk_cache_/restaurant", JSON.stringify(memoryCache["/restaurant"])).catch(() => {});
+    } else {
+      fallbackDayClosedAt = closedAt;
+    }
+    api.resetDailySalesCache();
+  },
   resetDailySalesCache: () => {
     const cached = memoryCache['/dashboard/summary'];
-    const todayStr = getTodayDateString();
+    const todayStr = getBusinessDayKey();
     const reset = {
       ...(cached || {}),
       revenue_today: 0,
@@ -2138,7 +2164,6 @@ export const api = {
       ready_count: 0,
       revenue_web_today: 0,
       avg_bill: 0,
-      business_date: todayStr,
       __cache_date: todayStr
     };
     memoryCache['/dashboard/summary'] = reset;

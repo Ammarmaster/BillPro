@@ -75,17 +75,40 @@ export function safeParseDate(ts: any): Date | null {
  * Checks if a timestamp belongs to the current calendar business day (00:00:00 to 23:59:59).
  * Resets at 12:00 AM midnight standard like BharatPe / Paytm Merchant.
  */
+// The counter day: starts when the owner presses Close Counter, or automatically at 3:30 AM.
+// Sales after 12 AM stay in the old day until then.
+let dayClosedAtGetter: () => any = () => null;
+export function setDayClosedAtGetter(getter: () => any) { dayClosedAtGetter = getter; }
+
+export function getLastAutoReset(now: Date = new Date()): Date {
+  const reset = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 3, 30, 0, 0);
+  if (reset.getTime() > now.getTime()) reset.setDate(reset.getDate() - 1);
+  return reset;
+}
+
+export function getNextAutoReset(now: Date = new Date()): Date {
+  const next = getLastAutoReset(now);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
+export function getBusinessDayStart(now: Date = new Date()): Date {
+  const autoStart = getLastAutoReset(now);
+  let closed: Date | null = null;
+  try { closed = safeParseDate(dayClosedAtGetter()); } catch {}
+  if (closed && closed.getTime() >= autoStart.getTime() - 12 * 3600 * 1000) return closed;
+  return autoStart;
+}
+
+export function getBusinessDayKey(): string {
+  return getBusinessDayStart().toISOString();
+}
+
 export function isTodayBusinessDay(ts?: any): boolean {
   if (!ts) return false;
   const d = safeParseDate(ts);
   if (!d) return false;
-
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  return d.getTime() >= getBusinessDayStart().getTime();
 }
 
 /**

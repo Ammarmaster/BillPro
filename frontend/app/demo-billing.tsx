@@ -28,7 +28,7 @@ type Bill = { no: number; table: string; lines: Line[]; subtotal: number; gst: n
 type Wall = { title: string; sub: string; icon?: IconName };
 
 const BRAND = "#635BFF";
-const PRICE = 299;
+const PRICE = 499;
 
 const MENU: Dish[] = [
   { id: "d1", name: "Chicken Dum Biryani", price: 220, cat: "Biryani" },
@@ -1047,7 +1047,7 @@ export default function DemoBilling() {
             </View>
             <View style={[styles.priceStrip, { borderColor: theme.border, backgroundColor: theme.surfaceTertiary }]}>
               <Text style={{ color: theme.onSurfaceSecondary, fontSize: 13, fontWeight: "700" }}>Starter plan</Text>
-              <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "900" }}>₹{PRICE}/month <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "600" }}>· under ₹10 a day</Text></Text>
+              <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: "900" }}>₹{PRICE}/month <Text style={{ color: theme.onSurfaceSecondary, fontSize: 12, fontWeight: "600" }}>· under ₹17 a day</Text></Text>
             </View>
             <Pressable onPress={goSubscribe} style={({ pressed }) => [styles.bigCta, pressed && { opacity: 0.88 }]} testID="demo-paywall-subscribe">
               <Text style={styles.bigCtaText}>{subscribed ? "Open my EzBill" : user ? "Subscribe Now" : "Get Started"}</Text>

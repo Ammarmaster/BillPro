@@ -17,7 +17,7 @@ import FeatureLockModal from "@/src/components/FeatureLockModal";
 import BackendConfigModal from "@/src/components/BackendConfigModal";
 import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
 
-import { safeParseDate } from "@/src/lib/dateUtils";
+import { safeParseDate, getNextAutoReset, getBusinessDayKey } from "@/src/lib/dateUtils";
 
 const formatAmount = (num?: number | null, detailed: boolean = false) => {
   const val = Number(num || 0);
@@ -1259,6 +1259,25 @@ function OwnerDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [showProLockModal, setShowProLockModal] = useState(false);
 
+  // Close Counter (ends the day: dashboard back to ₹0, unpaid orders stay open)
+  const canCloseCounter = user?.role === "owner" || user?.role === "manager";
+  const [closeAsk, setCloseAsk] = useState(false);
+  const [closeInfo, setCloseInfo] = useState<any>(null);
+  const [closeBusy, setCloseBusy] = useState(false);
+  const [closeErr, setCloseErr] = useState<string | null>(null);
+  const [closeDone, setCloseDone] = useState<any>(null);
+  // Close Counter opens at 10 PM and stays open until the 3:30 AM auto reset
+  const isCloseTime = () => {
+    const d = new Date();
+    const mins = d.getHours() * 60 + d.getMinutes();
+    return mins >= 22 * 60 || mins < 3 * 60 + 30;
+  };
+  const [closeOpen, setCloseOpen] = useState(isCloseTime);
+  useEffect(() => {
+    const t = setInterval(() => setCloseOpen(isCloseTime()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   const hasTenant = !!user?.tenant_id;
 
   useEffect(() => {
@@ -1324,12 +1343,16 @@ function OwnerDashboard() {
   useEffect(() => {
     let timer: any;
     const scheduleMidnightCheck = () => {
+      // Next automatic reset is 3:30 AM (if the counter was not closed)
       const now = new Date();
-      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
-      const msUntilMidnight = Math.max(1000, tomorrow.getTime() - now.getTime());
+      const nextReset = getNextAutoReset(now);
+      const msUntilMidnight = Math.max(1000, nextReset.getTime() - now.getTime() + 1000);
 
       timer = setTimeout(() => {
-        // Midnight reached! Reset today sales to 0 immediately
+        const keyNow = getBusinessDayKey();
+        if (keyNow === lastDayKey) { scheduleMidnightCheck(); return; }
+        lastDayKey = keyNow;
+        // 3:30 AM reached and the counter was not closed: reset today's sales to 0
         api.resetDailySalesCache();
         setSummary((prev: any) => prev ? {
           ...prev,
@@ -1352,14 +1375,14 @@ function OwnerDashboard() {
       }, msUntilMidnight);
     };
 
+    let lastDayKey = getBusinessDayKey();
     scheduleMidnightCheck();
 
-    let lastActiveDate = new Date().toDateString();
     const appStateSub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        const currentDate = new Date().toDateString();
-        if (currentDate !== lastActiveDate) {
-          lastActiveDate = currentDate;
+        const currentKey = getBusinessDayKey();
+        if (currentKey !== lastDayKey) {
+          lastDayKey = currentKey;
           // Day changed while app was backgrounded/sleeping: reset sales to 0 instantly!
           api.resetDailySalesCache();
           setSummary((prev: any) => prev ? {
@@ -1390,7 +1413,8 @@ function OwnerDashboard() {
     return subscribe((notif: any) => {
       const data = notif.data;
 
-      if (data?.event === "MIDNIGHT_RESET") {
+      if (data?.event === "MIDNIGHT_RESET" || data?.event === "DAY_CLOSED") {
+        if (data?.event === "DAY_CLOSED") api.markDayClosed(data?.closed_at);
         api.resetDailySalesCache();
         setSummary((prev: any) => prev ? {
           ...prev,
@@ -1613,6 +1637,30 @@ function OwnerDashboard() {
                 <Text style={[styles.quickActionShortcutText, { color: "#F59E0B" }]} numberOfLines={1}>Printer</Text>
               </Pressable>
             </View>
+
+            {canCloseCounter && (
+              <Pressable
+                testID="close-counter-btn"
+                disabled={!closeOpen}
+                onPress={async () => {
+                  if (!isCloseTime()) { setCloseOpen(false); return; }
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                  setCloseErr(null); setCloseDone(null); setCloseInfo(null); setCloseAsk(true);
+                  try { setCloseInfo(await api.dayStatus()); } catch { setCloseInfo({}); }
+                }}
+                style={({ pressed }) => [{
+                  flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+                  marginTop: spacing.sm, paddingVertical: 13, borderRadius: 14, borderWidth: 1,
+                  backgroundColor: isDark ? "rgba(239,68,68,0.12)" : "#FEF2F2",
+                  borderColor: isDark ? "#EF4444" : "#FECACA",
+                }, !closeOpen && { opacity: 0.55 }, pressed && closeOpen && { opacity: 0.75, transform: [{ scale: 0.98 }] }]}
+              >
+                <Ionicons name={closeOpen ? "lock-closed-outline" : "time-outline"} size={18} color="#EF4444" />
+                <Text style={{ color: "#EF4444", fontWeight: "800", fontSize: 15 }}>
+                  {closeOpen ? "Close Counter for Today" : "Close Counter opens at 10 PM"}
+                </Text>
+              </Pressable>
+            )}
 
             {/* 4 Status Metrics Grid matching Screenshot 3 */}
             <View style={[styles.statusGrid, { marginTop: spacing.md }]}>
@@ -1871,6 +1919,102 @@ function OwnerDashboard() {
         }}
         onCancel={() => setShowProLockModal(false)}
       />
+
+      {/* Close Counter confirmation */}
+      <Modal transparent visible={closeAsk} animationType="fade" onRequestClose={() => { if (!closeBusy) setCloseAsk(false); }}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <View style={{ width: "100%", maxWidth: 420, borderRadius: 22, padding: 22, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border }}>
+            {closeDone ? (
+              <>
+                <View style={{ alignItems: "center", marginBottom: 12 }}>
+                  <Ionicons name="checkmark-circle" size={54} color="#10B981" />
+                </View>
+                <Text style={{ color: theme.onSurface, fontSize: 20, fontWeight: "900", textAlign: "center" }}>Counter closed</Text>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, textAlign: "center", marginTop: 8, lineHeight: 20 }}>
+                  Day sales ₹{Number(closeDone.sales || 0).toLocaleString("en-IN")} from {closeDone.bills_count || 0} bills were saved. The dashboard now starts from ₹0.
+                </Text>
+                <Pressable onPress={() => setCloseAsk(false)} style={{ marginTop: 18, backgroundColor: "#635BFF", borderRadius: 14, paddingVertical: 14, alignItems: "center" }}>
+                  <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 15 }}>Done</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <View style={{ alignItems: "center", marginBottom: 12 }}>
+                  <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: "rgba(239,68,68,0.12)", alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name="lock-closed" size={26} color="#EF4444" />
+                  </View>
+                </View>
+                <Text style={{ color: theme.onSurface, fontSize: 20, fontWeight: "900", textAlign: "center" }}>Close the counter for today?</Text>
+                <Text style={{ color: theme.onSurfaceSecondary, fontSize: 14, textAlign: "center", marginTop: 8, lineHeight: 20 }}>
+                  All payments made until now (including after 12 AM) will be saved in today&apos;s sales. The dashboard will start again from ₹0.
+                </Text>
+
+                <View style={{ marginTop: 16, borderRadius: 14, padding: 14, backgroundColor: theme.surfaceSecondary, gap: 8 }}>
+                  {closeInfo ? (
+                    <>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ color: theme.onSurfaceSecondary, fontWeight: "600" }}>Today&apos;s sales</Text>
+                        <Text style={{ color: theme.onSurface, fontWeight: "900" }}>₹{Number(closeInfo.sales || 0).toLocaleString("en-IN")}</Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ color: theme.onSurfaceSecondary, fontWeight: "600" }}>Paid bills</Text>
+                        <Text style={{ color: theme.onSurface, fontWeight: "900" }}>{closeInfo.bills_count || 0}</Text>
+                      </View>
+                      {closeInfo.already_closed_tonight && (
+                        <Text style={{ color: "#EF4444", fontWeight: "700", fontSize: 13 }}>The counter is already closed for tonight.</Text>
+                      )}
+                      {Number(closeInfo.unpaid_orders || 0) > 0 && (
+                        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 4 }}>
+                          <Ionicons name="alert-circle" size={16} color="#F59E0B" style={{ marginTop: 1 }} />
+                          <Text style={{ color: "#F59E0B", fontWeight: "700", flex: 1, fontSize: 13, lineHeight: 18 }}>
+                            {closeInfo.unpaid_orders} unpaid order{closeInfo.unpaid_orders === 1 ? "" : "s"} will NOT be marked as paid. They stay open on their tables until you settle them.
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <ActivityIndicator color="#635BFF" />
+                  )}
+                </View>
+
+                {closeErr && <Text style={{ color: "#EF4444", marginTop: 10, textAlign: "center", fontWeight: "600" }}>{closeErr}</Text>}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
+                  <Pressable
+                    disabled={closeBusy}
+                    onPress={() => setCloseAsk(false)}
+                    style={{ flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: "center", borderWidth: 1, borderColor: theme.border }}
+                  >
+                    <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: 15 }}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    testID="close-counter-confirm"
+                    disabled={closeBusy || closeInfo?.can_close === false}
+                    onPress={async () => {
+                      setCloseBusy(true); setCloseErr(null);
+                      try {
+                        const res = await api.closeCounter();
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                        setCloseDone(res || {});
+                        setSummary((prev: any) => prev ? { ...prev, revenue_today: 0, orders_today: 0, revenue_web_today: 0, avg_bill: 0 } : prev);
+                        clearCachePrefix("/dashboard");
+                        load().catch(() => {});
+                      } catch (e: any) {
+                        setCloseErr(e?.message || "Could not close the counter. Check the internet and try again.");
+                      } finally {
+                        setCloseBusy(false);
+                      }
+                    }}
+                    style={{ flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: "center", backgroundColor: "#EF4444", opacity: closeBusy || closeInfo?.can_close === false ? 0.5 : 1 }}
+                  >
+                    {closeBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 15 }}>Yes, Close Counter</Text>}
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
       </View>
     </View>
   );

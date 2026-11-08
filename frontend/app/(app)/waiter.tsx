@@ -21,7 +21,7 @@ import { colors, spacing, radius } from "@/src/theme";
 import { getPrinterSettings, printKitchenKOT } from "@/src/lib/print";
 import OrderQRScannerModal from "@/src/components/OrderQRScannerModal";
 import SyncStatusIndicator from "@/src/components/SyncStatusIndicator";
-import { isTodayBusinessDay } from "@/src/lib/dateUtils";
+
 import { useResponsive } from "@/src/hooks/useResponsive";
 type Cat = { id: string; name: string };
 type Item = { id: string; category_id: string; name: string; price: number; description: string; image_base64?: string; image_url?: string };
@@ -296,7 +296,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
       if (isSuperseded) return false;
     }
     if (!isSameTable(o.table_number, tblLabel)) return false;
-    if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
+    // Unpaid orders stay on the table across days until they are settled
     if (o.status === "cancelled" || o.status === "pending_scan") return false;
     if (o.status === "paid" || o.status === "completed" || o.status === "settled") return false;
     const isPaid = billsList.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");
@@ -515,7 +515,7 @@ const getTableStatusInfo = (tblLabel: string, ordersList: any[], billsList: any[
           if (isSuperseded) return false;
         }
         if (!isSameTable(o.table_number, selectedTableObj.label)) return false;
-        if (!isTodayBusinessDay(o.created_at)) return false; // ONLY CURRENT DAY ORDERS
+        // Unpaid orders stay on the table across days until they are settled
         if (o.status === "cancelled" || o.status === "pending_scan") return false;
         if (o.status === "paid" || o.status === "completed" || o.status === "settled") return false;
         const isPaid = bills.some((b: any) => (b.order_id === o.id || (b.order_ids && b.order_ids.includes(o.id))) && b.status === "paid");

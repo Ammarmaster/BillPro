@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { useAudioPlayer } from "expo-audio";
 import { api } from "@/src/lib/api";
+import { isTodayBusinessDay } from "@/src/lib/dateUtils";
 import { printKitchenKOT } from "@/src/lib/print";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { useAuth } from "@/src/context/AuthContext";
@@ -429,11 +430,15 @@ export default function Kitchen() {
     }
   }, [orders, soundEnabled, player]);
 
+  // Kitchen shows only tickets of the current counter day: Close Counter (or the 3:30 AM auto reset) clears it
+  const isKitchenTicket = (x: any) =>
+    !!x && !["served", "cancelled", "paid", "completed", "settled"].includes(x.status) && isTodayBusinessDay(x.created_at);
+
   const load = useCallback(async () => {
     setErr(null);
     try {
       const o = await api.listOrders();
-      setOrders(o.filter((x: Order) => x.status !== "served" && x.status !== "cancelled"));
+      setOrders(o.filter(isKitchenTicket));
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -444,13 +449,27 @@ export default function Kitchen() {
 
   // Battery-safe timer update every 30s instead of 1s (saving 97% of device CPU & RAM overhead)
   useEffect(() => {
-    const iv = setInterval(() => { setNow(Date.now()); }, 30000);
+    const iv = setInterval(() => {
+      setNow(Date.now());
+      // 3:30 AM auto reset: drop tickets from the previous day
+      setOrders(prev => {
+        const kept = prev.filter(isKitchenTicket);
+        return kept.length === prev.length ? prev : kept;
+      });
+    }, 30000);
     return () => clearInterval(iv);
   }, []);
 
   // Event-driven reactive sync via WebSocket (0ms Instant Kitchen Order Arrival)
   useEffect(() => {
     return subscribe((notif) => {
+      const ev = notif.data?.event;
+      if (ev === "DAY_CLOSED" || ev === "MIDNIGHT_RESET") {
+        if (ev === "DAY_CLOSED") api.markDayClosed(notif.data?.closed_at);
+        setOrders(prev => prev.filter(isKitchenTicket));
+        load();
+        return;
+      }
       if (notif.category === "kitchen" || notif.category === "payment" || (notif.category as any) === "order") {
         const ord = notif.data?.order;
         if (ord && ord.id) {

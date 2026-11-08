@@ -25,7 +25,7 @@ export default function PricingScreen() {
       name: "Starter Plan",
       badge: "STANDALONE & LOCAL BILLING",
       popular: false,
-      priceMonthly: 299,
+      priceMonthly: 499,
       priceYearly: 2999,
       tagline: "Fast 100% offline billing for standalone restaurants, cafes & bakeries",
       cursiveNote: "✨ 1 Owner account · No internet required",
@@ -40,7 +40,7 @@ export default function PricingScreen() {
         "Automatic Cloud Backup & Data Security",
         "Light & Dark Mode Interface",
       ],
-      cta: "Choose Starter (₹299/mo)",
+      cta: "Choose Starter (₹499/mo)",
       ctaPrimary: false,
     },
     {
@@ -48,8 +48,8 @@ export default function PricingScreen() {
       name: "Growth Dine-In",
       badge: "⭐ MOST POPULAR · MULTI-STAFF",
       popular: true,
-      priceMonthly: 499,
-      priceYearly: 4999,
+      priceMonthly: 599,
+      priceYearly: 5999,
       tagline: "Designed for busy dine-in spots with captain apps, staff logins and live kitchen displays",
       cursiveNote: "📱 Up to 5 Users (Owner + 4 Staff) · Realtime Sync",
       features: [
@@ -64,7 +64,7 @@ export default function PricingScreen() {
         "Inventory Stock & Daily Expense Tracking",
         "Waiter-wise Performance & Order Reports",
       ],
-      cta: "Choose Growth (₹499/mo)",
+      cta: "Choose Growth (₹599/mo)",
       ctaPrimary: true,
     },
     {
@@ -267,8 +267,8 @@ export default function PricingScreen() {
           <View style={styles.tableWrapper}>
             <View style={[styles.tableRow, styles.tableHeader]}>
               <Text style={[styles.tableCell, styles.tableCellFeat, { fontWeight: "800", color: "#FFFFFF" }]}>Feature</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#FF7D52" }]}>Starter (₹299/mo)</Text>
-              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Growth (₹499/mo)</Text>
+              <Text style={[styles.tableCell, { fontWeight: "800", color: "#FF7D52" }]}>Starter (₹499/mo)</Text>
+              <Text style={[styles.tableCell, { fontWeight: "800", color: "#34D399" }]}>Growth (₹599/mo)</Text>
               <Text style={[styles.tableCell, { fontWeight: "800", color: "#635BFF" }]}>Pro (₹999/mo)</Text>
             </View>
             {comparisonRows.map((row, idx) => (
@@ -320,7 +320,7 @@ export default function PricingScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerBrand}>EzBill Restaurant POS & Table Management Software</Text>
           <Text style={styles.footerKeywords}>
-            Restaurant POS · Table Management · Thermal Receipt Printing · Accurate GST Invoices · Kitchen KOT · Bill Printing · Offline POS · Cafe & Bar Billing · QR Code Ordering · ₹299 POS
+            Restaurant POS · Table Management · Thermal Receipt Printing · Accurate GST Invoices · Kitchen KOT · Bill Printing · Offline POS · Cafe & Bar Billing · QR Code Ordering · ₹499 POS
           </Text>
           <Text style={styles.copyright}>© 2026 EzBill / ProDevOpz Solutions. All rights reserved.</Text>
         </View>

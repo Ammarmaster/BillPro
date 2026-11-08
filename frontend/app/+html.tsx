@@ -18,7 +18,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="title" content="EzBill - #1 Restaurant POS, ERP &amp; Restaurant Management System" />
         <meta
           name="description"
-          content="EzBill is India's leading restaurant POS, ERP &amp; restaurant management system. 0ms offline table billing, live digital KOT printing, 58mm/80mm thermal printer auto-setup, and float-safe GST invoices from ₹299/mo."
+          content="EzBill is India's leading restaurant POS, ERP &amp; restaurant management system. 0ms offline table billing, live digital KOT printing, 58mm/80mm thermal printer auto-setup, and float-safe GST invoices from ₹499/mo."
         />
         <meta
           name="keywords"
@@ -146,14 +146,14 @@ export default function Root({ children }: PropsWithChildren) {
                     {
                       "@type": "Offer",
                       "name": "Starter Plan",
-                      "price": "299",
+                      "price": "499",
                       "priceCurrency": "INR",
                       "priceValidUntil": "2028-12-31"
                     },
                     {
                       "@type": "Offer",
                       "name": "Pro Restaurant ERP",
-                      "price": "499",
+                      "price": "599",
                       "priceCurrency": "INR",
                       "priceValidUntil": "2028-12-31"
                     }
@@ -209,7 +209,7 @@ export default function Root({ children }: PropsWithChildren) {
                       "name": "What is the price of EzBill restaurant billing software?",
                       "acceptedAnswer": {
                         "@type": "Answer",
-                        "text": "EzBill pricing starts at just ₹299/month (or ₹2,999/year) for the Starter plan, featuring unlimited orders, table management, KOT printing, and GST billing."
+                        "text": "EzBill pricing starts at just ₹499/month (or ₹2,999/year) for the Starter plan, featuring unlimited orders, table management, KOT printing, and GST billing."
                       }
                     }
                   ]

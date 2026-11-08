@@ -482,8 +482,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         api.settleTableInCache(data.table_number);
       }
 
-      // 4b. Handle 12:00 AM Midnight Business Reset
-      if (eventName === "MIDNIGHT_RESET") {
+      // 4b. Counter day ended: Close Counter pressed (DAY_CLOSED) or the 3:30 AM auto reset
+      if (eventName === "MIDNIGHT_RESET" || eventName === "DAY_CLOSED") {
+        if (eventName === "DAY_CLOSED") api.markDayClosed(data?.closed_at);
         api.resetDailySalesCache();
         clearCachePrefix("/dashboard");
         clearCachePrefix("/bills");
@@ -510,7 +511,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           }
         }
       }
-      if (data.status === "served" || data.status === "paid" || eventName === "ORDER_PAID" || eventName === "TABLE_SETTLED" || notif.category === "payment") {
+      if (data.status === "paid" || eventName === "ORDER_PAID" || eventName === "TABLE_SETTLED" || notif.category === "payment") {
         const paidAmt = Number(data.total || data.bill?.total || 0);
         const billOrOrderId = data.bill_id || data.order_id || (data.bill && data.bill.id) || (data.table_number ? `tbl_${data.table_number}_${paidAmt}_${Date.now()}` : null);
         

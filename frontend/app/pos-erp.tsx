@@ -103,7 +103,7 @@ export default function PosErpSeoScreen() {
           </Text>
 
           <Text style={styles.heroSub}>
-            Fast table ordering, automated GST calculations, wireless thermal receipt & KOT printing, and offline billing starting at just ₹299/month.
+            Fast table ordering, automated GST calculations, wireless thermal receipt & KOT printing, and offline billing starting at just ₹499/month.
           </Text>
 
           <Text style={styles.cursiveTag}>
@@ -117,7 +117,7 @@ export default function PosErpSeoScreen() {
               activeOpacity={0.85}
             >
               <Ionicons name="rocket-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.primaryBtnText}>Start for ₹299/mo</Text>
+              <Text style={styles.primaryBtnText}>Start for ₹499/mo</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -161,7 +161,7 @@ export default function PosErpSeoScreen() {
             </View>
             <Text style={styles.planName}>Starter 100% Local Plan</Text>
             <Text style={styles.planPrice}>
-              ₹299 <Text style={{ fontSize: 14, color: "#94A3B8" }}>/ month (₹2,999/year)</Text>
+              ₹499 <Text style={{ fontSize: 14, color: "#94A3B8" }}>/ month (₹2,999/year)</Text>
             </Text>
             <Text style={styles.planDesc}>
               Includes 100% Offline Billing, Table Management, Thermal Bill & KOT Printing, and Automatic Cloud Backup.

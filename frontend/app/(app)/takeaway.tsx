@@ -142,8 +142,7 @@ export default function TakeawayScreen() {
       });
       if (hasPaidSibling) return false;
 
-      const isToday = isTodayBusinessDay(b.created_at || b.paid_at);
-      return isTblTakeaway && isToday;
+      return isTblTakeaway; // unpaid takeaway orders stay listed until settled
     });
 
     for (const b of unpaidBills) {
@@ -193,8 +192,7 @@ export default function TakeawayScreen() {
       });
       if (hasPaidBill) return false;
 
-      const isToday = isTodayBusinessDay(o.created_at);
-      return isTblTakeaway && isToday;
+      return isTblTakeaway; // unpaid takeaway orders stay listed until settled
     });
 
     for (const o of activeOrders) {
