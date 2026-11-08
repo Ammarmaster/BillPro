@@ -6654,7 +6654,7 @@ async def my_subscription(user: dict = Depends(get_current_user)):
             "user_id": user["id"],
             "plan_id": "STARTER_MONTHLY",
             "plan_name": "Starter",
-            "price": 299.0,
+            "price": 499.0,
             "interval": "month",
             "status": "expired",
             "auto_pay_enabled": False,
@@ -6868,6 +6868,60 @@ async def verify_payment(payload: VerifyIn, user: dict = Depends(require_roles("
 
 from fastapi import Request
 
+
+async def _extend_subscription_on_renewal(rzp_sub: dict, payment_id: Optional[str]) -> bool:
+    """Monthly/yearly AutoPay charge from Razorpay: give the restaurant one more period.
+    The plan and price stay exactly as they were (old customers keep their old plan)."""
+    rzp_sub_id = rzp_sub.get("id")
+    if not rzp_sub_id or not payment_id:
+        return False
+    sub = await db.subscriptions.find_one(
+        {"razorpay_subscription_id": rzp_sub_id}, {"_id": 0}, sort=[("created_at", -1)]
+    )
+    # No record yet: the first payment is saved by /subscriptions/verify instead
+    if not sub:
+        return False
+    # Already counted (first payment, or Razorpay sending the same message again)
+    if sub.get("razorpay_payment_id") == payment_id or payment_id in (sub.get("renewal_payment_ids") or []):
+        return False
+    # The restaurant moved to another plan: don't bring the old one back
+    if sub.get("status") not in ("active", "expired"):
+        return False
+    other_active = await db.subscriptions.find_one(
+        {"tenant_id": sub.get("tenant_id"), "status": "active", "id": {"$ne": sub["id"]}}, {"_id": 0, "id": 1}
+    )
+    if other_active:
+        return False
+
+    now = datetime.now(timezone.utc)
+    current_end = now
+    try:
+        if sub.get("ends_at"):
+            current_end = max(now, datetime.fromisoformat(str(sub["ends_at"]).replace("Z", "+00:00")))
+    except Exception:
+        pass
+    plan = await db.plans.find_one({"id": sub.get("plan_id")}, {"_id": 0}) or {}
+    valid_days = plan.get("valid_days") or (365 if sub.get("interval") == "year" else 30)
+    new_end = current_end + timedelta(days=int(valid_days))
+    # Razorpay's own end of the paid period, if it is later
+    try:
+        if rzp_sub.get("current_end"):
+            rzp_end = datetime.fromtimestamp(int(rzp_sub["current_end"]), tz=timezone.utc)
+            new_end = max(new_end, rzp_end)
+    except Exception:
+        pass
+
+    await db.subscriptions.update_one(
+        {"id": sub["id"]},
+        {
+            "$set": {"status": "active", "ends_at": new_end.isoformat(), "last_renewed_at": now.isoformat()},
+            "$push": {"renewal_payment_ids": payment_id},
+        },
+    )
+    logger.info(f"AutoPay renewal: subscription {sub['id']} ({sub.get('plan_id')}) extended to {new_end.isoformat()}")
+    return True
+
+
 @api.post("/subscriptions/webhook")
 async def razorpay_webhook(request: Request):
     if not razorpay_client:
@@ -6885,6 +6939,10 @@ async def razorpay_webhook(request: Request):
     payload_payment = (((event.get("payload") or {}).get("payment") or {}).get("entity") or {})
     order_id = payload_payment.get("order_id")
     payment_id = payload_payment.get("id")
+    if event_type == "subscription.charged":
+        rzp_sub = (((event.get("payload") or {}).get("subscription") or {}).get("entity") or {})
+        renewed = await _extend_subscription_on_renewal(rzp_sub, payment_id)
+        return {"ok": True, "event": event_type, "renewed": renewed}
     if order_id and event_type in ("payment.captured", "payment.authorized"):
         po = await db.payment_orders.find_one({"razorpay_order_id": order_id}, {"_id": 0})
         if po:
@@ -7412,11 +7470,14 @@ async def seed_super_admin():
 
     # Seed default subscription plans idempotently
     defaults = [
-        {"id": "STARTER_MONTHLY", "name": "Starter", "price": 299.0, "interval": "month", "valid_days": 30,
+        {"id": "STARTER_MONTHLY", "name": "Starter", "price": 499.0, "interval": "month", "valid_days": 30, "razorpay_plan_id": "plan_TupnPSnQSitc0L",
          "features": ["Owner account", "Basic billing", "Menu CRUD", "Table CRUD", "Basic order creation", "Cloud data backup", "Local-first billing", "Offline bill generation", "Thermal printing", "GST billing", "Logo on bill", "Bill reprint", "Basic settings", "Light/Dark mode", "Password reset"]},
         {"id": "STARTER_YEARLY", "name": "Starter", "price": 2999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Starter Monthly", "Save ₹589 annually"]},
-        {"id": "GROWTH_MONTHLY", "name": "Growth", "price": 499.0, "interval": "month", "valid_days": 30, "razorpay_plan_id": "plan_TupnPSnQSitc0L",
+        # Old ₹499 Growth plan: hidden from customers, kept for restaurants already on it
+        {"id": "GROWTH_MONTHLY", "name": "Growth", "price": 499.0, "interval": "month", "valid_days": 30, "razorpay_plan_id": "plan_TupnPSnQSitc0L", "is_active": False,
+         "features": ["Everything in Starter", "Up to 5 users total (Owner + 4 staff)", "Staff management & roles", "Multi-device realtime sync", "Background & offline-first sync", "Role-based notifications", "Sales Analytics Dashboard", "Inventory management & alerts", "Expense tracking", "AI Photo → Menu"]},
+        {"id": "GROWTH_MONTHLY_599", "name": "Growth", "price": 599.0, "interval": "month", "valid_days": 30, "razorpay_plan_id": "plan_TxYwEGYm0bs8o9",
          "features": ["Everything in Starter", "Up to 5 users total (Owner + 4 staff)", "Staff management & roles", "Multi-device realtime sync", "Background & offline-first sync", "Role-based notifications", "Sales Analytics Dashboard", "Inventory management & alerts", "Expense tracking", "AI Photo → Menu"]},
         {"id": "GROWTH_YEARLY", "name": "Growth", "price": 5999.0, "interval": "year", "valid_days": 365,
          "features": ["Everything in Growth Monthly", "Save ₹1,189 annually"]},
@@ -7426,7 +7487,7 @@ async def seed_super_admin():
          "features": ["Everything in Pro Monthly", "Save ₹1,989 annually"]},
     ]
     for p in defaults:
-        await db.plans.replace_one({"id": p["id"]}, {**p, "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()}, upsert=True)
+        await db.plans.replace_one({"id": p["id"]}, {"is_active": True, **p, "created_at": datetime.now(timezone.utc).isoformat()}, upsert=True)
 @api.get("/health/memory")
 async def health_memory():
     import os, psutil

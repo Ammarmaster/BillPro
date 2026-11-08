@@ -236,10 +236,11 @@ export default function Subscribe() {
   };
 
   const starterPlan = plans.find(p => p.id === (isYearly ? "STARTER_YEARLY" : "STARTER_MONTHLY"));
-  const growthPlan = plans.find(p => p.id === (isYearly ? "GROWTH_YEARLY" : "GROWTH_MONTHLY"));
+  const growthPlan = plans.find(p => p.id === (isYearly ? "GROWTH_YEARLY" : "GROWTH_MONTHLY_599"));
   const proPlan = plans.find(p => p.id === (isYearly ? "PRO_YEARLY" : "PRO_MONTHLY"));
 
-  const activePlanId = sub?.status === "active" ? sub.plan_id : null;
+  // Restaurants still on the old (hidden) ₹499 Growth plan see Growth as their current plan
+  const activePlanId = sub?.status === "active" ? (sub.plan_id === "GROWTH_MONTHLY" ? "GROWTH_MONTHLY_599" : sub.plan_id) : null;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]}>
