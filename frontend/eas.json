@@ -14,13 +14,13 @@
          "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api2.jobsio.in"
+        "EXPO_PUBLIC_BACKEND_URL": "https://billpro-wulv.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api2.jobsio.in"
+        "EXPO_PUBLIC_BACKEND_URL": "https://billpro-wulv.onrender.com"
       }
     }
   },

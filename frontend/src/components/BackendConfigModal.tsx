@@ -230,7 +230,7 @@ export default function BackendConfigModal({ visible, onClose, onSuccess }: Prop
     let url = inputUrl.trim().replace(/\/+$/, "");
     if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
     if (!/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(url)) {
-      setMainMsg({ ok: false, text: "Use a full https:// address, like https://api2.jobsio.in" });
+      setMainMsg({ ok: false, text: "Use a full https:// address, like https://billpro-wulv.onrender.com" });
       return;
     }
     moveEveryone(url);

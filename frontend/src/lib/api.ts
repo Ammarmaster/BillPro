@@ -14,7 +14,7 @@ import {
   SyncActionType,
 } from "./offlineSync";
 
-const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://api2.jobsio.in").replace(/\/$/, "");
+const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
 
 let activeBackendUrl = DEFAULT_BACKEND_URL;
 
@@ -24,7 +24,12 @@ const MAIN_FOR_EVERYONE_KEY = "global_backend_url";
 let mainForEveryone: string | null = null;
 let deviceUrl: string | null = null;
 
-const cleanUrl = (url?: string | null) => (url && url.trim() ? url.trim().replace(/\/+$/, "") : null);
+// The old AWS server (api2.jobsio.in) is down: ignore it if a device or the admin setting still points there
+const RETIRED_SERVERS = ["api2.jobsio.in"];
+const cleanUrl = (url?: string | null) => {
+  const u = url && url.trim() ? url.trim().replace(/\/+$/, "") : null;
+  return u && RETIRED_SERVERS.some(r => u.includes(r)) ? null : u;
+};
 
 function pickMainServer() {
   activeBackendUrl = mainForEveryone || deviceUrl || DEFAULT_BACKEND_URL;

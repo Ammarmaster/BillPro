@@ -11,7 +11,7 @@ import { useResponsive } from "@/src/hooks/useResponsive";
 import { spacing } from "@/src/theme";
 
 // Helper to handle API requests manually to avoid changing AuthContext
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://api2.jobsio.in";
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://billpro-wulv.onrender.com";
 
 export default function ForgotPassword() {
   const { theme, isDark } = useTheme();
