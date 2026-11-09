@@ -2,7 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, Platform } from "react-native";
 import { BillingEngine } from "./billingEngine";
-import { isTodayBusinessDay, safeParseDate, setDayClosedAtGetter, getBusinessDayKey } from "./dateUtils";
+import { isTodayBusinessDay, safeParseDate, setDayClosedAtGetter, getBusinessDayKey, setDayClosings } from "./dateUtils";
 import {
   enqueueSyncAction,
   getPendingSyncCount,
@@ -2201,6 +2201,13 @@ export const api = {
   },
   // Close Counter: ends the counter day; the dashboard starts again from ₹0. Unpaid orders stay open.
   dayStatus: () => req("/day/status"),
+  // Close Counter times, so reports split days exactly like the dashboard
+  loadDayClosings: async () => {
+    try {
+      const res: any = await req("/day/closings");
+      setDayClosings(res?.closings || []);
+    } catch {}
+  },
   closeCounter: async () => {
     const res: any = await req("/day/close", { method: "POST" });
     api.markDayClosed(res?.closed_at);

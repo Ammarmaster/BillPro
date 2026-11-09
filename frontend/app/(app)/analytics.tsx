@@ -11,7 +11,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { useResponsive } from "@/src/hooks/useResponsive";
 import { exportAnalyticsPDF, exportAnalyticsExcel, exportAnalyticsDocx } from "@/src/lib/exportAnalytics";
 import { spacing, radius } from "@/src/theme";
-import { safeParseDate } from "@/src/lib/dateUtils";
+import { safeParseDate, getBusinessDate, getBusinessDateKey } from "@/src/lib/dateUtils";
 
 export default function Analytics() {
   const insets = useSafeAreaInsets();
@@ -49,6 +49,7 @@ export default function Analytics() {
         api.listBills().catch(() => []),
         api.listOrders().catch(() => []),
         api.getRestaurant().catch(() => null),
+        api.loadDayClosings(),
       ]);
       setBills(Array.isArray(bList) ? bList : []);
       setOrders(Array.isArray(oList) ? oList : []);
@@ -95,9 +96,13 @@ export default function Analytics() {
     return Math.max(1, Math.round(Math.abs(e - s) / (1000 * 60 * 60 * 24)) + 1);
   };
 
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
+  // Days follow the counter: a day ends at Close Counter (or 3:30 AM), not at 12 midnight
+  const today = getBusinessDate(new Date()) || new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const saleTime = (b: any) => (b?.status === "paid" || b?.status === "PAID" ? (b.paid_at || b.created_at) : (b?.created_at || b?.paid_at));
+  const saleDay = (b: any) => getBusinessDate(saleTime(b));
+  const saleDayKey = (b: any) => getBusinessDateKey(saleTime(b));
+  const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   // Deduplicate bills by order_id or id to guarantee 100% real accurate calculations
   const uniqueBills = useMemo(() => {
@@ -117,7 +122,7 @@ export default function Analytics() {
 
   const currentPeriodBills = uniqueBills.filter((b: any) => {
     if (!b) return false;
-    const bDate = safeParseDate(b.created_at || b.paid_at);
+    const bDate = saleDay(b);
     if (!bDate) return false;
     
     if (period === "today") return isSameDayLocal(bDate, today);
@@ -128,11 +133,11 @@ export default function Analytics() {
     if (!isPaid) return false;
     
     if (period === "7days") {
-      const d7 = new Date(); d7.setDate(d7.getDate() - 7);
+      const d7 = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
       return bDate >= d7;
     }
     if (period === "monthly") {
-      const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+      const d30 = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
       return bDate >= d30;
     }
     if (period === "yearly") {
@@ -193,11 +198,11 @@ export default function Analytics() {
 
     if (period === "7days") {
       return [6, 5, 4, 3, 2, 1, 0].map(daysAgo => {
-        const d = new Date(); d.setDate(d.getDate() - daysAgo);
-        const dateStr = d.toISOString().slice(0, 10);
+        const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo);
+        const dateStr = dayKey(d);
         const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
         const dayRev = uniqueBills
-          .filter((b: any) => b && b.created_at && (b.status === "paid" || b.status === "PAID") && String(b.created_at).slice(0, 10) === dateStr)
+          .filter((b: any) => b && (b.status === "paid" || b.status === "PAID") && saleDayKey(b) === dateStr)
           .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
         return { label: dayName, val: dayRev };
       });
@@ -205,12 +210,14 @@ export default function Analytics() {
 
     if (period === "monthly") {
       return [3, 2, 1, 0].map(weeksAgo => {
-        const start = new Date(); start.setDate(start.getDate() - (weeksAgo + 1) * 7);
-        const end = new Date(); end.setDate(end.getDate() - weeksAgo * 7);
+        // Counter days: week = 7 whole days ending today
+        const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (weeksAgo + 1) * 7 + 1);
+        const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weeksAgo * 7);
         const weekRev = uniqueBills
           .filter((b: any) => {
-            if (!b?.created_at || (b.status !== "paid" && b.status !== "PAID")) return false;
-            const bd = new Date(b.created_at);
+            if (b?.status !== "paid" && b?.status !== "PAID") return false;
+            const bd = saleDay(b);
+            if (!bd) return false;
             return bd >= start && bd <= end;
           })
           .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
@@ -228,10 +235,10 @@ export default function Analytics() {
         for (let i = 0; i < dayDiff; i++) {
           const cur = new Date(s);
           cur.setDate(cur.getDate() + i);
-          const curDateStr = cur.toISOString().slice(0, 10);
+          const curDateStr = dayKey(cur);
           const label = `${cur.getDate()} ${cur.toLocaleDateString("en-US", { month: "short" })}`;
           const dayRev = activeBills
-            .filter((b: any) => b?.created_at && String(b.created_at).slice(0, 10) === curDateStr)
+            .filter((b: any) => saleDayKey(b) === curDateStr)
             .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
           daysArr.push({ label, val: dayRev });
         }
@@ -241,10 +248,10 @@ export default function Analytics() {
         for (let i = 0; i < dayDiff; i++) {
           const cur = new Date(s);
           cur.setDate(cur.getDate() + i);
-          const curDateStr = cur.toISOString().slice(0, 10);
+          const curDateStr = dayKey(cur);
           const label = `${cur.getDate()}`;
           const dayRev = activeBills
-            .filter((b: any) => b?.created_at && String(b.created_at).slice(0, 10) === curDateStr)
+            .filter((b: any) => saleDayKey(b) === curDateStr)
             .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
           daysArr.push({ label, val: dayRev });
         }
@@ -260,9 +267,8 @@ export default function Analytics() {
           cEnd.setDate(Math.min(e.getDate(), cEnd.getDate() + (c + 1) * chunkDays - 1));
           const val = activeBills
             .filter((b: any) => {
-              if (!b?.created_at) return false;
-              const bd = new Date(b.created_at);
-              return bd >= cStart && bd <= cEnd;
+              const bd = saleDay(b);
+              return !!bd && bd >= cStart && bd <= cEnd;
             })
             .reduce((sum: number, b: any) => sum + (Number(b.total) || 0), 0);
           result.push({
@@ -275,10 +281,10 @@ export default function Analytics() {
     }
 
     return [
-      { label: "Q1", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() <= 2).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-      { label: "Q2", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-      { label: "Q3", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
-      { label: "Q4", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && b?.created_at && new Date(b.created_at).getFullYear() === today.getFullYear() && new Date(b.created_at).getMonth() >= 9).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q1", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && saleDay(b)?.getFullYear() === today.getFullYear() && (saleDay(b) as Date).getMonth() <= 2).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q2", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && saleDay(b)?.getFullYear() === today.getFullYear() && (saleDay(b) as Date).getMonth() >= 3 && new Date(b.created_at).getMonth() <= 5).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q3", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && saleDay(b)?.getFullYear() === today.getFullYear() && (saleDay(b) as Date).getMonth() >= 6 && new Date(b.created_at).getMonth() <= 8).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
+      { label: "Q4", val: uniqueBills.filter((b: any) => (b?.status === "paid" || b?.status === "PAID") && saleDay(b)?.getFullYear() === today.getFullYear() && (saleDay(b) as Date).getMonth() >= 9).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0) },
     ];
   }, [period, activeBills, uniqueBills, isSingleDay, customStartDate, customEndDate]);
 

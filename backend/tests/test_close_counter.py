@@ -64,6 +64,9 @@ class Col:
         docs = self.docs
 
         class Cursor:
+            def sort(self, *a, **k):
+                return self
+
             async def to_list(self, n):
                 return list(docs)
         return Cursor()
@@ -182,3 +185,23 @@ def test_close_twice_same_night_is_refused(monkeypatch):
         asyncio.run(server.close_counter({"id": "u1", "role": "owner"}))
     assert e.value.status_code == 409
     assert not [c for c, a, _ in fake.log if c == "day_closings"]
+
+
+# ---- reports follow Close Counter, not 12 midnight ----
+
+def test_sale_after_close_after_midnight_goes_to_next_day():
+    closings = [ist(9, 0, 45).isoformat()]          # closed at 12:45 AM
+    assert server.business_date_label(ist(9, 0, 30), closings) == "2026-11-08"   # before close: old day
+    assert server.business_date_label(ist(9, 1, 0), closings) == "2026-11-09"    # after close: new day
+    assert server.business_date_label(ist(9, 14, 0), closings) == "2026-11-09"
+
+
+def test_sale_after_close_before_midnight_goes_to_next_day():
+    closings = [ist(8, 23, 0).isoformat()]
+    assert server.business_date_label(ist(8, 22, 30), closings) == "2026-11-08"
+    assert server.business_date_label(ist(8, 23, 30), closings) == "2026-11-09"
+    assert server.business_date_label(ist(9, 2, 0), closings) == "2026-11-09"
+
+
+def test_no_close_keeps_330_rule():
+    assert server.business_date_label(ist(9, 2, 0), []) == "2026-11-08"

@@ -3254,12 +3254,28 @@ def is_timestamp_in_current_business_day(ts, day_start: Optional[datetime] = Non
     return dt >= start
 
 
-def business_date_label(ts) -> Optional[str]:
-    """Calendar day a sale belongs to: sales before 3:30 AM count for the day before."""
+def _night_of(dt: datetime):
+    return (dt.astimezone(IST) - timedelta(hours=DAY_AUTO_RESET_HOUR, minutes=DAY_AUTO_RESET_MINUTE)).date()
+
+
+def business_date_label(ts, closings=None) -> Optional[str]:
+    """Day a sale belongs to. Sales before 3:30 AM count for the day before, unless the owner pressed
+    Close Counter that night before the sale: then the sale is in the next day (same as the dashboard)."""
     dt = parse_db_datetime(ts) if not isinstance(ts, datetime) else ts
     if not dt:
         return None
-    return (dt.astimezone(IST) - timedelta(hours=DAY_AUTO_RESET_HOUR, minutes=DAY_AUTO_RESET_MINUTE)).date().isoformat()
+    day = _night_of(dt)
+    for c in closings or []:
+        cdt = parse_db_datetime(c) if not isinstance(c, datetime) else c
+        if cdt and cdt <= dt and _night_of(cdt) == day:
+            return (day + timedelta(days=1)).isoformat()
+    return day.isoformat()
+
+
+async def get_day_closings(tid: str, limit: int = 400) -> List[str]:
+    """Times the owner pressed Close Counter (newest first)."""
+    docs = await db.day_closings.find({"tenant_id": tid}, {"_id": 0, "closed_at": 1}).sort("closed_at", -1).to_list(limit)
+    return [d["closed_at"] for d in docs if d.get("closed_at")]
         
 _auto_clear_last_run: dict[str, float] = {}
 
@@ -5581,7 +5597,8 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     ist_offset = timedelta(hours=5, minutes=30)
     now_ist = datetime.now(timezone(ist_offset))
     last_7_days = []
-    today_label_dt = datetime.fromisoformat(business_date_label(now_ist))
+    closings = await get_day_closings(tid)
+    today_label_dt = datetime.fromisoformat(business_date_label(now_ist, closings))
     earlier_bills = [b for b in paid_bills if b not in today_bills]
     for i in range(6, -1, -1):
         target = (today_label_dt - timedelta(days=i)).date()
@@ -5591,7 +5608,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         else:
             # Sales after 12 AM (before 3:30 AM / Close Counter) count for the day before
             day_rev = round(sum(get_effective_total(b) for b in earlier_bills
-                                if business_date_label(b.get("paid_at") or b.get("created_at")) == target.isoformat()), 2)
+                                if business_date_label(b.get("paid_at") or b.get("created_at"), closings) == target.isoformat()), 2)
         last_7_days.append({"date": day_label, "revenue": day_rev})
 
     # Top selling items
@@ -5625,7 +5642,7 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
         "menu_count": menu_count,
         "last_7_days": last_7_days,
         "top_selling": top_selling,
-        "business_date": business_date_label(now_ist),
+        "business_date": business_date_label(now_ist, closings),
         "business_day_start": day_start.astimezone(timezone.utc).isoformat(),
     }
     dashboard_summary_cache[tid] = (time.time(), res)
@@ -5653,6 +5670,13 @@ async def _day_numbers(tid: str, day_start: datetime) -> dict:
         "tenant_id": tid, "status": {"$in": ["placed", "in_kitchen", "ready", "served"]},
     })
     return {"sales": round(sales, 2), "bills_count": count, "unpaid_orders": unpaid}
+
+
+@api.get("/day/closings")
+async def day_closings_list(user: dict = Depends(get_current_user)):
+    """Close Counter times, so every screen splits days the same way as the dashboard."""
+    tid = await _ensure_tenant(user)
+    return {"closings": await get_day_closings(tid)}
 
 
 @api.get("/day/status")
@@ -5691,7 +5715,7 @@ async def close_counter(user: dict = Depends(require_roles("owner", "manager")))
         "tenant_id": tid,
         "day_started_at": day_start.astimezone(timezone.utc).isoformat(),
         "closed_at": now.isoformat(),
-        "business_date": business_date_label(day_start),
+        "business_date": business_date_label(now - timedelta(seconds=1), await get_day_closings(tid)),
         "closed_by": user.get("id"),
         "closed_by_name": user.get("full_name") or user.get("name") or "",
         "auto": False,

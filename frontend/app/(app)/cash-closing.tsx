@@ -1,3 +1,4 @@
+import { getBusinessDateKey } from "@/src/lib/dateUtils";
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
@@ -47,7 +48,7 @@ export default function CashClosingScreen() {
   // Open Shift Form State
   const [openFloat, setOpenFloat] = useState("1000");
   const [openNotes, setOpenNotes] = useState("");
-  const [openingDate, setOpeningDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [openingDate, setOpeningDate] = useState(() => getBusinessDateKey(new Date()) || new Date().toISOString().split("T")[0]);
   const [openingCashier, setOpeningCashier] = useState(() => user?.full_name || user?.email?.split("@")[0] || "Cashier");
   const [submittingOpen, setSubmittingOpen] = useState(false);
 

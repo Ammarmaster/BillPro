@@ -130,3 +130,42 @@ export function formatDateTime(ts?: any): string {
     return String(ts);
   }
 }
+
+// ---- Which counter day a sale belongs to (same rule as the dashboard and the server) ----
+// Sales before 3:30 AM count for the day before, unless Close Counter was pressed that night before
+// the sale: then the sale belongs to the next day.
+let dayClosings: number[] = [];
+export function setDayClosings(list: any[]) {
+  dayClosings = (list || []).map((c) => safeParseDate(c)?.getTime()).filter((t): t is number => !!t);
+}
+
+function nightOf(t: number): Date {
+  const d = new Date(t - (3 * 60 + 30) * 60 * 1000);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** Local midnight of the counter day this time belongs to. */
+export function getBusinessDate(ts: any): Date | null {
+  const d = safeParseDate(ts);
+  if (!d) return null;
+  const t = d.getTime();
+  const day = nightOf(t);
+  const closes = [...dayClosings];
+  try {
+    const c = safeParseDate(dayClosedAtGetter())?.getTime();
+    if (c) closes.push(c);
+  } catch {}
+  for (const c of closes) {
+    if (c <= t && nightOf(c).getTime() === day.getTime()) {
+      return new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+    }
+  }
+  return day;
+}
+
+/** "YYYY-MM-DD" of the counter day (local time). */
+export function getBusinessDateKey(ts: any): string | null {
+  const d = getBusinessDate(ts);
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
