@@ -20,7 +20,9 @@ let activeBackendUrl = DEFAULT_BACKEND_URL;
 
 // Servers built into the app. Used to learn the admin's choice and as last-resort backups even when no
 // backup list has reached this device yet (for example a new phone while the usual server is down).
-const BUILT_IN_SERVERS = ["https://billpro-wulv.onrender.com"];
+// A local test build (localhost) never contacts the live servers, so tests can't touch real data.
+const IS_LOCAL_TEST = /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(DEFAULT_BACKEND_URL);
+const BUILT_IN_SERVERS = IS_LOCAL_TEST ? [] : ["https://billpro-wulv.onrender.com"];
 
 // Which server is the main one: the one the super admin picked for every app wins, then one saved on
 // this device only, then the one built into the app.
@@ -894,7 +896,16 @@ async function req(path: string, opts: RequestInit = {}, auth = true, isRetry = 
     const data = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
     if (!res.ok) {
       const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
-      const err: any = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      // A form check from the server comes as a list: show one plain sentence, not raw technical text
+      const friendly = (m: any): string => {
+        if (typeof m === "string") return m;
+        const first = Array.isArray(m) ? m[0] : m;
+        const field = Array.isArray(first?.loc) ? String(first.loc[first.loc.length - 1] || "") : "";
+        if (field === "email") return "Please enter a valid email address.";
+        if (field) return `Please check the ${field.replace(/_/g, " ")} and try again.`;
+        return "Something in the form is not right. Please check and try again.";
+      };
+      const err: any = new Error(friendly(msg));
       err.status = res.status;
       if (res.status === 401) {
         await clearTokens();
@@ -2049,9 +2060,12 @@ export const api = {
   // Razorpay subscription flow (owner)
   mySubscription: async () => {
     const cacheKey = "/subscriptions/mine";
-    if (memoryCache[cacheKey]) {
+    // Use the saved copy only if it was checked with the server in the last minute. Otherwise ask again,
+    // so a plan given by the admin or renewed by AutoPay unlocks the app (and an expired one locks it).
+    if (memoryCache[cacheKey] && Date.now() - (cacheTimestamps[cacheKey] || 0) < 60 * 1000) {
       return memoryCache[cacheKey];
     }
+    if (memoryCache[cacheKey]) delete cacheTimestamps[cacheKey];
     let storedSub: any = null;
     try {
       const val = await getItem("cached_sub");
