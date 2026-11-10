@@ -213,7 +213,9 @@ async def notify_tenant(tenant_id: str, category: str, title: str, message: str,
         print(f"\n[BACKEND ALERT] NEW ORDER CREATED\nRestaurant ID: {tenant_id}\nOrder ID: {doc['id']}\nEmitting NEW_ORDER event\nSocket room: {tenant_id}\n", flush=True)
         logger.info("[BACKEND ALERT] NEW ORDER CREATED - Restaurant: %s, Order: %s, Socket room: %s", tenant_id, doc["id"], tenant_id)
         
-    await manager.broadcast_to_tenant(tenant_id, doc)
+    # created_at_dt is a datetime (for the DB expiry index) and cannot be sent as JSON;
+    # sending it made every live alert fail and drop the app's connection.
+    await manager.broadcast_to_tenant(tenant_id, {k: v for k, v in doc.items() if k != "created_at_dt"})
     dashboard_summary_cache.pop(tenant_id, None)
     
     # Query all users under this tenant who have registered push tokens
