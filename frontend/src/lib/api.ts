@@ -14,7 +14,7 @@ import {
   SyncActionType,
 } from "./offlineSync";
 
-const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://billpro-wulv.onrender.com").replace(/\/$/, "");
+const DEFAULT_BACKEND_URL = (process.env.EXPO_PUBLIC_BACKEND_URL && !process.env.EXPO_PUBLIC_BACKEND_URL.includes("0.0.0.0") ? process.env.EXPO_PUBLIC_BACKEND_URL : "https://api2.jobsio.in").replace(/\/$/, "");
 
 let activeBackendUrl = DEFAULT_BACKEND_URL;
 
@@ -22,7 +22,7 @@ let activeBackendUrl = DEFAULT_BACKEND_URL;
 // backup list has reached this device yet (for example a new phone while the usual server is down).
 // A local test build (localhost) never contacts the live servers, so tests can't touch real data.
 const IS_LOCAL_TEST = /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(DEFAULT_BACKEND_URL);
-const BUILT_IN_SERVERS = IS_LOCAL_TEST ? [] : ["https://billpro-wulv.onrender.com"];
+const BUILT_IN_SERVERS = IS_LOCAL_TEST ? [] : ["https://api2.jobsio.in", "https://billpro-wulv.onrender.com"];
 
 // Which server is the main one: the one the super admin picked for every app wins, then one saved on
 // this device only, then the one built into the app.
@@ -30,8 +30,8 @@ const MAIN_FOR_EVERYONE_KEY = "global_backend_url";
 let mainForEveryone: string | null = null;
 let deviceUrl: string | null = null;
 
-// The old AWS server (api2.jobsio.in) is down: ignore it if a device or the admin setting still points there
-const RETIRED_SERVERS = ["api2.jobsio.in"];
+// Servers that are gone for good: ignored even if a device or the admin setting still points there
+const RETIRED_SERVERS: string[] = [];
 const cleanUrl = (url?: string | null) => {
   const u = url && url.trim() ? url.trim().replace(/\/+$/, "") : null;
   return u && RETIRED_SERVERS.some(r => u.includes(r)) ? null : u;
