@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ezbill.app"
+      "bundleIdentifier": "com.ezbill.app",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +33,8 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.MODIFY_AUDIO_SETTINGS"
-      ]
+      ],
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "name": "EzBill - Smart Restaurant POS & ERP",
@@ -70,6 +74,9 @@
         "projectId": "3d159373-e59e-47ef-9a6a-f561faa01b5d"
       }
     },
-    "owner": "ammarmaster"
+    "owner": "ammarmaster",
+    "updates": {
+      "url": "https://u.expo.dev/3d159373-e59e-47ef-9a6a-f561faa01b5d"
+    }
   }
 }
