@@ -76,12 +76,12 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "3d159373-e59e-47ef-9a6a-f561faa01b5d"
+        "projectId": "1e2898dc-9c35-4571-b484-4a5fc4959fd1"
       }
     },
-    "owner": "ammarmaster",
+    "owner": "ammarmaster1",
     "updates": {
-      "url": "https://u.expo.dev/3d159373-e59e-47ef-9a6a-f561faa01b5d"
+      "url": "https://u.expo.dev/1e2898dc-9c35-4571-b484-4a5fc4959fd1"
     }
   }
 }
