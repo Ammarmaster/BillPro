@@ -219,7 +219,9 @@ export default function Billing() {
     .filter((sp) => sp.amount > 0);
   const splitSum = Math.round(splitParts.reduce((s, sp) => s + sp.amount, 0) * 100) / 100;
   const splitStarted = (["CASH", "UPI", "CARD"] as const).some((m) => splitText[m].trim() !== "");
-  const splitReady = splitParts.length >= 2 && Math.abs(splitSum - amountDue) < 0.01;
+  // Round-off: allow paise differences under ₹1 (e.g. bill ₹2349.5, customer pays ₹2350). Splits keep the real money received.
+  const splitRoundOff = Math.round((splitSum - amountDue) * 100) / 100;
+  const splitReady = splitParts.length >= 2 && Math.abs(splitRoundOff) < 1;
 
   const checkReceivedAmount = () => {
     if (!receivedInvalid) return true;
@@ -1067,7 +1069,9 @@ export default function Billing() {
                 {splitStarted && (
                   <Text style={[styles.splitHint, { color: splitReady ? "#16A34A" : "#EF4444", marginTop: 8 }]} testID="bill-split-status">
                     {splitReady
-                      ? `Total matches ${formatCurrency(amountDue)}`
+                      ? Math.abs(splitRoundOff) < 0.01
+                        ? `Total matches ${formatCurrency(amountDue)}`
+                        : `Received ${formatCurrency(splitSum)} (round-off ${splitRoundOff > 0 ? "+" : "-"}${formatCurrency(Math.abs(splitRoundOff))})`
                       : splitParts.length < 2
                         ? "Fill at least 2 methods"
                         : splitSum < amountDue
