@@ -2825,7 +2825,8 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                 
             elif a_type == "MARK_BILL_PAID":
                 target_id = id_map.get(p.get("id"), p.get("id"))
-                pay_method = p.get("payment_method", "UPI")
+                pay_splits = clean_payment_splits(p.get("payment_splits"))
+                pay_method = "SPLIT" if pay_splits else p.get("payment_method", "UPI")
                 mapped_oid = id_map.get(p.get("order_id"), p.get("order_id"))
 
                 query_conds = []
@@ -2838,7 +2839,7 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                 if query_conds:
                     res_upd = await db.bills.update_many(
                         {"$or": query_conds, "tenant_id": tid},
-                        {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}}
+                        {"$set": {"status": "paid", "payment_method": pay_method, "payment_splits": pay_splits, "paid_at": now}}
                     )
                     matched_count = res_upd.matched_count
 
@@ -2875,6 +2876,7 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
                         "tax": float(p.get("tax", 0)),
                         "discount": float(p.get("discount", 0)),
                         "payment_method": pay_method,
+                        "payment_splits": pay_splits,
                         "status": "paid",
                         "created_at": p.get("created_at") or now,
                         "paid_at": now,
@@ -2891,14 +2893,15 @@ async def batch_sync(payload: BatchSyncRequest, user: dict = Depends(get_current
             elif a_type == "SETTLE_TABLE":
                 tbl = p.get("table_number")
                 mapped_oids = [id_map.get(x, x) for x in p.get("order_ids", [])] if p.get("order_ids") else []
-                pay_method = p.get("payment_method", "UPI")
+                pay_splits = clean_payment_splits(p.get("payment_splits"))
+                pay_method = "SPLIT" if pay_splits else p.get("payment_method", "UPI")
                 if mapped_oids:
                     await db.orders.update_many({"id": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
-                    await db.bills.update_many({"order_ids": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                    await db.bills.update_many({"order_ids": {"$in": mapped_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "payment_splits": pay_splits, "paid_at": now}})
                 elif tbl:
                     tbl_patterns = get_table_match_patterns(tbl)
                     await db.orders.update_many({"table_number": {"$in": tbl_patterns}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now}})
-                    await db.bills.update_many({"table_number": {"$in": tbl_patterns}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "paid_at": now}})
+                    await db.bills.update_many({"table_number": {"$in": tbl_patterns}, "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pay_method, "payment_splits": pay_splits, "paid_at": now}})
                 synced_count += 1
 
             elif a_type == "OPEN_CASH_SESSION":
@@ -4546,15 +4549,33 @@ async def create_bill(payload: BillIn, user: dict = Depends(require_roles("owner
 
 class PayIn(BaseModel):
     payment_method: str = "UPI"
+    payment_splits: Optional[List[dict]] = None  # e.g. [{"method": "UPI", "amount": 300}, {"method": "CASH", "amount": 200}]
     discount: Optional[float] = None  # The bill's whole discount, so repeating the request changes nothing
 
 
 class SettleTableIn(BaseModel):
     table_number: str
     payment_method: str = "UPI"
+    payment_splits: Optional[List[dict]] = None
     order_ids: Optional[List[str]] = None
     total: Optional[float] = None
     discount: Optional[float] = None  # Taken off the table's bills on top of any discount they already have
+
+
+def clean_payment_splits(splits) -> Optional[List[dict]]:
+    """Keeps only Cash/UPI/Card parts with an amount above 0. Returns None when fewer than 2 parts remain."""
+    if not splits:
+        return None
+    out = []
+    for sp in splits:
+        try:
+            method = str(sp.get("method", "")).upper().strip()
+            amount = round(float(sp.get("amount", 0) or 0), 2)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if method in ("CASH", "UPI", "CARD") and amount > 0:
+            out.append({"method": method, "amount": amount})
+    return out if len(out) >= 2 else None
 
 
 def discounted_bill_fields(bill: dict, discount: float) -> dict:
@@ -4596,7 +4617,8 @@ async def apply_settlement_discount(tid: str, order_ids: List[str], discount: fl
 @api.post("/bills/settle-table")
 async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
-    pm = payload.payment_method or "UPI"
+    splits = clean_payment_splits(payload.payment_splits)
+    pm = "SPLIT" if splits else (payload.payment_method or "UPI")
     tbl_raw = str(payload.table_number).strip()
     tbl_patterns = get_table_match_patterns(tbl_raw)
 
@@ -4681,7 +4703,7 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
                 "total": o_tot,
                 "upi_url": "",
                 "status": "paid",
-                "payment_method": pm,
+                "payment_method": pm, "payment_splits": splits,
                 "created_by": user.get("id", "staff"),
                 "created_at": o.get("created_at", datetime.now(timezone.utc).isoformat()),
                 "paid_at": datetime.now(timezone.utc).isoformat(),
@@ -4690,7 +4712,7 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
         else:
             upd = {
                 "status": "paid",
-                "payment_method": pm,
+                "payment_method": pm, "payment_splits": splits,
                 "paid_at": datetime.now(timezone.utc).isoformat(),
             }
             if gst_enabled and float(existing_b.get("tax", 0.0)) == 0.0:
@@ -4716,7 +4738,7 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
     else:
         bill_filter["table_number"] = {"$in": tbl_patterns}
 
-    await db.bills.update_many(bill_filter, {"$set": {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}})
+    await db.bills.update_many(bill_filter, {"$set": {"status": "paid", "payment_method": pm, "payment_splits": splits, "paid_at": datetime.now(timezone.utc).isoformat()}})
 
     # order_id_list only holds unpaid orders, so a repeated request cannot discount the bills twice
     if payload.discount and payload.discount > 0 and order_id_list:
@@ -4768,7 +4790,8 @@ async def settle_table_endpoint(payload: SettleTableIn, user: dict = Depends(req
 @api.patch("/bills/{bid}/pay")
 async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict = Depends(require_roles("owner", "manager", "waiter"))):
     tid = await _ensure_tenant(user)
-    pm = (payload and payload.payment_method) or "UPI"
+    splits = clean_payment_splits(payload.payment_splits) if payload else None
+    pm = "SPLIT" if splits else ((payload and payload.payment_method) or "UPI")
     
     restaurant = await db.restaurants.find_one({"id": tid}, {"_id": 0}) or {}
     gst_enabled = bool(restaurant.get("gst_enabled"))
@@ -4781,7 +4804,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         # Fallback: check if bid is an order_id or in order_ids
         bill = await db.bills.find_one({"$or": [{"order_id": bid}, {"order_ids": bid}], "tenant_id": tid}, {"_id": 0})
         if bill:
-            bill_upd = {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}
+            bill_upd = {"status": "paid", "payment_method": pm, "payment_splits": splits, "paid_at": datetime.now(timezone.utc).isoformat()}
             if gst_enabled and float(bill.get("tax", 0.0)) == 0.0:
                 b_sub = float(bill.get("subtotal", 0.0))
                 if b_sub <= 0:
@@ -4802,6 +4825,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": bill_upd})
             bill["status"] = "paid"
             bill["payment_method"] = pm
+            bill["payment_splits"] = splits
         else:
             # Check if bid is an order directly and create paid bill in db.bills to guarantee sales tracking!
             o = await db.orders.find_one({"id": bid, "tenant_id": tid})
@@ -4833,7 +4857,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
                     "total": o_tot,
                     "upi_url": "",
                     "status": "paid",
-                    "payment_method": pm,
+                    "payment_method": pm, "payment_splits": splits,
                     "created_by": user.get("id", "staff"),
                     "created_at": o.get("created_at", datetime.now(timezone.utc).isoformat()),
                     "paid_at": datetime.now(timezone.utc).isoformat(),
@@ -4843,7 +4867,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
             else:
                 raise HTTPException(status_code=404, detail="Bill or order not found")
     else:
-        bill_upd = {"status": "paid", "payment_method": pm, "paid_at": datetime.now(timezone.utc).isoformat()}
+        bill_upd = {"status": "paid", "payment_method": pm, "payment_splits": splits, "paid_at": datetime.now(timezone.utc).isoformat()}
         if gst_enabled and float(bill.get("tax", 0.0)) == 0.0:
             b_sub = float(bill.get("subtotal", 0.0))
             if b_sub <= 0:
@@ -4864,6 +4888,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         await db.bills.update_one({"id": bill["id"], "tenant_id": tid}, {"$set": bill_upd})
         bill["status"] = "paid"
         bill["payment_method"] = pm
+        bill["payment_splits"] = splits
 
     # Mark ONLY the target order(s) associated with this bill as paid, AND all sibling bills
     target_oids = bill.get("order_ids") or ([bill.get("order_id")] if bill.get("order_id") else [])
@@ -4885,7 +4910,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
     if target_oids:
         now_iso = datetime.now(timezone.utc).isoformat()
         await db.orders.update_many({"id": {"$in": target_oids}, "tenant_id": tid}, {"$set": {"status": "paid", "updated_at": now_iso}})
-        await db.bills.update_many({"$or": [{"order_id": {"$in": target_oids}}, {"order_ids": {"$in": target_oids}}], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "paid_at": now_iso}})
+        await db.bills.update_many({"$or": [{"order_id": {"$in": target_oids}}, {"order_ids": {"$in": target_oids}}], "tenant_id": tid}, {"$set": {"status": "paid", "payment_method": pm, "payment_splits": splits, "paid_at": now_iso}})
     
     # Calculate remaining active orders on this table strictly (DO NOT wipe other table orders!)
     tbl_num = bill.get("table_number")
@@ -4913,7 +4938,7 @@ async def mark_bill_paid(bid: str, payload: Optional[PayIn] = None, user: dict =
         "order_type": "takeaway" if tbl_num == "Takeaway" else "waiter",
         "event": "ORDER_PAID",
         "status": "paid",
-        "bill": {**bill, "status": "paid", "payment_method": pm}
+        "bill": {**bill, "status": "paid", "payment_method": pm, "payment_splits": splits}
     }
     await notify_tenant(
         tid,

@@ -1613,7 +1613,8 @@ export const api = {
       return handleLocalBill();
     }
   },
-  markBillPaid: async (idOrBill: string | any, paymentMethod = "UPI", discount?: number) => {
+  markBillPaid: async (idOrBill: string | any, paymentMethod = "UPI", discount?: number, splits?: { method: string; amount: number }[]) => {
+    const paymentSplits = splits && splits.length > 1 ? splits : null;
     const passedObj = typeof idOrBill === "object" && idOrBill !== null ? idOrBill : null;
     const rawId = passedObj ? (passedObj.id || passedObj.order_id || "") : String(idOrBill || "");
     let resolvedId = tempIdMap[rawId] || rawId;
@@ -1659,6 +1660,7 @@ export const api = {
             total,
             status: "paid",
             payment_method: paymentMethod,
+            payment_splits: paymentSplits,
             paid_at: new Date().toISOString()
           };
           return targetBill;
@@ -1708,6 +1710,7 @@ export const api = {
           total,
           status: "paid",
           payment_method: paymentMethod,
+            payment_splits: paymentSplits,
           paid_at: new Date().toISOString(),
           created_at: new Date().toISOString()
         };
@@ -1745,14 +1748,15 @@ export const api = {
         total: targetBill.total,
         subtotal: targetBill.subtotal,
         discount: discount ?? targetBill.discount,
-        payment_method: paymentMethod
+        payment_method: paymentMethod,
+        payment_splits: paymentSplits
       });
 
       return targetBill || { id: resolvedId, status: "paid", payment_method: paymentMethod };
     };
 
     try {
-      const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod, discount: discount ?? passedObj?.discount }) });
+      const res = await req(`/bills/${resolvedId}/pay`, { method: "PATCH", body: JSON.stringify({ payment_method: paymentMethod, payment_splits: paymentSplits || undefined, discount: discount ?? passedObj?.discount }) });
       const bList = memoryCache["/bills"] || [];
       const targetOids = res.order_ids || (res.order_id ? [res.order_id] : [resolvedId]);
       const isMatchingBill = (b: any) =>
@@ -1813,7 +1817,8 @@ export const api = {
     clearCachePrefix("/dashboard/summary");
     return res;
   },
-  settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number, discount?: number) => {
+  settleTable: async (tableNumber: string, paymentMethod = "UPI", orderIds?: string[], total?: number, discount?: number, splits?: { method: string; amount: number }[]) => {
+    const paymentSplits = splits && splits.length > 1 ? splits : null;
     const handleLocalSettle = async () => {
       const oList = (memoryCache["/orders"] || []).filter((o: any) => !String(o.id).startsWith("temp-"));
       const cleanOrderIds = (orderIds || []).filter((id: string) => id && !String(id).startsWith("temp-"));
@@ -1860,7 +1865,7 @@ export const api = {
         if (isMatch) {
           foundMatchingBill = true;
           const billTotal = Number(b.total ?? b.subtotal ?? 0) || finalTotal;
-          return { ...b, total: billTotal, status: "paid", payment_method: paymentMethod, paid_at: new Date().toISOString() };
+          return { ...b, total: billTotal, status: "paid", payment_method: paymentMethod, payment_splits: paymentSplits, paid_at: new Date().toISOString() };
         }
         return b;
       });
@@ -1885,6 +1890,7 @@ export const api = {
           total: finalTotal,
           status: "paid",
           payment_method: paymentMethod,
+          payment_splits: paymentSplits,
           paid_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
         };
@@ -1911,6 +1917,7 @@ export const api = {
       await enqueueSyncAction("SETTLE_TABLE", {
         table_number: tableNumber,
         payment_method: paymentMethod,
+          payment_splits: paymentSplits,
         order_ids: targetOrderIds,
         total: finalTotal,
         discount
@@ -1926,6 +1933,7 @@ export const api = {
           table_number: tableNumber,
           payment_method: paymentMethod,
           order_ids: orderIds,
+          payment_splits: paymentSplits || undefined,
           total,
           discount
         })
@@ -1944,7 +1952,7 @@ export const api = {
       const bList = memoryCache["/bills"] || [];
       const updatedBills = bList.map((b: any) => {
         if (isSameTable(b.table_number, tableNumber) || (orderIds && (orderIds.includes(b.order_id) || (b.order_ids && b.order_ids.some((id: string) => orderIds.includes(id)))))) {
-          return { ...b, status: "paid", payment_method: paymentMethod, paid_at: new Date().toISOString() };
+          return { ...b, status: "paid", payment_method: paymentMethod, payment_splits: paymentSplits, paid_at: new Date().toISOString() };
         }
         return b;
       });

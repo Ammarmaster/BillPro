@@ -168,16 +168,24 @@ export default function Analytics() {
     }
   });
 
-  const paymentBreakdown = {
-    CASH: activeBills.filter((b: any) => b.payment_method === "CASH").reduce((s: number, b: any) => s + (Number(b.total) || 0), 0),
-    UPI: activeBills.filter((b: any) => b.payment_method === "UPI" || b.payment_method === "UPI_QR" || b.payment_method === "online" || !b.payment_method).reduce((s: number, b: any) => s + (Number(b.total) || 0), 0),
-    CARD: activeBills.filter((b: any) => b.payment_method === "CARD").reduce((s: number, b: any) => s + (Number(b.total) || 0), 0),
-    OTHER: activeBills.filter((b: any) => b.payment_method && b.payment_method !== "CASH" && b.payment_method !== "UPI" && b.payment_method !== "UPI_QR" && b.payment_method !== "online" && b.payment_method !== "CARD").reduce((s: number, b: any) => s + (Number(b.total) || 0), 0)
+  // A split bill (like 300 UPI + 200 cash) adds each part to its own method
+  const methodKind = (m: any) => {
+    const v = String(m || "").toUpperCase();
+    if (!v || v === "UPI" || v === "UPI_QR" || v === "ONLINE") return "UPI";
+    if (v === "CASH") return "CASH";
+    if (v === "CARD") return "CARD";
+    return "OTHER";
   };
+  const billParts = (b: any): { kind: string; amount: number }[] =>
+    String(b.payment_method || "").toUpperCase() === "SPLIT" && Array.isArray(b.payment_splits) && b.payment_splits.length > 0
+      ? b.payment_splits.map((sp: any) => ({ kind: methodKind(sp.method), amount: Number(sp.amount) || 0 }))
+      : [{ kind: methodKind(b.payment_method), amount: Number(b.total) || 0 }];
+  const paymentBreakdown: Record<string, number> = { CASH: 0, UPI: 0, CARD: 0, OTHER: 0 };
+  activeBills.forEach((b: any) => billParts(b).forEach((p) => { paymentBreakdown[p.kind] += p.amount; }));
 
   const totalPaidCount = activeBills.length || 1;
-  const upiCount = activeBills.filter((b: any) => b.payment_method === "UPI" || b.payment_method === "UPI_QR" || b.payment_method === "online" || !b.payment_method).length;
-  const cashCount = activeBills.filter((b: any) => b.payment_method === "CASH").length;
+  const upiCount = activeBills.filter((b: any) => billParts(b).some((p) => p.kind === "UPI")).length;
+  const cashCount = activeBills.filter((b: any) => billParts(b).some((p) => p.kind === "CASH")).length;
   const upiPct = Math.round((upiCount / totalPaidCount) * 100);
   const cashPct = Math.round((cashCount / totalPaidCount) * 100);
 

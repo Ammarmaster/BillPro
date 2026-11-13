@@ -211,6 +211,16 @@ export default function Billing() {
     ? { total: adjustedTotal, discount: Math.round((Number(bill?.discount || 0) + amountReduction) * 100) / 100, upi_url: "" }
     : null;
 
+  // Split payment: the customer pays one bill with more than one method, like 300 UPI + 200 cash
+  const [splitText, setSplitText] = useState<{ CASH: string; UPI: string; CARD: string }>({ CASH: "", UPI: "", CARD: "" });
+  const amountDue = adjustedTotal ?? fullTotal;
+  const splitParts = (["CASH", "UPI", "CARD"] as const)
+    .map((m) => ({ method: m, amount: Math.round((Number(splitText[m]) || 0) * 100) / 100 }))
+    .filter((sp) => sp.amount > 0);
+  const splitSum = Math.round(splitParts.reduce((s, sp) => s + sp.amount, 0) * 100) / 100;
+  const splitStarted = (["CASH", "UPI", "CARD"] as const).some((m) => splitText[m].trim() !== "");
+  const splitReady = splitParts.length >= 2 && Math.abs(splitSum - amountDue) < 0.01;
+
   const checkReceivedAmount = () => {
     if (!receivedInvalid) return true;
     setErr(`Amount received must be more than 0 and no more than ${formatCurrency(fullTotal)}.`);
@@ -490,7 +500,7 @@ export default function Billing() {
     load();
   }, [orderId, tableNumber, orderIds, load]);
 
-  const handleMarkPaidWithMethod = async (method: string) => {
+  const handleMarkPaidWithMethod = async (method: string, splits?: { method: string; amount: number }[]) => {
     if (!bill) return;
     
     // Play haptic success immediately (0ms user feedback)
@@ -519,12 +529,14 @@ export default function Billing() {
       customer_name: bill?.customer_name || order?.customer_name || "Guest",
       status: "paid",
       payment_method: method,
+      payment_splits: splits || null,
       restaurant_snapshot: bill?.restaurant_snapshot || restaurant || api.getCachedRestaurant(),
       ...adjustedFields,
     };
     setBill(updatedLocalBill);
     setPayModal(false);
     setReceivedText("");
+    setSplitText({ CASH: "", UPI: "", CARD: "" });
 
     // Update local cache
     api.updateCachedBill(bill.id, updatedLocalBill);
@@ -532,14 +544,14 @@ export default function Billing() {
 
     if (api.isLocalProcessingMode && api.isLocalProcessingMode()) {
       if (isIndividualOrder) {
-        api.markBillPaid(updatedLocalBill, method).catch(() => {});
+        api.markBillPaid(updatedLocalBill, method, undefined, splits).catch(() => {});
       } else {
         const targetOrderIds = bill?.order_ids || (order?.id ? [order.id] : undefined);
         const finalAmt = Number(updatedLocalBill.total || order?.subtotal || 0);
         if (targetTbl && targetTbl !== "Takeaway") {
-          api.settleTable(targetTbl, method, targetOrderIds, finalAmt, tableReduction).catch(() => {});
+          api.settleTable(targetTbl, method, targetOrderIds, finalAmt, tableReduction, splits).catch(() => {});
         } else {
-          api.markBillPaid(updatedLocalBill, method).catch(() => {});
+          api.markBillPaid(updatedLocalBill, method, undefined, splits).catch(() => {});
         }
       }
     } else if (isIndividualOrder) {
@@ -579,15 +591,15 @@ export default function Billing() {
       // Perform targeted mutation for both bill and order
       const mutationId = (!realBillId || realBillId.startsWith("temp-")) ? targetOid : realBillId;
       if (mutationId && !mutationId.startsWith("temp-")) {
-        api.markBillPaid(mutationId, method, paidDiscount).catch((e: any) => {
+        api.markBillPaid(mutationId, method, paidDiscount, splits).catch((e: any) => {
           console.warn("Individual markBillPaid sync failed:", e.message);
         });
       }
       if (bill.id && !String(bill.id).startsWith("temp-") && bill.id !== mutationId) {
-        api.markBillPaid(bill.id, method, paidDiscount).catch(() => {});
+        api.markBillPaid(bill.id, method, paidDiscount, splits).catch(() => {});
       }
       if (targetOid && !String(targetOid).startsWith("temp-") && targetOid !== mutationId) {
-        api.markBillPaid(targetOid, method, paidDiscount).catch(() => {});
+        api.markBillPaid(targetOid, method, paidDiscount, splits).catch(() => {});
       }
     } else {
       // 2. SETTLE ENTIRE TABLE: Update all active orders on that table to PAID!
@@ -603,11 +615,11 @@ export default function Billing() {
       // Perform single table settlement mutation
       if (targetTbl && targetTbl !== "Takeaway") {
         const finalAmt = Number(updatedLocalBill.total || order?.subtotal || 0);
-        api.settleTable(targetTbl, method, targetOrderIds, finalAmt, tableReduction).catch((e: any) => {
+        api.settleTable(targetTbl, method, targetOrderIds, finalAmt, tableReduction, splits).catch((e: any) => {
           console.warn("Table settlement sync failed:", e.message);
         });
       } else {
-        api.markBillPaid(bill.id, method, paidDiscount).catch(() => {});
+        api.markBillPaid(bill.id, method, paidDiscount, splits).catch(() => {});
       }
     }
 
@@ -888,7 +900,7 @@ export default function Billing() {
               <>
                 <View style={styles.divider} />
                 <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 }}>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: theme.onSurfaceSecondary }}>Payment: {(bill?.payment_method || "CASH").toUpperCase()}</Text>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: theme.onSurfaceSecondary }}>Payment: {(bill?.payment_method || "CASH").toUpperCase()}{Array.isArray(bill?.payment_splits) && bill.payment_splits.length > 1 ? ` (${bill.payment_splits.map((sp: any) => `${sp.method} ${formatCurrency(Number(sp.amount) || 0)}`).join(" + ")})` : ""}</Text>
                   <Text style={{ fontSize: 13, fontWeight: "800", color: theme.onSurface }}>{formatCurrency(totalAmt)}</Text>
                 </View>
               </>
@@ -1031,6 +1043,47 @@ export default function Billing() {
                   <Text style={styles.methodText}>UPI</Text>
                 </Pressable>
               </View>
+
+              <View style={[styles.splitBox, { borderColor: theme.border }]} testID="bill-split-box">
+                <Text style={[styles.splitTitle, { color: theme.onSurface }]}>Paid with more than one method?</Text>
+                <Text style={[styles.splitHint, { color: theme.onSurfaceSecondary }]}>Fill only the ones used. Example: 300 UPI + 200 cash.</Text>
+                <View style={styles.splitRow}>
+                  {(["UPI", "CASH", "CARD"] as const).map((m) => (
+                    <View key={m} style={{ flex: 1 }}>
+                      <Text style={[styles.splitLbl, { color: theme.onSurfaceSecondary }]}>{m}</Text>
+                      <TextInput
+                        style={[styles.splitInput, { color: theme.onSurface, backgroundColor: theme.surface, borderColor: theme.border }]}
+                        value={splitText[m]}
+                        onChangeText={(t) => setSplitText((prev) => ({ ...prev, [m]: t.replace(/[^0-9.]/g, "") }))}
+                        placeholder="0"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="decimal-pad"
+                        accessibilityLabel={`${m} amount`}
+                        testID={`bill-split-${m.toLowerCase()}`}
+                      />
+                    </View>
+                  ))}
+                </View>
+                {splitStarted && (
+                  <Text style={[styles.splitHint, { color: splitReady ? "#16A34A" : "#EF4444", marginTop: 8 }]} testID="bill-split-status">
+                    {splitReady
+                      ? `Total matches ${formatCurrency(amountDue)}`
+                      : splitParts.length < 2
+                        ? "Fill at least 2 methods"
+                        : splitSum < amountDue
+                          ? `${formatCurrency(Math.round((amountDue - splitSum) * 100) / 100)} still left of ${formatCurrency(amountDue)}`
+                          : `${formatCurrency(Math.round((splitSum - amountDue) * 100) / 100)} more than the bill ${formatCurrency(amountDue)}`}
+                  </Text>
+                )}
+                <Pressable
+                  style={[styles.splitBtn, !splitReady && { opacity: 0.4 }]}
+                  disabled={!splitReady}
+                  onPress={() => handleMarkPaidWithMethod("SPLIT", splitParts)}
+                  testID="bill-split-pay-btn"
+                >
+                  <Text style={styles.splitBtnText}>Mark Paid (Split)</Text>
+                </Pressable>
+              </View>
             </Pressable>
           </Pressable>
         </Modal>
@@ -1041,6 +1094,14 @@ export default function Billing() {
 }
 
 const styles = StyleSheet.create({
+  splitBox: { marginTop: 16, borderWidth: 1, borderRadius: 16, padding: 14 },
+  splitTitle: { fontSize: 15, fontWeight: "800" },
+  splitHint: { fontSize: 12, fontWeight: "600", marginTop: 2 },
+  splitRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  splitLbl: { fontSize: 11, fontWeight: "800", marginBottom: 4, letterSpacing: 0.5 },
+  splitInput: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, fontWeight: "700" },
+  splitBtn: { marginTop: 12, backgroundColor: "#635BFF", borderRadius: 14, paddingVertical: 14, alignItems: "center" },
+  splitBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
   safe: { flex: 1, backgroundColor: "#F8F9FD" },
   wrap: { flex: 1, backgroundColor: "#F8F9FD" },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
