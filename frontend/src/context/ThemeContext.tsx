@@ -78,6 +78,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return "dark"; // Default to dark mode
   });
+  // Phones read the saved theme asynchronously. Wait for it before drawing, so screens never mix dark and light.
+  const [loaded, setLoaded] = useState(Platform.OS === "web");
 
   useEffect(() => {
     (async () => {
@@ -92,6 +94,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setMode(saved);
         }
       } catch {}
+      setLoaded(true);
     })();
   }, []);
 
@@ -122,7 +125,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setThemeMode,
       }}
     >
-      {children}
+      {loaded ? children : null}
     </ThemeContext.Provider>
   );
 };
